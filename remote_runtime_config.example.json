@@ -1,0 +1,21 @@
+{
+  "mode": "dry-run",
+  "ha_base": "http://<环境机公网IP或域名>:8123",
+  "ha_token": "<HA_LONG_LIVED_TOKEN>",
+  "sim_base": "http://<环境机公网IP或域名>:45678",
+  "sim_username": "contestant",
+  "sim_password": "<看板密码>",
+  "stations": {
+    "1": {"suffix": "<设备后缀1>"},
+    "2": {"suffix": "<设备后缀2>"},
+    "3": {"suffix": "<设备后缀3>"}
+  },
+  "live_enabled": false,
+  "allow_ha_write": false,
+  "allow_formal_contest": false,
+  "poll_seconds": 5,
+  "stale_after_seconds": 15,
+  "capacity_kwh": 14.0,
+  "max_power_w": 5000.0,
+  "charge_efficiency": 0.95
+}

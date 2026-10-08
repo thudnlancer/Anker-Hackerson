@@ -1,0 +1,22 @@
+# Credentials and machine-specific runtime configuration
+config.json
+local_online_config.json
+remote_experiment_config.json
+remote_runtime_config.json
+
+# Local/generated data and logs
+__pycache__/
+*.pyc
+.venv/
+logs/
+outputs/
+online_dry_run_latest.json
+forecast_metrics.json
+forecast_run.log
+forecast_data/
+data/
+*.zip
+
+# Editor and OS files
+.DS_Store
+Thumbs.db

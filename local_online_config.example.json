@@ -1,0 +1,43 @@
+{
+  "mode": "online_dry_run",
+  "local": {
+    "timezone": "Asia/Shanghai",
+    "poll_seconds": 5,
+    "stale_after_seconds": 15
+  },
+  "environment_machine": {
+    "host": "<环境机公网IP或域名>",
+    "ha_base": "http://<环境机公网IP或域名>:8123",
+    "sim_base": "http://<环境机公网IP或域名>:45678",
+    "ha_long_lived_token": "<HA_LONG_LIVED_TOKEN>",
+    "sim_username": "contestant",
+    "sim_password": "<看板密码>"
+  },
+  "safety": {
+    "live_enabled": false,
+    "allow_ha_write": false,
+    "allow_formal_contest": false,
+    "discover_device_suffixes": true,
+    "save_tokens_in_logs": false
+  },
+  "device_defaults": {
+    "capacity_kwh": 14.0,
+    "max_power_w": 5000.0,
+    "charge_efficiency": 0.95,
+    "soc_min_percent": 0.0,
+    "soc_max_percent": 100.0
+  },
+  "data": {
+    "training_zip_local_path": "D:/Anker黑客松/solarbank-training-data.zip",
+    "model_directory": "D:/Anker黑客松/实验环境/models",
+    "output_directory": "D:/Anker黑客松/实验环境/outputs",
+    "log_directory": "D:/Anker黑客松/实验环境/logs"
+  },
+  "_fill_before_use": [
+    "environment_machine.host",
+    "environment_machine.ha_base",
+    "environment_machine.sim_base",
+    "environment_machine.ha_long_lived_token",
+    "environment_machine.sim_password"
+  ]
+}

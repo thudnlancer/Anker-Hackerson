@@ -1,0 +1,114 @@
+{
+  "_description": "远程参赛机训练与实验配置模板。填写后另存为 remote_experiment_config.json；不要提交或分享该文件。",
+  "connection": {
+    "method": "ec2_instance_connect_browser",
+    "host": "35.92.220.3",
+    "port": 22,
+    "username": "ec2-user",
+    "private_key_path": "",
+    "instance_id": "i-0217afcd24bf6e9da",
+    "availability_zone": "us-west-2a",
+    "aws_region": "us-west-2",
+    "known_hosts_policy": "strict",
+    "connect_timeout_seconds": 15
+  },
+  "remote_machine": {
+    "profile": "solarbank-contestant-prod03",
+    "region": "us-west-2",
+    "os": "Amazon Linux 2023",
+    "working_directory": "/home/ec2-user/solarbank-experiment",
+    "python_command": "python3",
+    "venv_directory": "/home/ec2-user/solarbank-experiment/.venv",
+    "cpu_count": 0,
+    "memory_gb": 0,
+    "disk_gb": 0
+  },
+  "environment_machine": {
+    "host": "52.41.23.84",
+    "ha_base": "http://52.41.23.84:8123",
+    "sim_base": "http://52.41.23.84:45678",
+    "ha_username": "admin",
+    "ha_long_lived_token": "<HA_LONG_LIVED_TOKEN>",
+    "sim_username": "contestant",
+    "sim_password": "Solix#2026",
+    "stations": {
+      "1": {
+        "suffix": "<设备后缀1>",
+        "simulator_modbus_port": 1502
+      },
+      "2": {
+        "suffix": "<设备后缀2>",
+        "simulator_modbus_port": 1503
+      },
+      "3": {
+        "suffix": "<设备后缀3>",
+        "simulator_modbus_port": 1504
+      }
+    }
+  },
+  "data": {
+    "training_zip_local_path": "D:/Anker黑客松/solarbank-training-data.zip",
+    "training_zip_remote_path": "/home/ec2-user/solarbank-experiment/data/solarbank-training-data.zip",
+    "training_data_directory": "/home/ec2-user/solarbank-experiment/data/training",
+    "forecast_model_directory": "/home/ec2-user/solarbank-experiment/models",
+    "backtest_output_directory": "/home/ec2-user/solarbank-experiment/outputs",
+    "metrics_file": "/home/ec2-user/solarbank-experiment/forecast_metrics.json",
+    "expected_sites": 100,
+    "expected_rows_per_site": 2208,
+    "expected_columns": 31,
+    "timezone": "local_hour_time from dataset; do not infer from machine wall clock"
+  },
+  "experiment": {
+    "mode": "dry_run",
+    "live_enabled": false,
+    "allow_ha_write": false,
+    "allow_formal_contest": false,
+    "poll_seconds": 5,
+    "stale_after_seconds": 15,
+    "forecast_horizon_hours": 24,
+    "decision_step_hours": 1,
+    "replan_seconds": 5,
+    "capacity_kwh": 14.0,
+    "max_power_w": 5000.0,
+    "charge_efficiency": 0.95,
+    "soc_min_percent": 0.0,
+    "soc_max_percent": 100.0,
+    "degradation_cost_eur_per_kwh": 0.002,
+    "random_seed": 42
+  },
+  "commands": {
+    "install": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "backtest": ".venv/bin/python run_backtest.py --zip data/solarbank-training-data.zip --data data/training --output outputs",
+    "forecast_training": ".venv/bin/python run_forecast.py --data data/training --models models --metrics forecast_metrics.json",
+    "live_dry_run": ".venv/bin/python run_live.py --config remote_runtime_config.json --mode dry-run --once",
+    "online_dry_run": ".venv/bin/python run_online_dry_run.py --config remote_runtime_config.json --output online_dry_run_latest.json",
+    "health_check": "curl -fsS http://52.41.23.84:45678/",
+    "browser_connection": "AWS Console > EC2 > us-west-2 > instance i-0217afcd24bf6e9da > Connect > EC2 Instance Connect"
+  },
+  "logging": {
+    "directory": "/home/ec2-user/solarbank-experiment/logs",
+    "level": "INFO",
+    "retain_days": 14,
+    "save_input_snapshots": true,
+    "save_command_feedback": true,
+    "save_tokens_in_logs": false
+  },
+  "_fill_before_use": [
+    "connection.host (already filled)",
+    "connection.username (confirm ec2-user)",
+    "connection.instance_id (already filled)",
+    "environment_machine.host",
+    "environment_machine.ha_base",
+    "environment_machine.sim_base",
+    "environment_machine.ha_long_lived_token",
+    "environment_machine.sim_password",
+    "environment_machine.stations.1.suffix",
+    "environment_machine.stations.2.suffix",
+    "environment_machine.stations.3.suffix"
+  ],
+  "_browser_connection_notes": [
+    "No local private key is required for EC2 Instance Connect browser access.",
+    "deploy_remote.ps1 and run_remote.ps1 require a future SSH private key; do not run them with this browser-only configuration.",
+    "For browser-only operation, transfer the code bundle through Git or S3, then execute the commands documented in README.md."
+  ]
+}
