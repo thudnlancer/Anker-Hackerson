@@ -1041,3 +1041,101 @@ scipy 原始结果探针（gap/节点数/LP 松弛，仅诊断用途）。
 **不能声称的部分：** 可用率提升目前只在 72 次病例重放上验证（真实在线争抢环境
 未复测）；suboptimal incumbent 的收益影响未评估（属 F2 冻结参数全量回测范围）；
 生产 gap/预算参数未冻结（C4）；回退路径真实设备写入仍未授权（线 B）。
+
+### C3 真实 SOC 边界与软件保底区分及 soc_min=0 冻结建议（2026-10-14）
+
+**两类边界的定义与来源：**
+
+- 真实 SOC 边界 = 设备/比赛物理边界 `0%~100%`。[SOP_RECONCILIATION.md](SOP_RECONCILIATION.md)
+  §1 规定"比赛 SOC 空间固定为 `0%~100%`，充电上限、放电下限和备用预留不可修改"；
+  设备自用模式只认此边界（HOLD_SEMANTICS_DESIGN §8.1 B4）。该边界不由我方配置，
+  是回退路径唯一可依赖的保底。
+- 软件保底 = 优化器 `soc_min` 参数（rolling.py 的 energy 变量下界
+  `capacity*soc_min/100`），仅存在于规划层，默认 0。SOP_RECONCILIATION §2 已定调：
+  "shadow 默认使用比赛完整 0%~100% SOC 边界；内部保守保底只能显式作为实验参数"。
+
+**软件保底 >0 进入比赛配置的三类代价（不得外推的理由）：**
+
+1. 结构性 infeasible 风险。初始 SOC 低于保底、且单步充能上限（5 kW × 步长 × 0.95）
+   不足以补回时，MILP 直接无解。压力场景 `infeasible_initial_soc_recovery` 实证：
+   初始 0%、保底 10%（1.4 kWh）、5 分钟步长（最多充 0.396 kWh），前 3 步 infeasible
+   走规则回退。反之 `soc_min=0` 时恒等 idle 计划（全程零流量、电网 big-M 平衡）
+   恒可行——SOC 下界永不可能致 infeasible，这是候选可用率的结构性保证，
+   与 C2 的回退分级互补（C2 解决超时，本条款排除边界致无解）。
+2. 回退语义冲突。自用回退只认设备 0~100%：若优化器按 `soc_min=10` 规划，回退步
+   设备可放到 10% 以下，下一轮重规划初始 SOC 低于保底，又触发第 1 类 infeasible，
+   形成"回退→越软件边界→再无解"的循环。Q1 条件 2 已决策冻结 `soc_min=0`，
+   从根上消除该循环（R4 关闭的依据）。
+3. 收益口径。保底 10% 削去 1.4 kWh 可用吞吐；排名按三站合并
+   `saving_settled_percent`，SOP 全量程是收益最大化口径。任何 `soc_min>0` 的
+   收益数字（如离线实验的保底臂）不得外推为比赛口径。
+
+**冻结前事实核查（2026-10-14）：**
+
+- 比赛在线链路已为 0：`local_online_config.json` `device_defaults.soc_min_percent=0.0`
+  （无 experiment 覆盖段）→ config 映射 `soc_min=0.0` → run_live.py
+  `make_candidate(soc_min=...)` → `optimize_window`。example 配置
+  （config.example.json、remote_experiment_config.example.json）同为 0。
+- 比赛 replay（run_contest_strategy_replay.py `soc_min=0.`）、链路测试
+  （test_run_live_chain.py `soc_min: 0.0`）、解释器 schemas（默认 0，桥接测试断言
+  `soc_min_percent == 0`）均一致。
+- 非零值仅存于离线实验脚本与单元测试（test_rolling_milp、test_shadow、
+  run_solver_comparison、run_stress_scenarios 的 decide 调用等，`soc_min=10`），
+  属显式实验参数，符合 SOP_RECONCILIATION §2，予以保留。
+
+**冻结建议（供 F 线并入比赛参数冻结清单）：**
+
+1. 比赛配置冻结 `soc_min=0` / `soc_max=100`；配置加载的 experiment 覆盖段
+   不得设置非零 `soc_min_percent`（建议 F 线在冻结清单中显式列出该键）。
+2. 软件保底仅作离线实验参数；含保底实验的产物须标注"非比赛口径"。
+3. C2 回退链路中"满足真实 SOC 边界"即 0~100% 设备边界，incumbent 独立复检的
+   变量边界项已按此验证；冻结后优化器边界 = 设备边界 = 回退边界，三者一致。
+
+**不能声称的部分：** 设备 BMS 是否存在内部不可观测保底未实测（只读试采期间三站
+SOC=100 满电静置，无低位观测，soc_last_changed=2026-10-08）；即便存在，自用回退
+天然遵守设备边界，不影响上述冻结建议。
+
+### D2 跨昼夜扩样：分时距 PV 预测切换规则达到可拍板样本量（2026-10-13 晚）
+
+新增 `run_d2_expansion.ps1`（20 个有限批链式受监督执行，零代码改动复用
+`run_irradiance_shadow.py` 24 轮 × 20 秒）与 `analyze_dayblock_bootstrap.py`
+（日块 bootstrap 决策分析，新增测试 7 个）。全程只读，无 HA 写入、无比赛启动。
+
+**采样**：批 01–20 链式 `--history-result` 继承，墙钟 2026-10-13 20:21–23:00，
+覆盖设备 2028-03-08 至 2028-03-28 共 19 个有效设备日；批 20 因两次连续
+ConnectTimeout 按设计提前停止（14/24 轮，损失 2028-03-28 凌晨时段，真实缺口
+未补造）。因果校准审计 20/20 通过；链起点代码 provenance 哈希落盘
+`outputs/irradiance_d2_expansion_20261013/code_provenance_chainstart.json`。
+
+**异常率**：blocked 合计 43/1401 站点轮（批 02 跨午夜天气/HA 小时错位 26 次
+为最大单一事件，批 11–20 仅 6 次）；limit_reached 批 1–5 共 13 次、批 6–10
+共 2 次、批 11–20 为 0（该改善仅见于本采样链，不等于在线可用率结论，属线 C）。
+
+**校准系数**：三站 scale 在 19 天内呈完整波动周期（站 1 中位 3.6→5.1→3.6，
+站 3 4.5→5.0→4.6，站 2 0.34–0.69），批内极差小（±0.1 量级）、日间漂移是
+主信号。结论：系数必须因果滚动重估，**不可冻结为常数**；现有 168h 滚动
+因果设计得到支持。
+
+**预注册判定**（日照目标点：truth>50W 或 predicted>50W；设备日块 bootstrap
+B=10000，95% CI；门槛 ≥15 设备日且 ≥200 日照对/时距，全部满足）：
+`outputs/irradiance_d2_expansion_20261013/final_bootstrap_all20.json`。
+
+| 时距 | 日照对 | MAE 比（校准/persistence） | 95% CI | verdict |
+| ---: | ---: | ---: | --- | --- |
+| 1h | 508 | 1.10 | [0.95, 1.34] | inconclusive → 维持 persistence |
+| 2h | 468 | 0.63 | [0.54, 0.76] | 辐照度校准 |
+| 4h | 410 | 0.41 | [0.36, 0.50] | 辐照度校准 |
+
+收缩诊断：2h/4h 最优 α=1.0（纯校准，CI 不含 1），1h α=0.5 的 CI
+[0.87, 1.06] 跨 1，不支持混合层。分时站描述：1h 站 3 方向相反（0.85），
+2h/4h 站 2 接近中性（0.97/0.86），均只作标记不作分站规则。
+含旧试采 3 天的敏感性（22 设备日）verdict 不变，见
+`sensitivity_bootstrap_with_pilots.json`。
+
+**写入比赛配置的建议（待线 F 收益门槛复核后冻结）**：PV 预测切换规则 =
+1 设备小时用当前 PV persistence，≥2 设备小时用滚动因果辐照度校准
+（168h 窗、≥3 日照小时、校准不足时回退 persistence），不引入固定收缩系数。
+
+**不能声称的部分**：样本为模拟器连续 19 设备日，天气 regime 多样性有限；
+1h 结论为"无显著差异"而非"persistence 显著更优"；MAE 层结论未经策略
+replay 收益门槛复核（线 F）；未做任何真实写入验证（线 B）。
