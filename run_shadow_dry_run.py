@@ -9,6 +9,7 @@ import argparse
 import json
 import sys
 import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import joblib
@@ -27,6 +28,15 @@ def utcnow():
 
 def fetch_snapshot(config, *, include_prices=True):
     cfg = load_runtime_config(config, mode_override="dry-run")
+    return fetch_snapshot_from_config(cfg, include_prices=include_prices)
+
+
+def fetch_snapshot_from_config(cfg, *, include_prices=True):
+    """Collect from a normalized in-memory config without persisting credentials.
+
+    This entry point shares the same read-only endpoint allowlist as the file
+    wrapper. Configuration mode and write flags cannot enable control calls.
+    """
     require_runtime_fields(cfg, write_enabled=False)
     token = exchange_ha_token(cfg)
     session = requests.Session()
@@ -110,19 +120,45 @@ def main():
     p.add_argument("--model-directory", type=Path, default=Path("models"), help="inspect feature compatibility; does not invent missing history/features")
     p.add_argument("--replay-at-capture", action="store_true", help="offline only: evaluate freshness at recorded receipt")
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--explainability-run-id", help="explicitly export same-solve decision evidence to local JSONL; no HTTP submission")
+    p.add_argument("--explainability-input-kind", choices=("mixed", "synthetic"),
+                   help="mixed observations/assumptions or explicitly synthetic offline inputs (default: mixed)")
     a = p.parse_args()
     if a.replay_at_capture and not a.snapshot:
         p.error("--replay-at-capture requires --snapshot")
+    if a.explainability_input_kind and not a.explainability_run_id:
+        p.error("--explainability-input-kind requires --explainability-run-id")
+    if a.explainability_run_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", a.explainability_run_id):
+        p.error("--explainability-run-id must use 1-120 letters, digits, underscores, dots, colons or hyphens")
     if (a.output / "result.json").exists():
         raise FileExistsError("Use a new output directory")
     a.output.mkdir(parents=True, exist_ok=True)
+    evidence_path = a.output / "explainability-decisions.jsonl" if a.explainability_run_id else None
+    if evidence_path is not None and evidence_path.exists():
+        raise FileExistsError("Use a new output directory for explainability evidence")
+    evidence_stream, evidence_count = None, 0
     started = perf_counter()
     report = {"mode": "shadow_only", "writes_performed": 0, "started_at": utcnow()}
     try:
         snapshot = json.loads(a.snapshot.read_text(encoding="utf-8")) if a.snapshot else fetch_snapshot(a.config)
         (a.output / "snapshot.json").write_text(json.dumps(snapshot, indent=2, allow_nan=False), encoding="utf-8")
         replay_time = snapshot["received_at"] if a.replay_at_capture else None
-        report.update(evaluate_snapshot(snapshot, now=replay_time, device_timezone=a.device_timezone))
+        evidence_options = {}
+        if evidence_path is not None:
+            evidence_stream = evidence_path.open("x", encoding="utf-8")
+
+            def evidence_sink(record):
+                nonlocal evidence_count
+                payload = json.dumps(record, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+                evidence_stream.write(payload + "\n")
+                evidence_stream.flush()
+                evidence_count += 1
+
+            evidence_options = {"evidence_sink": evidence_sink,
+                                "evidence_identity": {"run_id": a.explainability_run_id,
+                                    "input_kind": a.explainability_input_kind or "mixed"}}
+        report.update(evaluate_snapshot(snapshot, now=replay_time, device_timezone=a.device_timezone,
+                                        **evidence_options))
         compatibility = {}
         for target in ("pv", "load"):
             model_path = a.model_directory / f"shared_{target}.joblib"
@@ -151,6 +187,16 @@ def main():
     except Exception as exc:
         # Avoid serializing request objects, URLs with query credentials, or auth responses.
         report.update(status="blocked", error_type=type(exc).__name__)
+    finally:
+        if evidence_stream is not None:
+            evidence_stream.close()
+    if evidence_path is not None:
+        failures = sum(value.get("explainability_export", {}).get("status") == "failed"
+                       for value in report.get("stations", {}).values())
+        report["explainability_export"] = {"path": str(evidence_path), "run_id": a.explainability_run_id,
+            "input_kind": a.explainability_input_kind or "mixed", "records_written": evidence_count,
+            "failed_candidates": failures,
+            "status": "failed" if failures and not evidence_count else "partial" if failures else "completed" if evidence_count else "empty"}
     report["elapsed_seconds"] = perf_counter()-started
     report["finished_at"] = utcnow()
     (a.output / "result.json").write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")

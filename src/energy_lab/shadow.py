@@ -75,7 +75,7 @@ def validate_state(state, received_at, *, now, max_age=15.):
         raise ValueError("invalid_device_observation")
 
 
-def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_seconds=1., capacity=14., max_power=5000., soc_min=0., soc_max=100., device_timezone=None, idle_candidate="legacy_hold"):
+def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_seconds=1., capacity=14., max_power=5000., soc_min=0., soc_max=100., device_timezone=None, idle_candidate="legacy_hold", evidence_sink=None, evidence_identity=None, evidence_observed_at=None):
     """Quarter-hour synthetic discretization; only current power is observed."""
     if idle_candidate not in ("legacy_hold", "zero_charge_unverified"):
         raise ValueError("invalid idle candidate policy")
@@ -130,15 +130,31 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
     mapping = map_battery_action(candidate_flow, max(0., power), pv, load, limit_w=max_power)
     if not mapping.representable:
         raise ValueError("optimizer_to_command_contract_mismatch")
-    return {"status": "candidate_only", "candidate": asdict(mapping), "forecast_mode": forecast_mode,
+    candidate = {"status": "candidate_only", "candidate": asdict(mapping), "forecast_mode": forecast_mode,
             "idle_candidate_policy": idle_candidate, "hardware_verified": False,
             "idle_model_consistent_under_zero_charge_assumption": idle_candidate == "zero_charge_unverified",
             "battery_flow": str(first.flow), "battery_power_w": power, "device_time": str(tick),
             "planned_soc_after_15min": float(first.soc_end), "solver_status": result.status,
             "horizon_steps": 96, "writes_performed": 0, "readback": "not_sent_no_acknowledgement"}
+    if evidence_sink is not None:
+        # Evidence is a sidecar: exporting must not change the chosen action.
+        # No callback is called for blocked, failed, or unrepresentable solves.
+        try:
+            from .explainability_evidence import build_explainability_record
+            record = build_explainability_record(
+                identity=evidence_identity or {}, observed_at=evidence_observed_at,
+                state=state, times=times, pv_w=pp, load_w=ll,
+                import_price=lookup.import_price.to_numpy(), export_price=lookup.export_price.to_numpy(),
+                result=result, mapping=mapping, forecast_mode=forecast_mode,
+                capacity_kwh=capacity, max_power_w=max_power, soc_min=soc_min, soc_max=soc_max)
+            evidence_sink(record)
+        except Exception as exc:
+            # Error text can contain caller data; expose only the exception type.
+            candidate["explainability_export"] = {"status": "failed", "error_type": type(exc).__name__}
+    return candidate
 
 
-def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., device_timezone=None):
+def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., device_timezone=None, evidence_sink=None, evidence_identity=None):
     now = pd.Timestamp.now(tz="UTC") if now is None else now
     results = {}
     prices = daily_points(snapshot["prices"])
@@ -169,9 +185,16 @@ def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., dev
                     forecast_mode = f"api_fallback_current_power_persistence:{type(exc).__name__}"
             else:
                 forecast_mode = "api_unavailable_current_power_persistence"
+            evidence_options = {}
+            if evidence_sink is not None:
+                identity = dict(evidence_identity or {})
+                identity["site_id"] = str(site)
+                evidence_options = {"evidence_sink": evidence_sink, "evidence_identity": identity,
+                                    "evidence_observed_at": item["received_at"]}
             result = make_candidate(state, prices, forecast=forecast,
                                     forecast_mode=forecast_mode,
-                                    solver_seconds=solver_seconds, device_timezone=effective_timezone)
+                                    solver_seconds=solver_seconds, device_timezone=effective_timezone,
+                                    **evidence_options)
             results[site] = result
         except (ValueError, TypeError, KeyError) as exc:
             results[site] = {"status": "blocked", "reason": str(exc), "writes_performed": 0}

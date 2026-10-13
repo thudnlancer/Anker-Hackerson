@@ -1,0 +1,100 @@
+{
+  "module": "src/energy_lab/rolling.py",
+  "recovery": "static source text extracted from CommandExecution.stdout; historical commands were not executed",
+  "source_sha256": "4197a84d871f635236b320f63e378bae6914e4fa9728d048a5ba08f8af9ba2d1",
+  "normalization": "CRLF to LF; one terminal newline",
+  "source_lines": 156,
+  "source_records": [
+    {
+      "jsonl_line": 4705,
+      "timestamp": "2026-10-10T17:53:53.404Z",
+      "content": "complete source stdout"
+    },
+    {
+      "jsonl_line": 5357,
+      "timestamp": "2026-10-11T02:57:41.150Z",
+      "content": "complete source stdout"
+    }
+  ],
+  "latest_logged_patch": {
+    "jsonl_line": 4552,
+    "timestamp": "2026-10-10T17:39:38.071Z",
+    "content": "rolling.py included in FileChange"
+  },
+  "later_logged_changes": "No later FileChange or shell mutation mentioning rolling.py found after JSONL line 5357; this is log evidence, not verification of the current Windows checkout.",
+  "git_evidence": {
+    "jsonl_line": 53,
+    "timestamp": "2026-10-08T09:56:41.373Z",
+    "commit": "f4859f4",
+    "subject": "prepare remote experiment runtime",
+    "limitation": "This is an earlier base commit. The recovered later source includes subsequent changes; no exact source commit was found."
+  },
+  "dependencies": [
+    "numpy",
+    "pandas",
+    "scipy.optimize",
+    "dataclasses",
+    "functools"
+  ],
+  "internal_module_dependencies": [],
+  "symbols": [
+    "_cached_equalities",
+    "RollingPlan",
+    "optimize_window"
+  ],
+  "solver_contract": {
+    "solver": [
+      "lp",
+      "milp"
+    ],
+    "command_contract": [
+      "battery",
+      "sop"
+    ],
+    "input_power": "W",
+    "output_power": "W",
+    "energy": "kWh",
+    "soc": "percent",
+    "prices": "EUR/kWh",
+    "objective": "EUR",
+    "discharge_efficiency": 1.0
+  },
+  "missing_for_core": [],
+  "adapter_work_needed": [
+    "Explicit first-step battery charging intervention is absent and must be added without altering the original horizon objective/constraints.",
+    "Use solver=milp; sop contract requires milp.",
+    "Map limit_reached, infeasible, unbounded, solver_error separately; failed solves contain NaN and placeholder hold rows that must not be exposed as a successful plan.",
+    "Supply the exact historical decision snapshot/model parameters for real replay; source recovery alone does not prove a match to a live strategy or HA result."
+  ],
+  "historical_requirement_evidence": {
+    "jsonl_line": 2476,
+    "requirements": [
+      "numpy>=1.26",
+      "pandas>=2.1",
+      "scipy>=1.10"
+    ],
+    "limitation": "Minimum requirements only; no exact historical dependency lock recovered."
+  },
+  "original_filename": "rolling_original.py",
+  "adapted_filename": "rolling.py",
+  "original_sha256": "4197a84d871f635236b320f63e378bae6914e4fa9728d048a5ba08f8af9ba2d1",
+  "adapted_sha256": "6e2b1ca5e372f9d6a70bc5322ac3f699b417e4ab336df2a25c8a3add84b62d11",
+  "adaptation": {
+    "scope": "Only explicit first-step power interventions; original objective, balance equations, grid bounds and SOP constraints retained.",
+    "arguments": [
+      "first_step: dict[str, float] | None = None",
+      "first_charge_kw: float | None = None"
+    ],
+    "first_step_units": "kW",
+    "power_keys": [
+      "charge_kw",
+      "discharge_kw",
+      "grid_import_kw",
+      "grid_export_kw"
+    ],
+    "mutual_exclusion": "first_step and first_charge_kw cannot both be supplied",
+    "bound_violation": "Returns infeasible with NaN objective and placeholder rows; does not relax original bounds",
+    "validation": "Finite nonnegative numeric powers only; unknown keys rejected",
+    "verification_at_creation": "Static AST parse and exact original hash comparison; solver verification performed separately"
+  }
+}

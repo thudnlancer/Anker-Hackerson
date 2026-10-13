@@ -1,0 +1,2 @@
+# Source hashes stay stable when this repository is checked out on Windows.
+*.py text eol=lf

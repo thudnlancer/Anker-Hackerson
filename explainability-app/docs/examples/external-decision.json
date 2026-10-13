@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "run_id": "integration-example",
+  "site_id": "1",
+  "decision_id": "example-0001",
+  "source_kind": "external",
+  "model_version": "example-external-policy-v1",
+  "policy_version": "example-external-policy-v1",
+  "solver_status": "unknown",
+  "snapshot": {
+    "device_time": "2027-01-24T00:00:00Z",
+    "observed_at": "2026-10-13T00:00:00Z",
+    "soc_percent": 50,
+    "pv_kw": 0.2,
+    "load_kw": 1,
+    "capacity_kwh": 14,
+    "max_charge_kw": 5,
+    "max_discharge_kw": 5,
+    "step_hours": 1,
+    "sources": {
+      "pv": "assumption",
+      "load": "assumption",
+      "pv_forecast": "unknown",
+      "load_forecast": "unknown"
+    },
+    "history_mode": "none",
+    "forecast_status": "unavailable",
+    "fallback_reason": "example_without_saved_forecast"
+  },
+  "action": {
+    "kind": "hold",
+    "power_kw": 0,
+    "control_semantics": "self_consumption"
+  }
+}

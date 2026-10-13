@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import linprog, milp, Bounds, LinearConstraint
 from functools import lru_cache
+from numbers import Real
 
 
 @lru_cache(maxsize=16)
@@ -34,6 +35,39 @@ class RollingPlan:
     message: str
 
 
+def _validated_first_step(first_step, first_charge_kw, n):
+    """Translate explicit nonnegative kW interventions to original first-step indexes."""
+    if first_step is not None and first_charge_kw is not None:
+        raise ValueError("first_step and first_charge_kw are mutually exclusive")
+    indexes = {"charge_kw": 0, "discharge_kw": n,
+               "grid_import_kw": 2*n, "grid_export_kw": 3*n}
+    if first_step is not None:
+        if not isinstance(first_step, dict):
+            raise ValueError("first_step must be a dictionary of kW values")
+        if any(key not in indexes for key in first_step):
+            raise ValueError("first_step contains unknown power keys")
+        values = first_step
+    elif first_charge_kw is not None:
+        values = {"charge_kw": first_charge_kw}
+    else:
+        values = {}
+    fixed = {}
+    for key, value in values.items():
+        if isinstance(value, bool) or not isinstance(value, Real) or not np.isfinite(value) or value < 0:
+            raise ValueError("first-step powers must be finite nonnegative numbers in kW")
+        fixed[indexes[key]] = float(value)
+    return fixed
+
+
+def _intervention_infeasible(times, n, soc_percent):
+    """Use the original failure shape; never relax an original variable bound."""
+    empty = pd.DataFrame({"time": times, "flow": ["hold"] * n, "charge_w": 0.0,
+                          "discharge_w": 0.0, "grid_import_w": 0.0,
+                          "grid_export_w": 0.0, "soc_end": soc_percent})
+    return RollingPlan(empty, float("nan"), "infeasible",
+                       "first-step intervention exceeds an original variable bound")
+
+
 def optimize_window(
     times: pd.Series,
     pv_w: np.ndarray,
@@ -52,6 +86,8 @@ def optimize_window(
     solver: str = "lp",
     time_limit_seconds: float = 5.0,
     command_contract: str = "battery",
+    first_step: dict[str, float] | None = None,
+    first_charge_kw: float | None = None,
 ) -> RollingPlan:
     """Solve a rolling LP or explicit mutually exclusive MILP window."""
     n = len(pv_w)
@@ -59,6 +95,7 @@ def optimize_window(
         raise ValueError("SOP command constraints require MILP")
     if n == 0:
         raise ValueError("empty optimization window")
+    fixed_first_step = _validated_first_step(first_step, first_charge_kw, n)
     arrays = [np.asarray(x, dtype=float) for x in (pv_w, load_w, import_price, export_price)]
     if any(x.ndim != 1 or len(x) != n or not np.isfinite(x).all() for x in arrays):
         raise ValueError("all forecast arrays must have equal length")
@@ -101,7 +138,13 @@ def optimize_window(
     )
     equalities = _cached_equalities(n, float(charge_efficiency), float(step_hours))
     if solver == "lp":
-        result = linprog(c, A_eq=equalities, b_eq=b_eq, bounds=bounds, method="highs")
+        fixed_bounds = list(bounds)
+        for index, value in fixed_first_step.items():
+            original_lower, original_upper = fixed_bounds[index]
+            if value < original_lower or (original_upper is not None and value > original_upper):
+                return _intervention_infeasible(times, n, soc_percent)
+            fixed_bounds[index] = (value, value)
+        result = linprog(c, A_eq=equalities, b_eq=b_eq, bounds=fixed_bounds, method="highs")
     else:
         # Two binary vectors select charging vs discharging and import vs export.
         # Grid big-M values follow from fixed net demand and battery power limits,
@@ -114,6 +157,10 @@ def optimize_window(
         upper = np.concatenate([np.full(2*n, pmax), import_max, export_max,
                                 np.full(n, capacity_kwh * soc_max / 100), np.ones(2*n)])
         lower[4*n:5*n] = capacity_kwh * soc_min / 100
+        for index, value in fixed_first_step.items():
+            if value < lower[index] or value > upper[index]:
+                return _intervention_infeasible(times, n, soc_percent)
+            lower[index] = upper[index] = value
         inequality_rows = (6 if command_contract == "sop" else 4)*n
         a = np.zeros((2*n + inequality_rows, 7*n))
         a[:2*n, :5*n] = equalities

@@ -12,7 +12,7 @@ PLACEHOLDER_PREFIXES = ("<", "TODO", "CHANGE_ME")
 
 
 def is_placeholder(value: object) -> bool:
-    return isinstance(value, str) and (
+    return value is None or isinstance(value, str) and (
         not value.strip() or value.strip().startswith(PLACEHOLDER_PREFIXES)
     )
 
