@@ -75,10 +75,12 @@ def _policy_step(
 ) -> dict[str, Any]:
     if not np.isfinite(step_hours) or step_hours <= 0:
         raise ValueError("step_hours must be positive and finite")
-    if flow not in ("charge", "discharge", "hold") or not np.isfinite(power_w):
+    # Legacy "hold" input is accepted as the pre-rename idle label (R6 read
+    # compatibility); outputs always carry the new "idle" label.
+    if flow not in ("charge", "discharge", "idle", "hold") or not np.isfinite(power_w):
         raise ValueError("invalid battery command")
-    if flow == "hold":
-        power_w = 0.0
+    if flow in ("idle", "hold"):
+        flow, power_w = "idle", 0.0
     power_w = float(np.clip(power_w, 0.0, battery.max_power_w))
     if flow == "charge":
         available_kwh = max(0.0, (100.0 - battery.soc) / 100.0 * battery.capacity_kwh)
@@ -87,12 +89,12 @@ def _policy_step(
         if battery.charge_efficiency > 1e-9:
             power_w = min(power_w, available_kwh * 1000.0 / battery.charge_efficiency / step_hours)
         if power_w <= 1e-9:
-            flow = "hold"
+            flow = "idle"
     if flow == "discharge":
         available_kwh = max(0.0, (battery.soc - soc_min_percent) / 100.0 * battery.capacity_kwh)
         power_w = min(power_w, available_kwh * 1000.0 / step_hours)
         if power_w <= 1e-9:
-            flow = "hold"
+            flow = "idle"
     soc_before = battery.soc
     battery.step(flow, power_w, hours=step_hours)
     charge_w = power_w if flow == "charge" else 0.0

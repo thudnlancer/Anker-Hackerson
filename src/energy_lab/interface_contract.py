@@ -84,13 +84,24 @@ def verify_readback(command: CommandMapping, state: dict, *, sent_device_time=No
     return ReadbackCheck(error <= tolerance_w, "verified" if error <= tolerance_w else "power_mismatch", error)
 
 
-def map_battery_action(flow, power_w, pv_w, load_w, limit_w=5000.):
+def map_battery_action(flow, power_w, pv_w, load_w, limit_w=5000., idle_mode=None):
     if not all(math.isfinite(x) for x in (power_w, pv_w, load_w, limit_w)):
         return CommandMapping(False, None, None, "nonfinite_input")
     if min(power_w, pv_w, load_w) < 0 or limit_w <= 0 or power_w > limit_w+1e-3:
         return CommandMapping(False, None, None, "invalid_power")
-    if flow == "hold":
-        return CommandMapping(True, "hold", 0., "hold_requires_self_consumption_or_supervised_noop_readback")
+    if flow in ("idle", "hold"):
+        # "hold" is accepted only as the pre-rename idle label read from old
+        # artifacts (R6). Planned zero battery flow is never silently mapped:
+        # the caller must choose the execution mode explicitly.
+        if idle_mode is None:
+            return CommandMapping(False, None, None, "idle_requires_explicit_idle_mode")
+        if idle_mode == "self_consumption":
+            return CommandMapping(True, "self_consumption", 0., "idle_explicit_self_consumption_mode")
+        if idle_mode == "zero_flow":
+            # Candidate third-party charge=0 command; site-level readback
+            # verification is required before any live use.
+            return CommandMapping(True, "charge", 0., "idle_zero_flow_command_unverified")
+        return CommandMapping(False, None, None, "unknown_idle_mode")
     if flow in ("charge", "discharge") and power_w <= 1e-3:
         # SOP discharge is a grid-export target. A zero target is meaningful:
         # the device may discharge only enough to avoid importing power.

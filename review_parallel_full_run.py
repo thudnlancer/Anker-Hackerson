@@ -41,7 +41,7 @@ def main():
     joined = lp[lp.policy.ne("rule")].merge(trace[trace.policy.ne("rule")], on=["site", "time"],
                                            suffixes=("_lp", "_milp"), validate="one_to_one")
     def signed(suffix):
-        return joined[f"power_w_{suffix}"] * joined[f"flow_{suffix}"].map({"charge": 1, "discharge": -1, "hold": 0})
+        return joined[f"power_w_{suffix}"] * joined[f"flow_{suffix}"].map({"charge": 1, "discharge": -1, "hold": 0, "idle": 0})
     per_site = trace.groupby(["site", "policy"]).agg(cost_eur=("cost_eur", "sum"),
               final_soc=("soc_after", "last"), throughput_kwh=("throughput_kwh", "sum"))
     per_site["settled_cost_eur"] = per_site.cost_eur - per_site.final_soc * .14 * .1

@@ -81,7 +81,7 @@ class IrradianceShadowTests(unittest.TestCase):
         snapshot = self.snapshot()
         state = snapshot["stations"]["1"]["state"]
         from energy_lab.shadow import daily_points
-        plan = RollingPlan(pd.DataFrame({"flow": ["hold"], "charge_w": [0.], "discharge_w": [0.],
+        plan = RollingPlan(pd.DataFrame({"flow": ["idle"], "charge_w": [0.], "discharge_w": [0.],
                                          "soc_end": [50.]}), 0., "optimal", "mock")
         with patch("energy_lab.shadow.optimize_window", return_value=plan):
             result = make_candidate(state, daily_points(snapshot["prices"]), idle_candidate="zero_charge_unverified")

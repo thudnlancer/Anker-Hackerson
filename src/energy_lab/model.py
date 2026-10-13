@@ -37,4 +37,4 @@ def dispatch(import_price: float, export_price: float, solar_w: float, load_w: f
         return "charge", max_power_w, "当前处于预测窗口低购电价，补充未来需求"
     if import_price >= high - 1e-9 and soc > 15:
         return "discharge", min(max_power_w, max(load_w, 0.0)), "当前购电价处于预测窗口高位，优先用电池供负载"
-    return "hold", 0.0, "当前价格、光伏和 SOC 不支持有利的主动充放电"
+    return "idle", 0.0, "当前价格、光伏和 SOC 不支持有利的主动充放电"

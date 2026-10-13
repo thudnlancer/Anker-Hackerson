@@ -28,7 +28,7 @@ class RecoveryTests(unittest.TestCase):
                 for policy in ("rule", "forecast_milp_persistence"):
                     for time in frame.time.iloc[80:]:
                         rows.append({"site": site, "time": time, "weather_mode": "persistence",
-                                     "policy": policy, "flow": "hold", "power_w": 0.,
+                                     "policy": policy, "flow": "idle", "power_w": 0.,
                                      "soc_before": 50., "soc_after": 50., "grid_import_kwh": 0.,
                                      "grid_export_kwh": 0., "cost_eur": 0., "negative_export_loss_eur": 0.,
                                      "throughput_kwh": 0., "lp_status": "optimal", "lp_fallback": False})

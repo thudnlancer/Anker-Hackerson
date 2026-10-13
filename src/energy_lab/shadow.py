@@ -125,9 +125,14 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
                 "fallback": "no_new_command_requires_supervised_policy", "writes_performed": 0}
     first = result.plan.iloc[0]
     power = float(first.charge_w if first.flow == "charge" else first.discharge_w if first.flow == "discharge" else 0.)
-    candidate_flow = ("charge" if first.flow == "hold" and idle_candidate == "zero_charge_unverified"
-                      else str(first.flow))
-    mapping = map_battery_action(candidate_flow, max(0., power), pv, load, limit_w=max_power)
+    idle_mode = None
+    if first.flow in ("hold", "idle"):
+        # Legacy "hold" plan labels are still accepted on read (R6). A planned
+        # zero-flow step is never silently mapped: the caller's idle_candidate
+        # policy selects the explicit execution mode.
+        idle_mode = "zero_flow" if idle_candidate == "zero_charge_unverified" else "self_consumption"
+    mapping = map_battery_action(str(first.flow), max(0., power), pv, load,
+                                 limit_w=max_power, idle_mode=idle_mode)
     if not mapping.representable:
         raise ValueError("optimizer_to_command_contract_mismatch")
     candidate = {"status": "candidate_only", "candidate": asdict(mapping), "forecast_mode": forecast_mode,

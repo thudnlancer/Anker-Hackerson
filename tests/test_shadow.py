@@ -19,7 +19,9 @@ class ShadowTests(unittest.TestCase):
             self.assertEqual(plan.status, "optimal")
             for i, row in plan.plan.iterrows():
                 power = row.charge_w if row.flow == "charge" else row.discharge_w if row.flow == "discharge" else 0
-                self.assertTrue(map_battery_action(row.flow, max(0, power), pv[i], load[i]).representable)
+                self.assertTrue(map_battery_action(
+                    row.flow, max(0, power), pv[i], load[i],
+                    idle_mode="zero_flow" if row.flow in ("idle", "hold") else None).representable)
         self.assertGreater(float(plan.plan.grid_export_w.iloc[0]), 5000)  # passive PV is not capped by the command range
 
     def test_sop_still_allows_real_discharge_and_charge(self):

@@ -49,7 +49,7 @@ class MilpTests(unittest.TestCase):
                 success=False, status=1, message="injected time limit")):
             result = solve([0], [0], [.3], [.1])
         self.assertEqual(result.status, "limit_reached")
-        self.assertTrue(result.plan.flow.eq("hold").all())
+        self.assertTrue(result.plan.flow.eq("idle").all())
 
     def test_nonfinite_input_rejected(self):
         with self.assertRaises(ValueError):

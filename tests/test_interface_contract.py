@@ -21,8 +21,12 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(mapped.representable)
         self.assertEqual((mapped.flow, mapped.target_w), ("discharge", 0))
         held = map_battery_action("hold", 0, 0, 2000)
-        self.assertEqual((held.flow, held.target_w), ("hold", 0))
-        self.assertIn("readback", held.reason)
+        self.assertFalse(held.representable)
+        self.assertEqual(held.reason, "idle_requires_explicit_idle_mode")
+        zero = map_battery_action("idle", 0, 0, 2000, idle_mode="zero_flow")
+        self.assertTrue(zero.representable)
+        self.assertEqual((zero.flow, zero.target_w), ("charge", 0))
+        self.assertIn("unverified", zero.reason)
 
     def test_cross_midnight_requires_real_tomorrow(self):
         times = pd.date_range("2026-01-01", periods=48, freq="h")

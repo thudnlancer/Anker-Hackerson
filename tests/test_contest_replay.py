@@ -113,13 +113,13 @@ class ContestReplayTests(unittest.TestCase):
 
     def test_hold_uses_self_consumption_not_zero_flow(self):
         row = self.frame().iloc[0]
-        result = execute_command(Battery(), row, SimpleNamespace(flow="hold"), row.pv, row.load)
+        result = execute_command(Battery(), row, SimpleNamespace(flow="idle"), row.pv, row.load)
         self.assertEqual(result["command_mode"], "self_consumption")
         self.assertEqual(result["power_w"], 500.)
 
     def test_zero_flow_is_explicit_offline_diagnostic(self):
         row = self.frame().iloc[0]
-        result = execute_command(Battery(), row, SimpleNamespace(flow="hold"), row.pv, row.load,
+        result = execute_command(Battery(), row, SimpleNamespace(flow="idle"), row.pv, row.load,
                                  hold_mode="zero_flow")
         self.assertEqual(result["command_mode"], "zero_flow")
         self.assertEqual(result["command_flow"], "charge")

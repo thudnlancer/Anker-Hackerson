@@ -61,9 +61,10 @@ def _validated_first_step(first_step, first_charge_kw, n):
 
 def _intervention_infeasible(times, n, soc_percent):
     """Use the original failure shape; never relax an original variable bound."""
-    empty = pd.DataFrame({"time": times, "flow": ["hold"] * n, "charge_w": 0.0,
+    empty = pd.DataFrame({"time": times, "flow": ["idle"] * n, "charge_w": 0.0,
                           "discharge_w": 0.0, "grid_import_w": 0.0,
-                          "grid_export_w": 0.0, "soc_end": soc_percent})
+                          "grid_export_w": 0.0, "soc_end": soc_percent,
+                          "intended_command_mode": ["zero_flow_command"] * n})
     return RollingPlan(empty, float("nan"), "infeasible",
                        "first-step intervention exceeds an original variable bound")
 
@@ -174,7 +175,7 @@ def optimize_window(
             a[j+3, 3*n+t], a[j+3, 6*n+t], hi[j+3] = 1, export_max[t], export_max[t]
             if command_contract == "sop":
                 # z_charge=0 is discharge: grid_import=0 and export<=Pmax.
-                # z_charge=1 is charge/hold: keep the original grid bounds.
+                # z_charge=1 is charge/idle: keep the original grid bounds.
                 # This excludes saturation-dependent discharge and self-use.
                 k = 6*n + 2*t
                 a[k, 2*n+t], a[k, 5*n+t] = 1, -import_max[t]
@@ -185,19 +186,24 @@ def optimize_window(
                       bounds=Bounds(lower, upper), constraints=LinearConstraint(a, lo, hi),
                       options={"time_limit": time_limit_seconds, "mip_rel_gap": 1e-9})
     if not result.success:
-        empty = pd.DataFrame({"time": times, "flow": ["hold"] * n, "charge_w": 0.0, "discharge_w": 0.0, "grid_import_w": 0.0, "grid_export_w": 0.0, "soc_end": soc_percent})
+        empty = pd.DataFrame({"time": times, "flow": ["idle"] * n, "charge_w": 0.0, "discharge_w": 0.0,
+                              "grid_import_w": 0.0, "grid_export_w": 0.0, "soc_end": soc_percent,
+                              "intended_command_mode": ["zero_flow_command"] * n})
         status = {1: "limit_reached", 2: "infeasible", 3: "unbounded"}.get(result.status, "solver_error")
         return RollingPlan(empty, float("nan"), status, result.message)
     x = result.x
     charge, discharge = x[:n] * 1000, x[n:2 * n] * 1000
     grid_import, grid_export = x[2 * n:3 * n] * 1000, x[3 * n:4 * n] * 1000
     energy = x[4 * n:5 * n]
-    flow = np.where(charge > 1e-3, "charge", np.where(discharge > 1e-3, "discharge", "hold"))
+    flow = np.where(charge > 1e-3, "charge", np.where(discharge > 1e-3, "discharge", "idle"))
     plan = pd.DataFrame({
         "time": pd.to_datetime(times).to_numpy(), "flow": flow,
         "charge_w": charge, "discharge_w": discharge,
         "grid_import_w": grid_import, "grid_export_w": grid_export,
         "soc_end": energy / capacity_kwh * 100,
+        # Plan-level intent only; execution still requires site verification (idle)
+        # or dispatch readback (charge/discharge). Never implies a mode switch.
+        "intended_command_mode": np.where(flow == "idle", "zero_flow_command", "dispatch"),
     })
     # LP can cycle under sufficiently negative export prices; only MILP enforces exclusivity.
     return RollingPlan(plan, float(result.fun), "optimal", result.message)

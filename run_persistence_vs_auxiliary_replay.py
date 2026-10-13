@@ -59,7 +59,10 @@ def execute(battery, action, current, soc_min):
     flow = str(action.flow)
     power = max(0., float(action.charge_w if flow == "charge" else
                          action.discharge_w if flow == "discharge" else 0.))
-    mapping = map_battery_action(flow, power, float(current.pv), float(current.load))
+    # Idle steps are simulated as zero battery flow here; the mapping is for
+    # command reporting only and must name the unverified zero-flow candidate.
+    mapping = map_battery_action(flow, power, float(current.pv), float(current.load),
+                                 idle_mode="zero_flow" if flow in ("idle", "hold") else None)
     if not mapping.representable:
         raise ValueError("unrepresentable first action: " + mapping.reason)
     result = _policy_step(battery, flow, power, current, float(current.buy), float(current.sell), soc_min)
@@ -111,7 +114,7 @@ def evaluate(path, model_dir, output, hours, offset, soc_min, degradation, weath
                                        soc_min=soc_min, step_hours=1., terminal_price=terminal_price,
                                        degradation_cost_eur_kwh=degradation, time_limit_seconds=solver_time_limit)
                 action = (plan.plan.iloc[0] if plan.status == "optimal" else
-                          pd.Series({"flow": "hold", "charge_w": 0., "discharge_w": 0.}))
+                          pd.Series({"flow": "idle", "charge_w": 0., "discharge_w": 0.}))
                 result = execute(batteries[arm], action, current, soc_min)
                 for lead in (1, 6, 12, 23):
                     realized = frame.iloc[index + lead]
@@ -234,7 +237,7 @@ def main():
                           "Future historical weather is an observed proxy, not archived API-issued forecasts; persistence mode is a sensitivity arm.",
                           "Hourly mean powers and hourly replanning; no claim about real 15-minute transients.",
                           "Settlement uses evaluation-period mean buy price only for final accounting, never decisions.",
-                          "Hold means zero battery flow in this simulator, not verified device mode behavior.",
+                          "Idle means zero battery flow in this simulator, not verified device mode behavior.",
                           "API irradiance-calibrated production path is not replaced by this diagnostic."]}
     summary["comparisons_vs_persistence"] = {arm: decompose_saving(totals["persistence"], totals[arm])
                                              for arm in arms if arm != "persistence"}

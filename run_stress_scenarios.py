@@ -142,7 +142,7 @@ def run(output):
     combined.to_csv(output / "trace.csv", index=False)
     pd.DataFrame(plans).to_csv(output / "plans.csv", index=False)
     full = combined[combined.scenario.eq("negative_export_full_battery")]
-    assert full.flow.eq("hold").all()
+    assert full.flow.eq("idle").all()
     assert np.isclose(full.negative_export_loss_eur.sum(), 48.)
     report = {"passed": True, "scenarios": summaries, "executed_steps": len(combined),
               "plan_tolerances": {"power_w": .001, "grid_residual_w": .001,

@@ -23,7 +23,7 @@ class BatteryExecutionTests(unittest.TestCase):
     def test_full_battery_cannot_absorb_surplus(self):
         row = pd.Series({"pv": 4000.0, "load": 1000.0})
         step = _policy_step(Battery(soc=100), "charge", 5000, row, .3, -.1, 10)
-        self.assertEqual(step["flow"], "hold")
+        self.assertEqual(step["flow"], "idle")
         self.assertEqual(step["power_w"], 0)
         self.assertAlmostEqual(step["grid_export_kwh"], 3)
         self.assertAlmostEqual(step["negative_export_loss_eur"], .3)

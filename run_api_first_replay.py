@@ -57,7 +57,10 @@ def _apply_action(battery: Battery, row: pd.Series, action: pd.Series, *,
     planned_power = float(action.charge_w if flow == "charge" else action.discharge_w if flow == "discharge" else 0.0)
     forecast_pv = float(row.pv if planned_pv is None else planned_pv)
     forecast_load = float(row.load if planned_load is None else planned_load)
-    command = map_battery_action(flow, planned_power, forecast_pv, forecast_load)
+    # Idle steps execute as zero battery flow in this simulator; the command
+    # mapping must name the unverified zero-flow candidate explicitly.
+    command = map_battery_action(flow, planned_power, forecast_pv, forecast_load,
+                                 idle_mode="zero_flow" if flow in ("idle", "hold") else None)
     if not command.representable:
         raise ValueError(f"unrepresentable SOP action: {command.reason}")
     # SOP ``discharge`` is a grid-export target. Forecast error changes the
@@ -129,7 +132,7 @@ def evaluate_site(path: Path, *, eval_hours: int, horizon: int, initial_soc: flo
             step_hours=1.0, solver=solver, command_contract="sop" if solver == "milp" else "battery",
         )
         if plan.status != "optimal":
-            action = pd.Series({"flow": "hold", "charge_w": 0.0, "discharge_w": 0.0})
+            action = pd.Series({"flow": "idle", "charge_w": 0.0, "discharge_w": 0.0})
             status = plan.status
         else:
             action = plan.plan.iloc[0]
@@ -139,11 +142,11 @@ def evaluate_site(path: Path, *, eval_hours: int, horizon: int, initial_soc: flo
                                 planned_pv=float(predicted_pv[0]), planned_load=float(predicted_load[0]))
         except ValueError as exc:
             # An action planned from forecasts may be impossible to express at
-            # the actual grid point. Reject it and use an explicit hold; never
+            # the actual grid point. Reject it and use an explicit idle; never
             # silently clamp it into a different command.
             unrepresentable_steps += 1
             api = _apply_action(api_battery, row,
-                                pd.Series({"flow": "hold", "charge_w": 0.0, "discharge_w": 0.0}))
+                                pd.Series({"flow": "idle", "charge_w": 0.0, "discharge_w": 0.0}))
             api["rejected_action_reason"] = str(exc)
         baseline = _self_consumption_step(baseline_battery, float(row.pv), float(row.load),
                                            float(row.buy), float(row.sell))
@@ -156,7 +159,7 @@ def evaluate_site(path: Path, *, eval_hours: int, horizon: int, initial_soc: flo
             degradation_cost_eur_kwh=0.002, soc_min=soc_min, soc_max=100.0,
             step_hours=1.0, solver=solver, command_contract="sop" if solver == "milp" else "battery",
         )
-        oracle_action = oracle_plan.plan.iloc[0] if oracle_plan.status == "optimal" else pd.Series({"flow": "hold", "charge_w": 0.0, "discharge_w": 0.0})
+        oracle_action = oracle_plan.plan.iloc[0] if oracle_plan.status == "optimal" else pd.Series({"flow": "idle", "charge_w": 0.0, "discharge_w": 0.0})
         oracle = _apply_action(oracle_battery, row, oracle_action,
                                planned_pv=float(window.pv.iloc[0]), planned_load=float(window.load.iloc[0]))
         rows.append({"site": path.stem, "time": row.time, "solver_status": status,

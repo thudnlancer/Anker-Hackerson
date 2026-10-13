@@ -20,7 +20,7 @@ from energy_lab.model import Battery
 from energy_lab.rolling import optimize_window
 from energy_lab.validation import audit_trace
 
-HOLD = pd.Series({"flow": "hold", "charge_w": 0., "discharge_w": 0.})
+IDLE = pd.Series({"flow": "idle", "charge_w": 0., "discharge_w": 0.})
 PUBLISHED = ["time", "buy", "sell", "shortwave_radiation_wm2"]
 STAGES = {1: ("self_consumption", "persistence"),
           2: ("self_consumption", "persistence", "irradiance"),
@@ -70,7 +70,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                 gate_accepted, margin = False, None
                 status, nonoptimal, fallback = "not_applicable", 0, False
                 if arm == "self_consumption":
-                    action = HOLD
+                    action = IDLE
                 else:
                     plan = solve(pv, load, battery.soc)
                     nonoptimal += int(plan.status != "optimal")
@@ -83,7 +83,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                             plan, load = candidate, paths["interval_load"]
                     status = plan.status
                     fallback = status != "optimal"
-                    action = HOLD if fallback else plan.plan.iloc[0]
+                    action = IDLE if fallback else plan.plan.iloc[0]
                 # Baseline and failure fallback never inherit diagnostic idle semantics.
                 execution_hold_mode = "self_consumption" if arm == "self_consumption" or fallback else hold_mode
                 step = execute_command(battery, current, action, pv[0], load[0], hold_mode=execution_hold_mode)

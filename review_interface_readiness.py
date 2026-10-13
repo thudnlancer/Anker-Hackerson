@@ -24,7 +24,10 @@ def main():
         raw = load_csv(Path("forecast_data") / f"{site}.csv").set_index("time")
         for step in group.itertuples(index=False):
             observation = raw.loc[step.time]
-            mapping = map_battery_action(step.flow, step.power_w, observation.pv, observation.load)
+            # Archived traces still carry the pre-rename "hold" label (R6);
+            # the coverage review exercises the unverified zero-flow candidate.
+            mapping = map_battery_action(step.flow, step.power_w, observation.pv, observation.load,
+                                         idle_mode="zero_flow" if step.flow in ("idle", "hold") else None)
             rows.append({"site": site, "time": step.time, "battery_flow": step.flow,
                          "battery_power_w": step.power_w, **vars(mapping)})
     result = pd.DataFrame(rows)
@@ -49,7 +52,7 @@ def main():
                   "run_live.py currently uses dispatch rules; it does not load trained forecasts or call MILP.",
                   "run_live.py indexes prices by hour and can reuse today's points; needs timestamp-aligned tomorrow.",
                   "run_live.py checks presence of freshness fields, not elapsed age; no tick/readback acknowledgement.",
-                  "HAClient.set_dispatch maps zero/hold to self_consumption; this is not a zero-battery-action command.",
+                  "HAClient.set_dispatch now rejects non-dispatch flows; idle zero-flow commands remain device-unverified, so live idle executes as explicit self_consumption.",
                   "The optimizer does not yet impose all constraints of grid-export-target actuation.",
                   "Zero-charge hold mapping is only a SOP-derived candidate until device readback confirms semantics.",
                   "Need a new official weather snapshot with issuance time and per-site fields; persistence is not that forecast.",

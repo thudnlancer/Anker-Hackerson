@@ -9,7 +9,7 @@ from .rolling import RollingPlan, optimize_window
 def self_consumption(pv_w, load_w):
     """Use surplus for charging and battery for deficit; residual PV may export."""
     surplus = float(pv_w) - float(load_w)
-    return ("charge", surplus) if surplus > 0 else ("discharge", -surplus) if surplus < 0 else ("hold", 0.0)
+    return ("charge", surplus) if surplus > 0 else ("discharge", -surplus) if surplus < 0 else ("idle", 0.0)
 
 
 @dataclass

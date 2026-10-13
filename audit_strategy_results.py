@@ -28,7 +28,7 @@ def audit() -> None:
         assert set(trace.weather_mode) == {mode}
         assert not trace.duplicated(["site", "time", "policy"]).any()
         assert trace.groupby(["site", "policy"]).size().eq(442).all()
-        assert trace.flow.isin(["charge", "discharge", "hold"]).all()
+        assert trace.flow.isin(["charge", "discharge", "idle", "hold"]).all()
         numeric = ["power_w", "soc_before", "soc_after", "grid_import_kwh",
                    "grid_export_kwh", "cost_eur", "throughput_kwh", "negative_export_loss_eur"]
         assert np.isfinite(trace[numeric]).all().all()
@@ -56,7 +56,7 @@ def audit() -> None:
         assert joined.power_w.between(0, 5000 + 1e-8).all()
         assert joined.grid_import_kwh.ge(-1e-8).all() and joined.grid_export_kwh.ge(-1e-8).all()
         assert not (joined.grid_import_kwh.gt(1e-8) & joined.grid_export_kwh.gt(1e-8)).any()
-        assert joined.loc[joined.flow.eq("hold"), "power_w"].abs().le(1e-8).all()
+        assert joined.loc[joined.flow.isin(["idle", "hold"]), "power_w"].abs().le(1e-8).all()
         for (_, _), group in trace.groupby(["site", "policy"]):
             assert group.time.is_monotonic_increasing
             assert group.time.diff().dropna().eq(pd.Timedelta(hours=1)).all()

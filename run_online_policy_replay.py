@@ -31,7 +31,10 @@ def run(source, data, output):
         indexed = raw.set_index("time")
         for step in group.itertuples(index=False):
             pv, load = indexed.loc[step.time, ["pv", "load"]]
-            command = map_battery_action(step.flow, step.power_w, pv, load)
+            # Archived traces still carry the pre-rename "hold" label (R6).
+            # The readback review exercises the unverified zero-flow candidate.
+            command = map_battery_action(step.flow, step.power_w, pv, load,
+                                         idle_mode="zero_flow" if step.flow in ("idle", "hold") else None)
             if command.representable:
                 # Independent idealized device response under SOP semantics.
                 c = d = 0.
@@ -66,7 +69,8 @@ def run(source, data, output):
             for i, row in enumerate(constrained.plan.itertuples(index=False)):
                 pv, load = window.pv.iloc[i], window.load.iloc[i]
                 power = row.charge_w if row.flow == "charge" else row.discharge_w if row.flow == "discharge" else 0
-                command = map_battery_action(row.flow, max(0, power), pv, load)
+                command = map_battery_action(row.flow, max(0, power), pv, load,
+                                             idle_mode="zero_flow" if row.flow in ("idle", "hold") else None)
                 assert command.representable, (site, start, i)
                 assert min(row.charge_w, row.discharge_w) < .001
                 assert min(row.grid_import_w, row.grid_export_w) < .001

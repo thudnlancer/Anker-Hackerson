@@ -55,7 +55,7 @@ def audit(root):
             close(part.soc_before.iloc[1:], part.soc_after.iloc[:-1])
             assert part.soc_after.between(-1e-7, 100+1e-7).all()
             assert part.power_w.between(-1e-7, 5000+1e-7).all()
-            assert part.flow.isin(["hold", "charge", "discharge"]).all()
+            assert part.flow.isin(["idle", "hold", "charge", "discharge"]).all()
             assert part.command_mode.isin(["self_consumption", "zero_flow", "charge", "discharge"]).all()
             assert part.command_flow.isin(["charge", "discharge", "hold", "self_consumption"]).all()
             assert part.command_target_w.between(-1e-7, 5000+1e-7).all()
@@ -82,11 +82,13 @@ def audit(root):
             close(part.negative_export_loss_eur, exports*np.maximum(-sell, 0.))
             if arm == "self_consumption":
                 assert (mode == "self_consumption").all()
-                assert part.command_flow.eq("hold").all()
+                # New artifacts record the explicit mode switch; legacy ones
+                # still carry the pre-rename "hold" command label (R6).
+                assert part.command_flow.isin(["self_consumption", "hold"]).all()
             else:
                 assert (part.fallback == part.solver_status.ne("optimal")).all()
                 assert part.loc[part.fallback, "command_mode"].eq("self_consumption").all()
-                assert part.loc[part.fallback, "command_flow"].eq("hold").all()
+                assert part.loc[part.fallback, "command_flow"].isin(["self_consumption", "hold"]).all()
                 assert part.loc[(~part.fallback) & (part.command_mode == "zero_flow"), "command_flow"].eq("charge").all()
             inventory = float(part.soc_after.iloc[-1])*.14*settlement
             recomputed[arm] = {"operating_cost_eur": float(cost.sum()),

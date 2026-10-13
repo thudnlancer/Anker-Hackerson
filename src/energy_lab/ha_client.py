@@ -67,10 +67,14 @@ class HAClient:
         self.call("number", "set_value", f"number.{suffix}_power_control", value=max(0, min(5000, watts)))
 
     def set_dispatch(self, suffix: str, flow: str, watts: float, live: bool = False) -> None:
+        # Only explicit third-party dispatch commands are accepted. Planned
+        # zero-flow ("idle"/legacy "hold") and mode switches must go through
+        # their own explicit paths; no silent self_consumption mapping exists.
+        if flow not in ("charge", "discharge"):
+            raise ValueError(
+                f"set_dispatch requires an explicit charge/discharge flow, got {flow!r}; "
+                "use set_self_consumption for a self-use mode switch")
         if not live:
-            return
-        if flow == "hold":
-            self.set_self_consumption(suffix, live=True)
             return
         self.call(
             "select",

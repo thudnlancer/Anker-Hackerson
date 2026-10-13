@@ -9,7 +9,7 @@ const path = require('node:path');
   const input = process.env.SHADOW_RECORDS || '../outputs/explainability-smoke-v2/shadow/explainability-decisions.jsonl';
   const records = fs.readFileSync(input, 'utf8').split(/\r?\n/).filter(s => s.trim()).map(s => JSON.parse(s));
   assert.equal(records.length, 3);
-  assert(records.every(r => r.provenance.input_kind === 'synthetic' && r.model_version === 'shared-milp-6e2b1ca5-cf1'));
+  assert(records.every(r => r.provenance.input_kind === 'synthetic' && r.model_version === 'shared-milp-3a9dff42-cf1'));
   const out = path.resolve('artifacts/shared-browser');
   fs.mkdirSync(out, {recursive: true});
   const browser = await chromium.launch({headless: true, ...(process.env.BROWSER_CHANNEL ? {channel: process.env.BROWSER_CHANNEL} : {})});

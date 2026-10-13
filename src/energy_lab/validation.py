@@ -30,7 +30,7 @@ def audit_trace(trace, raw, *, soc_min=10., initial_soc=50., dt=1.):
         before, after = g.soc_before.to_numpy(), g.soc_after.to_numpy()
         imp, exp = g.grid_import_kwh.to_numpy(), g.grid_export_kwh.to_numpy()
         assert np.isfinite(np.c_[p, before, after, imp, exp, g.cost_eur, g.throughput_kwh, g.negative_export_loss_eur]).all()
-        assert g.flow.isin(["charge", "discharge", "hold"]).all()
+        assert g.flow.isin(["charge", "discharge", "idle", "hold"]).all()
         assert (p >= -1e-7).all() and (p <= 5000+1e-7).all()
         assert (after >= soc_min-1e-7).all() and (after <= 100+1e-7).all()
         assert np.isclose(before[0], initial_soc)
@@ -38,7 +38,7 @@ def audit_trace(trace, raw, *, soc_min=10., initial_soc=50., dt=1.):
         assert pd.to_datetime(g.time).diff().dropna().eq(pd.Timedelta(hours=dt)).all()
         c = np.where(g.flow.eq("charge"), p, 0.)*dt/1000
         d = np.where(g.flow.eq("discharge"), p, 0.)*dt/1000
-        assert np.all(np.abs(p[g.flow.eq("hold")]) < 1e-8)
+        assert np.all(np.abs(p[g.flow.isin(["idle", "hold"])]) < 1e-8)
         assert min(imp.min(), exp.min()) >= -1e-8 and np.minimum(imp, exp).max() < 1e-8
         energy = (after-before)*.14 - .95*c+d
         grid = source.pv.to_numpy()*dt/1000 + d+imp-source.load.to_numpy()*dt/1000-c-exp

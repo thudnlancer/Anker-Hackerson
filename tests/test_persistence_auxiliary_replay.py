@@ -90,7 +90,7 @@ class PairedReplayTests(unittest.TestCase):
 
     def test_import_not_subsidized_and_negative_export_costs_money(self):
         current = self.frame().iloc[0].copy()
-        action = pd.Series({"flow": "hold", "charge_w": 0., "discharge_w": 0.})
+        action = pd.Series({"flow": "idle", "charge_w": 0., "discharge_w": 0.})
         result = execute(Battery(), action, current, 0.)
         self.assertAlmostEqual(result["cost_eur"], .27)
         current.pv = 2000.

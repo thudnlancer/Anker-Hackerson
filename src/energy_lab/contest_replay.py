@@ -12,15 +12,16 @@ from .system_model import calibrate_pv_scale, pv_from_irradiance
 
 def self_use(battery, row):
     net = float(row.pv - row.load)
-    flow = "charge" if net > 0 else "discharge" if net < 0 else "hold"
+    flow = "charge" if net > 0 else "discharge" if net < 0 else "idle"
     return _policy_step(battery, flow, abs(net), row, row.buy, row.sell, 0.)
 
 
 def execute_command(battery, row, action, planned_pv, planned_load, *, hold_mode="self_consumption"):
     """Map planned battery power to SOP command, then apply actual energy limits.
 
-    Hold/fallback follows the current HA client's self_consumption behavior.
-    This is not an assertion that zero-charge and self-use are interchangeable.
+    Planned idle steps carry an explicit execution mode (self_consumption or the
+    candidate zero-flow command). This is not an assertion that zero-charge and
+    self-use are interchangeable.
     """
     if hold_mode not in ("self_consumption", "zero_flow"):
         raise ValueError("hold_mode must be self_consumption or zero_flow")
@@ -28,18 +29,21 @@ def execute_command(battery, row, action, planned_pv, planned_load, *, hold_mode
     power = float(action.charge_w if flow == "charge" else
                   action.discharge_w if flow == "discharge" else 0.)
     command_flow = flow
-    mapping = map_battery_action(flow, power, float(planned_pv), float(planned_load))
+    # Legacy "hold" plan labels are still accepted on read (R6); the explicit
+    # idle_mode decides which execution semantics an idle step gets.
+    mapping = map_battery_action(flow, power, float(planned_pv), float(planned_load),
+                                 idle_mode=hold_mode if flow in ("idle", "hold") else None)
     if not mapping.representable:
         raise ValueError("unrepresentable command: " + mapping.reason)
-    if flow == "hold":
+    if flow in ("hold", "idle"):
         if hold_mode == "self_consumption":
             result = self_use(battery, row)
             mode = "self_consumption"
+            command_flow = "self_consumption"
         else:
             # Offline representation of a candidate zero-flow command. The
             # actual HA response must be verified before this is used live.
-            mapping = map_battery_action("charge", 0., float(planned_pv), float(planned_load))
-            result = _policy_step(battery, "hold", 0., row, row.buy, row.sell, 0.)
+            result = _policy_step(battery, "idle", 0., row, row.buy, row.sell, 0.)
             mode = "zero_flow"
             command_flow = "charge"
         target = 0.

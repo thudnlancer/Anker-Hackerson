@@ -98,14 +98,15 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
                 float(cfg["max_power_w"]),
             )
             finite_watts = watts if math.isfinite(watts) else 0.0
-            if flow == "hold":
-                command_flow, command_watts = "hold", 0.0
-                representable, command_reason = True, "hold"
-            else:
-                mapping = map_battery_action(flow, finite_watts, solar_w, load_w,
-                                             limit_w=float(cfg["max_power_w"]))
-                representable, command_reason = mapping.representable, mapping.reason
-                command_flow, command_watts = mapping.flow, float(mapping.target_w or 0.0)
+            # No zero_flow_verified site exists yet (Q1): planned idle steps are
+            # executed as an explicit self_consumption mode switch, never via a
+            # silent dispatch mapping.
+            mapping = map_battery_action(flow, finite_watts, solar_w, load_w,
+                                         limit_w=float(cfg["max_power_w"]),
+                                         idle_mode="self_consumption" if flow in ("idle", "hold") else None)
+            representable, command_reason = mapping.representable, mapping.reason
+            command_flow = mapping.flow or flow
+            command_watts = float(mapping.target_w or 0.0)
             if not representable:
                 results.append({"site": site, "status": "unrepresentable_command",
                                 "device_time": stamp, "flow": flow, "power_w": finite_watts,
@@ -123,7 +124,10 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
                 "write_enabled": write_enabled,
             }
             if write_enabled:
-                ha.set_dispatch(suffix, command_flow, command_watts, live=True)
+                if command_flow == "self_consumption":
+                    ha.set_self_consumption(suffix, live=True)
+                else:
+                    ha.set_dispatch(suffix, command_flow, command_watts, live=True)
             results.append(record)
         except Exception as exc:  # isolate one failed station from the other two
             results.append({"site": site, "status": "station_error", "error": str(exc)})
