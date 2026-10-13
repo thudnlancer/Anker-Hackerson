@@ -118,11 +118,14 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
                              soc_min=soc_min, soc_max=soc_max, terminal_price=None, degradation_cost_eur_kwh=.02,
                              solver="milp", step_hours=.25, command_contract="sop",
                              time_limit_seconds=solver_seconds)
-    if result.status != "optimal":
-        # Software reserve is not a device reserve. Do not silently use self-use
-        # here: it may discharge below the configured software minimum.
+    if result.status != "optimal" and not getattr(result, "suboptimal", False):
+        # Q1 decision: the explicit fallback is self-use mode, always labeled
+        # non-optimizer-attributed. Software reserve is not a device reserve;
+        # self-use may discharge below a configured software minimum, so it is
+        # only valid with the frozen soc_min=0 contest configuration.
         return {"status": result.status, "candidate": None, "forecast_mode": forecast_mode,
-                "fallback": "no_new_command_requires_supervised_policy", "writes_performed": 0}
+                "fallback": "explicit_self_use_mode", "attribution": "non-optimizer-attributed",
+                "solver_status": result.status, "writes_performed": 0}
     first = result.plan.iloc[0]
     power = float(first.charge_w if first.flow == "charge" else first.discharge_w if first.flow == "discharge" else 0.)
     idle_mode = None
@@ -141,6 +144,11 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
             "battery_flow": str(first.flow), "battery_power_w": power, "device_time": str(tick),
             "planned_soc_after_15min": float(first.soc_end), "solver_status": result.status,
             "horizon_steps": 96, "writes_performed": 0, "readback": "not_sent_no_acknowledgement"}
+    if getattr(result, "suboptimal", False):
+        # Feasible time-limit incumbent: executable, but optimality is
+        # uncertified; the gap is reported, never hidden (R8).
+        candidate.update({"suboptimal_incumbent": True, "mip_gap": getattr(result, "mip_gap", None),
+                          "attribution": "optimizer-suboptimal-incumbent"})
     if evidence_sink is not None:
         # Evidence is a sidecar: exporting must not change the chosen action.
         # No callback is called for blocked, failed, or unrepresentable solves.

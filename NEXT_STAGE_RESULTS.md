@@ -1001,3 +1001,43 @@ scipy 原始结果探针（gap/节点数/LP 松弛，仅诊断用途）。
 精确匹配缺口）。这指向 C2 的回退分级：超时但 incumbent 存在 → 返回 incumbent 并
 标注 mip_gap（非最优归因）；无 incumbent → 显式自用回退（Q1 已决策）。生产 gap
 策略属 C4 冻结事项，须遵守 R8（不得以放宽精度冒充最优可用率）。
+
+### C2 有限时限可执行回退实现与验证（2026-10-13）
+
+按 C1 根因实现分级回退，全程未改动 `mip_rel_gap=1e-9`（R8）：
+
+- `rolling.py`：MILP 超时（status=1）时提取 HiGHS 返回的 incumbent，但只在
+  **独立复检**通过后才接受——变量边界（含 SOC 上下限）、全部等式/不等式约束行
+  （含互斥与 SOP 契约）、整数性，容差 1e-6；复检不过则维持原空 idle 占位计划。
+  `RollingPlan` 新增 `suboptimal` / `mip_gap` 字段，status 语义不变
+  （`limit_reached` 仍是求解器结果，suboptimal 标记 incumbent 被采用）。
+- `shadow.make_candidate`：suboptimal 计划照常产出 candidate，附加
+  `suboptimal_incumbent=true`、`mip_gap`、`attribution=optimizer-suboptimal-incumbent`；
+  无 incumbent 时返回 `candidate=None`、`fallback=explicit_self_use_mode`、
+  `attribution=non-optimizer-attributed`（Q1 决策落地，替换旧
+  `no_new_command_requires_supervised_policy` 标签）。这是与 A2 `execute_candidate`
+  决策表对接的字段契约。
+- `explainability_evidence.py` 的 rolling.py 哈希 pin 同步更新
+  （`0acf526f`，MODEL_VERSION `shared-milp-0acf526f-cf1`）；sidecar 仅在
+  optimal 时导出，suboptimal 候选不导出证据，E 线契约不变。
+- 离线 `decide()` 路径**未改动**：规则回退与压力测试行为保持不变（刻意控制
+  变更面，离线口径属 A5/F 线）。
+
+**验证（只读，无网络无写入）：**
+
+- 72 次病例重放（`run_limit_fallback_verification.py`，冻结快照 + 因果校准
+  精确 live 路径、单站 2 秒预算）：候选产出 **72/72**（65 optimal + 7 suboptimal
+  incumbent），显式自用回退 0 次（7 次失败全部有 incumbent 可用），
+  suboptimal mip_gap 最大 0.76%、均值 0.40%；对全部 72 张 96 步计划做独立物理
+  审计（互斥、功率/SOC 边界、SOP 放电禁进口、能量动力学、首步电网平衡），
+  **越界 0 次**。产物 `outputs/limit_fallback_verification_20261013_v2/`。
+- 压力场景重跑（新目录 `outputs/stress_closed_loop_post_c2_20261013/`）：
+  8 场景 408 步通过，与改动前基线逐项一致（注入超时时 decide 仍走规则回退，
+  闭环物理约束保持）。
+- 回归测试 **170 passed**（新增 `tests/test_suboptimal_incumbent.py` 10 例：
+  incumbent 接受、SOC/功率/互斥/整数性/NaN 五类拒绝、无 incumbent 占位、
+  shadow 两分支契约）。
+
+**不能声称的部分：** 可用率提升目前只在 72 次病例重放上验证（真实在线争抢环境
+未复测）；suboptimal incumbent 的收益影响未评估（属 F2 冻结参数全量回测范围）；
+生产 gap/预算参数未冻结（C4）；回退路径真实设备写入仍未授权（线 B）。

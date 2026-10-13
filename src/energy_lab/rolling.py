@@ -33,6 +33,50 @@ class RollingPlan:
     objective: float
     status: str
     message: str
+    # Time-limit MILP incumbent: feasible and verified against the original
+    # constraints, but optimality is uncertified. Never set for other statuses.
+    mip_gap: float | None = None
+    suboptimal: bool = False
+
+
+def _plan_from_x(times, x, n, capacity_kwh):
+    """Build the plan table from a solution vector (first 5n entries)."""
+    charge, discharge = x[:n] * 1000, x[n:2 * n] * 1000
+    grid_import, grid_export = x[2 * n:3 * n] * 1000, x[3 * n:4 * n] * 1000
+    energy = x[4 * n:5 * n]
+    flow = np.where(charge > 1e-3, "charge", np.where(discharge > 1e-3, "discharge", "idle"))
+    return pd.DataFrame({
+        "time": pd.to_datetime(times).to_numpy(), "flow": flow,
+        "charge_w": charge, "discharge_w": discharge,
+        "grid_import_w": grid_import, "grid_export_w": grid_export,
+        "soc_end": energy / capacity_kwh * 100,
+        # Plan-level intent only; execution still requires site verification (idle)
+        # or dispatch readback (charge/discharge). Never implies a mode switch.
+        "intended_command_mode": np.where(flow == "idle", "zero_flow_command", "dispatch"),
+    })
+
+
+def _verified_incumbent_x(result, n, lower, upper, a, lo, hi, tol=1e-6):
+    """Return the time-limit incumbent only if it independently satisfies the
+    original model: variable bounds (incl. SOC limits), all equality/inequality
+    rows (incl. mutual exclusivity and the SOP contract), and integrality.
+    A solver claim is never trusted without this recheck."""
+    x = getattr(result, "x", None)
+    fun = getattr(result, "fun", None)
+    if x is None or fun is None or not np.isfinite(fun):
+        return None
+    x = np.asarray(x, dtype=float)
+    if x.shape != (7 * n,) or not np.isfinite(x).all():
+        return None
+    if (x < lower - tol).any() or (x > upper + tol).any():
+        return None
+    lhs = a @ x
+    if (lhs < lo - tol).any() or (lhs > hi + tol).any():
+        return None
+    binaries = x[5 * n:]
+    if (np.minimum(binaries, 1.0 - binaries) > tol).any():
+        return None
+    return x
 
 
 def _validated_first_step(first_step, first_charge_kw, n):
@@ -186,24 +230,21 @@ def optimize_window(
                       bounds=Bounds(lower, upper), constraints=LinearConstraint(a, lo, hi),
                       options={"time_limit": time_limit_seconds, "mip_rel_gap": 1e-9})
     if not result.success:
+        status = {1: "limit_reached", 2: "infeasible", 3: "unbounded"}.get(result.status, "solver_error")
+        if solver == "milp" and result.status == 1:
+            # HiGHS returns its best feasible incumbent on time limit. Accept it
+            # only after the independent recheck; it stays labeled suboptimal.
+            x = _verified_incumbent_x(result, n, lower, upper, a, lo, hi)
+            if x is not None:
+                gap = getattr(result, "mip_gap", None)
+                return RollingPlan(_plan_from_x(times, x, n, capacity_kwh), float(result.fun),
+                                   status, result.message,
+                                   mip_gap=float(gap) if gap is not None and np.isfinite(gap) else None,
+                                   suboptimal=True)
         empty = pd.DataFrame({"time": times, "flow": ["idle"] * n, "charge_w": 0.0, "discharge_w": 0.0,
                               "grid_import_w": 0.0, "grid_export_w": 0.0, "soc_end": soc_percent,
                               "intended_command_mode": ["zero_flow_command"] * n})
-        status = {1: "limit_reached", 2: "infeasible", 3: "unbounded"}.get(result.status, "solver_error")
         return RollingPlan(empty, float("nan"), status, result.message)
     x = result.x
-    charge, discharge = x[:n] * 1000, x[n:2 * n] * 1000
-    grid_import, grid_export = x[2 * n:3 * n] * 1000, x[3 * n:4 * n] * 1000
-    energy = x[4 * n:5 * n]
-    flow = np.where(charge > 1e-3, "charge", np.where(discharge > 1e-3, "discharge", "idle"))
-    plan = pd.DataFrame({
-        "time": pd.to_datetime(times).to_numpy(), "flow": flow,
-        "charge_w": charge, "discharge_w": discharge,
-        "grid_import_w": grid_import, "grid_export_w": grid_export,
-        "soc_end": energy / capacity_kwh * 100,
-        # Plan-level intent only; execution still requires site verification (idle)
-        # or dispatch readback (charge/discharge). Never implies a mode switch.
-        "intended_command_mode": np.where(flow == "idle", "zero_flow_command", "dispatch"),
-    })
     # LP can cycle under sufficiently negative export prices; only MILP enforces exclusivity.
-    return RollingPlan(plan, float(result.fun), "optimal", result.message)
+    return RollingPlan(_plan_from_x(times, x, n, capacity_kwh), float(result.fun), "optimal", result.message)
