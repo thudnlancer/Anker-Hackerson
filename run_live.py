@@ -6,18 +6,20 @@ and all three safety flags in the selected configuration.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 import argparse
 import math
 import sys
 import time
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from energy_lab.config import exchange_ha_token, load_runtime_config, require_runtime_fields
 from energy_lab.ha_client import HAClient
 from energy_lab.model import dispatch
 from energy_lab.sim_client import SimulatorClient
+from energy_lab.shadow import daily_points
+from energy_lab.interface_contract import map_battery_action, state_is_fresh
 
 
 def numeric(value: object) -> float:
@@ -42,10 +44,36 @@ def price_points(response: object) -> list[dict]:
     return []
 
 
+def price_window(response: object) -> list[dict]:
+    """Flatten explicit today/tomorrow price blocks; never wrap one day."""
+    if not isinstance(response, dict) or not any(key in response for key in ("today", "tomorrow")):
+        points = price_points(response)
+        if len(points) < 24:
+            raise RuntimeError(f"simulator returned only {len(points)} price points; need explicit today/tomorrow data")
+        return points
+    return daily_points(response)
+
+
+def current_price_and_future(points: list[dict], device_time: object) -> tuple[dict, list[float]]:
+    stamp = pd.Timestamp(device_time)
+    if stamp.tzinfo is None:
+        api_stamp = next((pd.Timestamp(p["time"]) for p in points if pd.Timestamp(p["time"]).tzinfo is not None), None)
+        if api_stamp is None:
+            raise ValueError("price API timestamps have no timezone")
+        stamp = stamp.tz_localize(api_stamp.tz)
+    frame = pd.DataFrame(points)
+    frame["time"] = pd.to_datetime(frame["time"], utc=True)
+    wanted = stamp.tz_convert("UTC").floor("h")
+    row = frame.loc[frame["time"] == wanted]
+    if row.empty:
+        raise ValueError("price API has no current device-time slot")
+    pos = int(row.index[0])
+    future = frame.iloc[pos + 1:]["import_price"].astype(float).tolist()
+    return row.iloc[0].to_dict(), future
+
+
 def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool) -> list[dict]:
-    prices = price_points(sim.prices())
-    if len(prices) < 24:
-        raise RuntimeError(f"simulator returned only {len(prices)} price points; need at least 24")
+    prices = price_window(sim.prices())
     results: list[dict] = []
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
@@ -56,34 +84,46 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
             if not stamp or not freshness or "unavailable" in str(stamp).lower():
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
-            stamp_text = str(stamp).replace("T", " ")[:19]
-            hour = datetime.strptime(stamp_text, "%Y-%m-%d %H:%M:%S").hour
-            current = prices[hour % len(prices)]
-            future = [numeric(p.get("import_price")) for p in prices[hour + 1 :]]
-            if not future:
-                future = [numeric(p.get("import_price")) for p in prices[:hour]]
+            if not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
+                results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
+                continue
+            current, future = current_price_and_future(prices, stamp)
+            solar_w, load_w, soc = numeric(state.get("solar_power")), numeric(state.get("home_load")), numeric(state.get("soc"))
             flow, watts, reason = dispatch(
                 numeric(current.get("import_price")),
                 numeric(current.get("export_price")),
-                numeric(state.get("solar_power")),
-                numeric(state.get("home_load")),
-                numeric(state.get("soc")),
+                solar_w, load_w, soc,
                 future,
                 float(cfg["capacity_kwh"]),
                 float(cfg["max_power_w"]),
             )
             finite_watts = watts if math.isfinite(watts) else 0.0
+            if flow == "hold":
+                command_flow, command_watts = "hold", 0.0
+                representable, command_reason = True, "hold"
+            else:
+                mapping = map_battery_action(flow, finite_watts, solar_w, load_w,
+                                             limit_w=float(cfg["max_power_w"]))
+                representable, command_reason = mapping.representable, mapping.reason
+                command_flow, command_watts = mapping.flow, float(mapping.target_w or 0.0)
+            if not representable:
+                results.append({"site": site, "status": "unrepresentable_command",
+                                "device_time": stamp, "flow": flow, "power_w": finite_watts,
+                                "reason": command_reason, "write_enabled": False})
+                continue
             record = {
                 "site": site,
                 "device_time": stamp,
                 "flow": flow,
                 "power_w": finite_watts,
+                "command_flow": command_flow,
+                "command_power_w": command_watts,
                 "soc": state.get("soc"),
                 "reason": reason,
                 "write_enabled": write_enabled,
             }
             if write_enabled:
-                ha.set_dispatch(suffix, flow, finite_watts, live=True)
+                ha.set_dispatch(suffix, command_flow, command_watts, live=True)
             results.append(record)
         except Exception as exc:  # isolate one failed station from the other two
             results.append({"site": site, "status": "station_error", "error": str(exc)})

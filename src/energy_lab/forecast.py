@@ -83,18 +83,34 @@ class ForecastModel:
     clip_max: float
 
     def predict(self, history: pd.DataFrame, future: pd.DataFrame) -> pd.DataFrame:
-        history = history.copy()
-        future = future.copy()
-        values = pd.concat([history[self.target], pd.Series(dtype=float)], ignore_index=True)
+        history = history.reset_index(drop=True)
+        future = future.reset_index(drop=True)
+        values = pd.to_numeric(history[self.target], errors="coerce").tolist()
         predictions: list[float] = []
         for i in range(len(future)):
-            combined = pd.concat([history, future.iloc[: i + 1]], ignore_index=True)
-            combined_values = pd.concat([history[self.target], pd.Series(predictions)], ignore_index=True)
-            row = _feature_frame(combined, self.target, combined_values).iloc[[-1]]
-            x = row.reindex(columns=self.features).fillna(0.0)
+            timestamp = pd.Timestamp(future.loc[i, "time"])
+            row: dict[str, float] = {
+                "hour": float(timestamp.hour),
+                "hour_sin": float(np.sin(2 * np.pi * timestamp.hour / 24)),
+                "hour_cos": float(np.cos(2 * np.pi * timestamp.hour / 24)),
+                "day_of_year_sin": float(np.sin(2 * np.pi * timestamp.dayofyear / 365.25)),
+                "day_of_year_cos": float(np.cos(2 * np.pi * timestamp.dayofyear / 365.25)),
+                "day_of_week": float(timestamp.dayofweek),
+            }
+            for col in WEATHER_FEATURES:
+                if col in future.columns:
+                    row[col] = pd.to_numeric(pd.Series([future.loc[i, col]]), errors="coerce").iloc[0]
+            position = len(values)
+            for lag in (1, 24, 168):
+                row[f"lag_{lag}"] = values[position - lag] if position >= lag else np.nan
+            prior = values[max(0, position - 24) : position]
+            finite_prior = [float(value) for value in prior if pd.notna(value)]
+            row["rolling_24"] = float(np.mean(finite_prior)) if len(finite_prior) >= 6 else np.nan
+            x = pd.DataFrame([row]).reindex(columns=self.features).fillna(0.0)
             value = float(self.model.predict(x)[0])
             value = float(np.clip(value, self.clip_min, self.clip_max))
             predictions.append(value)
+            values.append(value)
         return pd.DataFrame({"time": future["time"].to_numpy(), "prediction": predictions})
 
 
@@ -175,6 +191,29 @@ def fit_shared_model(frames: list[pd.DataFrame], target: str, train_fraction: fl
         "weather_features": [c for c in WEATHER_FEATURES if c in frames[0].columns],
     }
     return ForecastModel(target, list(x_train.columns), model, 0.0, max_value), metrics
+
+
+def fit_shared_model_full(frames: list[pd.DataFrame], target: str) -> ForecastModel:
+    """Fit a shared model on all supplied training rows without an internal holdout."""
+    if target not in ("pv", "load"):
+        raise ValueError("target must be pv or load")
+    feature_parts, target_parts = [], []
+    max_value = 1.0
+    for frame in frames:
+        features = _feature_frame(frame, target)
+        usable = features.notna().all(axis=1) & pd.to_numeric(frame[target], errors="coerce").notna()
+        feature_parts.append(features.loc[usable])
+        target_parts.append(frame.loc[usable, target])
+        max_value = max(max_value, float(frame[target].max() * 1.1))
+    x_train = pd.concat(feature_parts, ignore_index=True)
+    y_train = pd.concat(target_parts, ignore_index=True)
+    model = HistGradientBoostingRegressor(
+        max_iter=100, learning_rate=0.08, max_leaf_nodes=15,
+        l2_regularization=2.0, early_stopping=True, validation_fraction=0.1,
+        n_iter_no_change=8, random_state=42,
+    )
+    model.fit(x_train, y_train)
+    return ForecastModel(target, list(x_train.columns), model, 0.0, max_value)
 
 
 def train_folder(folder: Path, model_dir: Path, metrics_path: Path) -> dict:

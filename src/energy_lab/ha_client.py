@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 import requests
+import time
 from .config import canonical_suffix
 
 
@@ -68,7 +69,7 @@ class HAClient:
     def set_dispatch(self, suffix: str, flow: str, watts: float, live: bool = False) -> None:
         if not live:
             return
-        if flow == "hold" or watts <= 0:
+        if flow == "hold":
             self.set_self_consumption(suffix, live=True)
             return
         self.call(
@@ -77,6 +78,8 @@ class HAClient:
             f"select.{suffix}_operating_mode_device_runs_by_command_in_third_party_controlled",
             option="third_party_control",
         )
+        # SOP recommends a short processing gap after changing the mode.
+        time.sleep(1.0)
         self.call("select", "select_option", f"select.{suffix}_grid_flow", option=flow)
         self.call("number", "set_value", f"number.{suffix}_power_control", value=max(0, min(5000, watts)))
 
