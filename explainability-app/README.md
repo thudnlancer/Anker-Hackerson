@@ -30,6 +30,8 @@ python -m pip install --no-deps -e .
 
 本目录现在位于共同策略仓库。使用 `shared-milp-6e2b1ca5-cf1` 的记录直接调用上层 `energy_lab.rolling`，从同一次 shadow 求解导出输入与费用。共同源码、Python 路径和团队交接步骤见 [共同仓库协作接入说明](../EXPLAINABILITY_COLLABORATION.md)。历史提供器仅服务其明确匹配的旧模型版本，不作为共享模型缺失时的替代。
 
+已完成真实 HA 三站读取、现场输入的本地 shadow、证据导入及反事实验收；未来功率仍明确使用持久假设。实际结果与复现方式见 [真实环境只读接入验收](docs/live-readonly-acceptance.md)。
+
 ## 仓库边界
 
 SQLite 运行数据、环境配置、凭证、原始会话日志和大型素材不进入版本控制。已完成共同 MILP 源码适配和人工输入接入验证；真实遥测、HA 控制闭环和官方结算验收依赖实际运行记录。
