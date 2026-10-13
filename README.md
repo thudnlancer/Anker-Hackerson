@@ -2,6 +2,8 @@
 
 本目录是预赛方案的可复现实验骨架，默认只做离线回测和 `dry-run`，不会向现场设备下发控制指令。系统架构基线见 [系统架构 Guideline](SYSTEM_ARCHITECTURE_GUIDELINE.md)，SOP 逐条复核见 [SOP_RECONCILIATION.md](SOP_RECONCILIATION.md)：API 优先、设备时间驱动、HA 实时状态、在线物理校准、SOP 约束滚动策略和回读闭环。
 
+解释框架与中文前端位于 `explainability-app/`。只读 shadow 可显式导出同次 MILP 完整决策证据，反事实工作进程直接调用本仓库策略源码。安装、导出、导入与团队分工见 [协作接入说明](EXPLAINABILITY_COLLABORATION.md)；本次本地验收使用人工输入，HA 闭环与官方结算仍需单独验收。
+
 最新阶段结果见 [后续实验报告](NEXT_STAGE_RESULTS.md)：连续压力审计、100 站点自用基线、80/20 站点留出、SOP 约束重放及真实只读 shadow-run 已完成。API-first 功率路径已接入 shadow；在线主路径仍需完成 HA 物理校准和真实设备回读。辅助预测模型不作为策略启动门槛，当前不能直接将离线动作下发比赛设备。
 
 ## 目录

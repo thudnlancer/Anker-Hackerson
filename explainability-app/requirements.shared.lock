@@ -1,0 +1,10 @@
+# Additional shared-strategy dependencies, Python 3.12.
+# Install together with requirements.lock; numerical dependencies are pinned there.
+charset-normalizer==3.5.2
+cloudpickle==3.1.2
+joblib==1.6.0
+narwhals==2.27.1
+requests==2.34.2
+scikit-learn==1.9.1
+threadpoolctl==3.7.0
+urllib3==2.8.0

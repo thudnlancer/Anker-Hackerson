@@ -1,0 +1,239 @@
+[
+  {
+    "schema_version": 1,
+    "run_id": "demo-four-step-v1",
+    "site_id": "site-01",
+    "decision_id": "decision-0001",
+    "source_kind": "demo",
+    "snapshot": {
+      "device_time": "2026-10-13T00:00:00Z",
+      "observed_at": "2026-10-13T00:00:00Z",
+      "soc_percent": 20.0,
+      "pv_kw": 0.0,
+      "load_kw": 1.0,
+      "capacity_kwh": 14.0,
+      "max_charge_kw": 5.0,
+      "max_discharge_kw": 5.0,
+      "step_hours": 1.0,
+      "soc_min_percent": 0.0,
+      "soc_max_percent": 100.0,
+      "charge_efficiency": 0.95,
+      "discharge_efficiency": 1.0,
+      "pv_forecast_kw": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "load_forecast_kw": [
+        1.0,
+        3.0,
+        3.0,
+        1.0
+      ],
+      "import_eur_kwh": [
+        0.1,
+        0.35,
+        0.4,
+        0.15
+      ],
+      "export_eur_kwh": [
+        0.04,
+        0.04,
+        0.04,
+        0.04
+      ],
+      "terminal_eur_kwh": 0.1,
+      "degradation_eur_kwh": 0.002,
+      "sources": {
+        "pv": "synthetic",
+        "load": "synthetic",
+        "pv_forecast": "synthetic",
+        "load_forecast": "synthetic"
+      },
+      "history_mode": "none",
+      "cache_tail": null,
+      "forecast_status": "ready",
+      "fallback_reason": null,
+      "units": {
+        "power": "kW",
+        "energy": "kWh",
+        "price": "EUR/kWh",
+        "cost": "EUR"
+      }
+    },
+    "action": {
+      "kind": "charge",
+      "power_kw": 5.0,
+      "control_semantics": "battery_charge"
+    },
+    "model_version": "demo-milp-v1",
+    "policy_version": "synthetic-candidate-v1",
+    "solver_status": "optimal",
+    "cost": {
+      "purchase_eur": 0.6000000000000001,
+      "export_revenue_eur": 0.0,
+      "degradation_eur": 0.024,
+      "terminal_credit_eur": 0.054999999999999986,
+      "objective_eur": 0.5690000000000002
+    }
+  },
+  {
+    "schema_version": 1,
+    "run_id": "demo-four-step-v1",
+    "site_id": "site-02",
+    "decision_id": "decision-0001",
+    "source_kind": "demo",
+    "snapshot": {
+      "device_time": "2026-10-13T00:00:00Z",
+      "observed_at": "2026-10-13T00:00:00Z",
+      "soc_percent": 100.0,
+      "pv_kw": 0.0,
+      "load_kw": 1.0,
+      "capacity_kwh": 14.0,
+      "max_charge_kw": 5.0,
+      "max_discharge_kw": 5.0,
+      "step_hours": 1.0,
+      "soc_min_percent": 0.0,
+      "soc_max_percent": 100.0,
+      "charge_efficiency": 0.95,
+      "discharge_efficiency": 1.0,
+      "pv_forecast_kw": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "load_forecast_kw": [
+        1.0,
+        3.0,
+        3.0,
+        1.0
+      ],
+      "import_eur_kwh": [
+        0.1,
+        0.35,
+        0.4,
+        0.15
+      ],
+      "export_eur_kwh": [
+        0.04,
+        0.04,
+        0.04,
+        0.04
+      ],
+      "terminal_eur_kwh": 0.1,
+      "degradation_eur_kwh": 0.002,
+      "sources": {
+        "pv": "synthetic",
+        "load": "synthetic",
+        "pv_forecast": "synthetic",
+        "load_forecast": "synthetic"
+      },
+      "history_mode": "none",
+      "cache_tail": null,
+      "forecast_status": "ready",
+      "fallback_reason": null,
+      "units": {
+        "power": "kW",
+        "energy": "kWh",
+        "price": "EUR/kWh",
+        "cost": "EUR"
+      }
+    },
+    "action": {
+      "kind": "charge",
+      "power_kw": 0.0,
+      "control_semantics": "battery_charge"
+    },
+    "model_version": "demo-milp-v1",
+    "policy_version": "synthetic-candidate-v1",
+    "solver_status": "optimal",
+    "cost": {
+      "purchase_eur": 0.1,
+      "export_revenue_eur": 0.0,
+      "degradation_eur": 0.014,
+      "terminal_credit_eur": 0.7000000000000001,
+      "objective_eur": -0.5860000000000001
+    }
+  },
+  {
+    "schema_version": 1,
+    "run_id": "demo-four-step-v1",
+    "site_id": "site-03",
+    "decision_id": "decision-0001",
+    "source_kind": "demo",
+    "snapshot": {
+      "device_time": "2026-10-13T00:00:00Z",
+      "observed_at": "2026-10-13T00:00:00Z",
+      "soc_percent": 35.0,
+      "pv_kw": 0.0,
+      "load_kw": 1.0,
+      "capacity_kwh": 14.0,
+      "max_charge_kw": 5.0,
+      "max_discharge_kw": 5.0,
+      "step_hours": 1.0,
+      "soc_min_percent": 0.0,
+      "soc_max_percent": 100.0,
+      "charge_efficiency": 0.95,
+      "discharge_efficiency": 1.0,
+      "pv_forecast_kw": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "load_forecast_kw": [
+        1.0,
+        3.0,
+        3.0,
+        1.0
+      ],
+      "import_eur_kwh": [
+        0.1,
+        0.35,
+        0.4,
+        0.15
+      ],
+      "export_eur_kwh": [
+        0.04,
+        0.04,
+        0.04,
+        0.04
+      ],
+      "terminal_eur_kwh": 0.1,
+      "degradation_eur_kwh": 0.002,
+      "sources": {
+        "pv": "synthetic",
+        "load": "synthetic",
+        "pv_forecast": "synthetic",
+        "load_forecast": "assumption"
+      },
+      "history_mode": "frozen_baseline",
+      "cache_tail": "2026-10-11T00:00:00Z",
+      "forecast_status": "fallback",
+      "fallback_reason": "人工演示：历史尾部滞后 48 小时，使用固定负荷假设。",
+      "units": {
+        "power": "kW",
+        "energy": "kWh",
+        "price": "EUR/kWh",
+        "cost": "EUR"
+      }
+    },
+    "action": {
+      "kind": "charge",
+      "power_kw": 2.0,
+      "control_semantics": "battery_charge"
+    },
+    "model_version": "demo-milp-v1",
+    "policy_version": "synthetic-candidate-v1",
+    "solver_status": "optimal",
+    "cost": {
+      "purchase_eur": 0.32999999999999985,
+      "export_revenue_eur": 0.0,
+      "degradation_eur": 0.0176,
+      "terminal_credit_eur": -0.0,
+      "objective_eur": 0.34759999999999985
+    }
+  }
+]

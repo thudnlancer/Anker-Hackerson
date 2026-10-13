@@ -1,0 +1,1313 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "储能可解释性框架",
+    "description": "输入证据、执行事件与结算由外部模块导入；独立工作进程负责反事实。",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "运行"
+        ],
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions": {
+      "post": {
+        "tags": [
+          "接入"
+        ],
+        "summary": "Import Decision",
+        "operationId": "import_decision_api_decisions_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "证据"
+        ],
+        "summary": "List Decisions",
+        "operationId": "list_decisions_api_decisions_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "site_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stations": {
+      "get": {
+        "tags": [
+          "证据"
+        ],
+        "summary": "Stations",
+        "operationId": "stations_api_stations_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/{key}": {
+      "get": {
+        "tags": [
+          "证据"
+        ],
+        "summary": "Decision Detail",
+        "operationId": "decision_detail_api_decisions__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/{key}/explanation": {
+      "get": {
+        "tags": [
+          "解释"
+        ],
+        "summary": "Explanation",
+        "operationId": "explanation_api_decisions__key__explanation_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/{key}/execution-events": {
+      "post": {
+        "tags": [
+          "接入"
+        ],
+        "summary": "Append Execution",
+        "operationId": "append_execution_api_decisions__key__execution_events_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{run_id}/settlements": {
+      "post": {
+        "tags": [
+          "接入"
+        ],
+        "summary": "Import Settlement",
+        "operationId": "import_settlement_api_runs__run_id__settlements_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "证据"
+        ],
+        "summary": "Settlement",
+        "operationId": "settlement_api_runs__run_id__settlements_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/{key}/counterfactuals": {
+      "post": {
+        "tags": [
+          "反事实"
+        ],
+        "summary": "Comparison",
+        "operationId": "comparison_api_decisions__key__counterfactuals_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Intervention"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/counterfactuals/{job_id}": {
+      "get": {
+        "tags": [
+          "反事实"
+        ],
+        "summary": "Task",
+        "operationId": "task_api_counterfactuals__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions": {
+      "post": {
+        "tags": [
+          "解释"
+        ],
+        "summary": "Ask",
+        "operationId": "ask_api_questions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Question"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Action": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "charge",
+              "discharge",
+              "hold"
+            ],
+            "title": "Kind"
+          },
+          "power_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Power Kw"
+          },
+          "control_semantics": {
+            "type": "string",
+            "enum": [
+              "battery_charge",
+              "grid_charge",
+              "grid_export_target",
+              "self_consumption",
+              "external"
+            ],
+            "title": "Control Semantics"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "power_kw",
+          "control_semantics"
+        ],
+        "title": "Action"
+      },
+      "Cost": {
+        "properties": {
+          "purchase_eur": {
+            "type": "number",
+            "title": "Purchase Eur"
+          },
+          "export_revenue_eur": {
+            "type": "number",
+            "title": "Export Revenue Eur"
+          },
+          "degradation_eur": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Degradation Eur"
+          },
+          "terminal_credit_eur": {
+            "type": "number",
+            "title": "Terminal Credit Eur"
+          },
+          "objective_eur": {
+            "type": "number",
+            "title": "Objective Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "purchase_eur",
+          "export_revenue_eur",
+          "degradation_eur",
+          "terminal_credit_eur",
+          "objective_eur"
+        ],
+        "title": "Cost"
+      },
+      "DecisionIn": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Run Id"
+          },
+          "site_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Site Id"
+          },
+          "decision_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Decision Id"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "external"
+            ],
+            "title": "Source Kind"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/Snapshot"
+          },
+          "action": {
+            "$ref": "#/components/schemas/Action"
+          },
+          "model_version": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model Version"
+          },
+          "policy_version": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Policy Version"
+          },
+          "solver_status": {
+            "type": "string",
+            "enum": [
+              "optimal",
+              "feasible",
+              "fallback",
+              "failed",
+              "unknown"
+            ],
+            "title": "Solver Status"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Cost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replay_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplayContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "site_id",
+          "decision_id",
+          "source_kind",
+          "snapshot",
+          "action",
+          "model_version",
+          "policy_version",
+          "solver_status"
+        ],
+        "title": "DecisionIn"
+      },
+      "ExecutionEvent": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Event Id"
+          },
+          "instruction_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Instruction Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "submitted",
+              "confirmed",
+              "failed"
+            ],
+            "title": "Kind"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Issued At"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "device_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Time"
+          },
+          "observed_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Mode"
+          },
+          "observed_power_kw": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Power Kw"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "instruction_id",
+          "kind",
+          "issued_at"
+        ],
+        "title": "ExecutionEvent"
+      },
+      "FirstStep": {
+        "properties": {
+          "charge_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Charge Kw"
+          },
+          "discharge_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Discharge Kw"
+          },
+          "grid_import_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Grid Import Kw"
+          },
+          "grid_export_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Grid Export Kw"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "charge_kw",
+          "discharge_kw",
+          "grid_import_kw",
+          "grid_export_kw"
+        ],
+        "title": "FirstStep"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Intervention": {
+        "properties": {
+          "first_charge_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "First Charge Kw"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "first_charge_kw"
+        ],
+        "title": "Intervention"
+      },
+      "Provenance": {
+        "properties": {
+          "origin": {
+            "type": "string",
+            "enum": [
+              "external_adapter",
+              "historical_log",
+              "model_validation"
+            ],
+            "title": "Origin"
+          },
+          "input_kind": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "mixed",
+              "synthetic",
+              "incomplete"
+            ],
+            "title": "Input Kind"
+          },
+          "references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "References"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "origin",
+          "input_kind"
+        ],
+        "title": "Provenance"
+      },
+      "Question": {
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Decision Id"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision_id",
+          "question"
+        ],
+        "title": "Question"
+      },
+      "ReplayContext": {
+        "properties": {
+          "upstream_source_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Upstream Source Sha256"
+          },
+          "command_contract": {
+            "type": "string",
+            "enum": [
+              "battery",
+              "sop"
+            ],
+            "title": "Command Contract"
+          },
+          "first_step": {
+            "$ref": "#/components/schemas/FirstStep"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "upstream_source_sha256",
+          "command_contract",
+          "first_step"
+        ],
+        "title": "ReplayContext"
+      },
+      "SettlementIn": {
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Event Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "complete"
+            ],
+            "title": "Status"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "demo",
+              "official"
+            ],
+            "title": "Source Kind"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window End"
+          },
+          "saving_settled_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Settled Percent"
+          },
+          "saving_settled_eur": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Settled Eur"
+          },
+          "raw_fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Raw Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "event_id",
+          "status",
+          "source_kind",
+          "captured_at",
+          "window_start",
+          "window_end"
+        ],
+        "title": "SettlementIn"
+      },
+      "Snapshot": {
+        "properties": {
+          "device_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Device Time"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          },
+          "soc_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Soc Percent"
+          },
+          "pv_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Pv Kw"
+          },
+          "load_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Load Kw"
+          },
+          "capacity_kwh": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Capacity Kwh"
+          },
+          "max_charge_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Max Charge Kw"
+          },
+          "max_discharge_kw": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Max Discharge Kw"
+          },
+          "step_hours": {
+            "type": "number",
+            "maximum": 24.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Step Hours",
+            "default": 1
+          },
+          "soc_min_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Soc Min Percent",
+            "default": 0
+          },
+          "soc_max_percent": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Soc Max Percent",
+            "default": 100
+          },
+          "charge_efficiency": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Charge Efficiency",
+            "default": 0.95
+          },
+          "discharge_efficiency": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Discharge Efficiency",
+            "default": 1
+          },
+          "pv_forecast_kw": {
+            "items": {
+              "type": "number",
+              "minimum": 0.0
+            },
+            "type": "array",
+            "maxItems": 96,
+            "title": "Pv Forecast Kw"
+          },
+          "load_forecast_kw": {
+            "items": {
+              "type": "number",
+              "minimum": 0.0
+            },
+            "type": "array",
+            "maxItems": 96,
+            "title": "Load Forecast Kw"
+          },
+          "import_eur_kwh": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 96,
+            "title": "Import Eur Kwh"
+          },
+          "export_eur_kwh": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 96,
+            "title": "Export Eur Kwh"
+          },
+          "terminal_eur_kwh": {
+            "type": "number",
+            "title": "Terminal Eur Kwh",
+            "default": 0
+          },
+          "degradation_eur_kwh": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Degradation Eur Kwh",
+            "default": 0
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "observed",
+                "predicted",
+                "synthetic",
+                "assumption",
+                "unknown"
+              ]
+            },
+            "type": "object",
+            "title": "Sources"
+          },
+          "history_mode": {
+            "type": "string",
+            "enum": [
+              "none",
+              "live_history",
+              "frozen_baseline"
+            ],
+            "title": "History Mode",
+            "default": "none"
+          },
+          "cache_tail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Tail"
+          },
+          "forecast_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "fallback",
+              "unavailable"
+            ],
+            "title": "Forecast Status"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "units": {
+            "$ref": "#/components/schemas/Units"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_time",
+          "observed_at",
+          "soc_percent",
+          "pv_kw",
+          "load_kw",
+          "capacity_kwh",
+          "max_charge_kw",
+          "max_discharge_kw",
+          "sources",
+          "forecast_status"
+        ],
+        "title": "Snapshot"
+      },
+      "Units": {
+        "properties": {
+          "power": {
+            "type": "string",
+            "const": "kW",
+            "title": "Power",
+            "default": "kW"
+          },
+          "energy": {
+            "type": "string",
+            "const": "kWh",
+            "title": "Energy",
+            "default": "kWh"
+          },
+          "price": {
+            "type": "string",
+            "const": "EUR/kWh",
+            "title": "Price",
+            "default": "EUR/kWh"
+          },
+          "cost": {
+            "type": "string",
+            "const": "EUR",
+            "title": "Cost",
+            "default": "EUR"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "Units"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
