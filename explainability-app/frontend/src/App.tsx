@@ -1,16 +1,19 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { api, type Cost, type Decision, type Explanation, type Job, type Overview, type Provenance, type QuestionAnswer, type Scenario, type Settlement, type Station } from './api';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { api, type CollectionStatus, type Cost, type Decision, type Explanation, type Job, type Overview, type Provenance, type QuestionAnswer, type RecordFreshness, type Scenario, type Settlement, type Station } from './api';
 
 type View = { kind: 'overview' } | { kind: 'decision'; id: string } | { kind: 'comparison'; id: string };
 const actionNames: Record<string, string> = { charge: '充电', discharge: '放电', hold: '保持策略', self_consumption: '自用模式' };
 const statusNames: Record<string, string> = {
-  candidate: '候选建议', candidate_only: '候选建议', submitted: '已提交', confirmed: '回读已确认', failed: '失败',
+  candidate: '候选建议', candidate_only: '候选建议', submitted: '已提交', confirmed: '回读已确认', confirmation_unverified: '回读记录待核验', failed: '失败',
   optimal: '求解成功', feasible: '可行解', ready: '可用', unavailable: '预测不可用', api_first: 'API 优先', api_ready: 'API 可用',
   model_unready: '模型未就绪', persistence: '当前观测延续', persistence_fallback: '已回退', fallback: '已回退',
   stale_history: '历史已过期', history_stale: '历史已过期', historical: '历史模型', demo: '人工演示',
   queued: '等待计算', running: '计算中', infeasible: '约束不可行', timeout: '计算超时', unsupported: '能力不可用',
 };
 function label(value: string) { return statusNames[value] ?? value; }
+function timelineStatus(event: Decision['execution_events'][number], source: string) {
+  return source === 'external' && event.kind === 'confirmed' && event.verification_status === 'unverified' ? 'confirmation_unverified' : event.kind;
+}
 function controlLabel(value: string) { return ({ battery_charge: '电池充电功率', grid_charge: '并网点购电目标', grid_export_target: '并网点输出目标', self_consumption: '家庭自用', external: '外部定义' } as Record<string, string>)[value] ?? value; }
 function sourceLabel(value: string) { return ({ price: '电价来源', weather: '天气来源', pv: '光伏观测来源', load: '负载观测来源', soc: '电量来源', pv_forecast: '光伏预测来源', load_forecast: '负载预测来源' } as Record<string, string>)[value] ?? value; }
 function sourceValueLabel(value: string) { return ({ observed: '当前观测', predicted: '预测结果', synthetic: '人工数据', assumption: '模型假设', unknown: '来源未知' } as Record<string, string>)[value] ?? value; }
@@ -31,14 +34,25 @@ function isModelValidation(source: string, sources?: Record<string, string>, pro
 }
 function money(value: number, digits = 4) { return `€${value.toFixed(digits)}`; }
 function power(value: number) { return `${value.toFixed(2)} kW`; }
-function time(value: string | null | undefined, full = false) {
+function time(value: string | null | undefined, full = false, seconds = false) {
   if (!value) return '未提供';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'UTC', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     ...(full ? { year: 'numeric' } : {}),
+    ...(seconds ? { second: '2-digit' } : {}),
   }).format(parsed);
+}
+function recordAge(serverTime?: string | null, observedAt?: string | null) {
+  if (!serverTime || !observedAt) return '未提供';
+  const elapsed = Date.parse(serverTime) - Date.parse(observedAt);
+  if (!Number.isFinite(elapsed) || elapsed < 0) return '时钟待核验';
+  const seconds = Math.floor(elapsed / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时 ${Math.floor(seconds % 3600 / 60)} 分`;
+  return `${Math.floor(seconds / 86400)} 天 ${Math.floor(seconds % 86400 / 3600)} 小时`;
 }
 function currentView(): View {
   const segments = window.location.hash.replace(/^#\/?/, '').split('/');
@@ -67,7 +81,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.info}</svg>;
 }
 function Badge({ value, tone }: { value: string; tone?: 'green' | 'amber' | 'muted' | 'red' }) {
-  const inferred = /failed|infeasible|timeout/.test(value) ? 'red' : /fallback|stale|unready|submitted|unsupported/.test(value) ? 'amber' : /optimal|ready|confirmed/.test(value) ? 'green' : 'muted';
+  const inferred = /failed|infeasible|timeout/.test(value) ? 'red' : /fallback|stale|unready|submitted|unsupported|unverified/.test(value) ? 'amber' : /optimal|ready|confirmed/.test(value) ? 'green' : 'muted';
   return <span className={`badge badge-${tone ?? inferred}`}><span className="badge-dot" />{label(value)}</span>;
 }
 function SourceBadge({ source, sources, provenance }: { source: string; sources?: Record<string, string>; provenance?: Provenance | null }) {
@@ -92,11 +106,20 @@ function BatteryRing({ percent }: { percent: number }) {
     <div><strong>{percent.toFixed(0)}<small>%</small></strong><span>SOC 电量</span></div>
   </div>;
 }
-function StationCard({ station, index, settlement }: { station: Station; index: number; settlement: Settlement | null }) {
+function FreshnessBadge({ value }: { value?: RecordFreshness | null }) {
+  const names: Record<RecordFreshness, string> = { fresh: '记录新鲜', stale: '记录过期', unknown: '新鲜度未知', clock_unverified: '采集时钟待核验' };
+  return <Badge value={value ? names[value] : '新鲜度未提供'} tone={value === 'fresh' ? 'green' : value === 'stale' || value === 'clock_unverified' ? 'amber' : 'muted'} />;
+}
+function CollectionInfo({ collection }: { collection?: CollectionStatus | null }) {
+  const names: Record<CollectionStatus['state'], string> = { running: '采集器运行中', stopped: '采集器已停止', degraded: '采集器状态异常', unknown: '采集器状态未知' };
+  return <section className="collection-bar" aria-label="持续采集状态"><div className="collection-main"><Icon name="clock" size={17} /><Badge value={collection ? names[collection.state] : '采集状态未提供'} tone={collection?.state === 'running' ? 'green' : collection?.state === 'degraded' ? 'amber' : 'muted'} /><span>三站整轮最近成功（UTC）：<strong>{time(collection?.last_success_at, true, true)}</strong></span></div>{collection?.poll_interval_seconds != null && <span className="collection-policy">采集轮询 {collection.poll_interval_seconds} 秒{collection.freshness_threshold_seconds != null ? ` · 记录有效期 ${collection.freshness_threshold_seconds} 秒` : ''}</span>}{collection?.updated_at && <p>采集状态更新（UTC）：{time(collection.updated_at, true, true)}</p>}{collection?.last_error && <p className="collection-error">最近采集错误（UTC）：{time(collection.last_error_at, true, true)} · {collection.last_error}</p>}</section>;
+}
+function StationCard({ station, index, settlement, serverTime }: { station: Station; index: number; settlement: Settlement | null; serverTime?: string | null }) {
   return <article className="station-card">
     <div className="station-card-top"><span className="site-label">SITE {String(index + 1).padStart(2, '0')}</span><SourceBadge source={station.source_kind} sources={station.sources} provenance={station.provenance} /></div>
     <h3>{station.site_id}</h3>
-    <p className="device-time"><Icon name="clock" size={14} />{time(station.device_time)} UTC · 设备时间</p>
+    <p className="device-time"><Icon name="clock" size={14} />设备时钟（UTC）：{time(station.device_time, true, true)}</p>
+    <div className="record-meta"><span>采集墙钟（UTC）：{time(station.observed_at, true, true)}</span><div><span>记录年龄（响应时）：{recordAge(serverTime, station.observed_at)}</span><FreshnessBadge value={station.record_freshness} /></div></div>
     <div className="station-energy"><BatteryRing percent={station.soc_percent} /><div className="energy-readings"><div><Icon name="sun" /><span>快照光伏<strong>{power(station.pv_kw)}</strong></span></div><div><Icon name="home" /><span>输入负载<strong>{power(station.load_kw)}</strong></span></div></div></div>
     <div className="recommendation"><span>当前建议</span><strong>{actionNames[station.action.kind] ?? station.action.kind}<em>{power(station.action.power_kw)}</em></strong></div>
     <p className="control-note" style={{ margin: '7px 0 0' }}>功率含义：{controlLabel(station.action.control_semantics)}</p>
@@ -105,32 +128,58 @@ function StationCard({ station, index, settlement }: { station: Station; index: 
     <button className="card-link" onClick={() => navigate(`/decisions/${encodeURIComponent(station.id)}`)}>查看决策依据<Icon name="arrow" size={17} /></button>
   </article>;
 }
-function OverviewPage({ selectedRun, selectRun }: { selectedRun: string; selectRun: (run: string) => void }) {
+function OverviewPage({ selectedRun, selectRun, automatic, setAutomatic }: { selectedRun: string; selectRun: (run: string) => void; automatic: boolean; setAutomatic: (value: boolean) => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [refresh, setRefresh] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const automaticRef = useRef(automatic);
+  automaticRef.current = automatic;
+  const controls = useRef<{ refresh: () => void; automatic: (enabled: boolean) => void } | null>(null);
   useEffect(() => {
-    let active = true;
-    setLoading(true); setError('');
-    api.stations(selectedRun || undefined).then((next) => {
-      if (active) { setData(next); if (!selectedRun && next.run_id) selectRun(next.run_id); }
-    }).catch((reason: Error) => { if (active) setError(reason.message); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [selectedRun, selectRun, refresh]);
+    let active = true; let inFlight = false; let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    setError('');
+    function schedule() {
+      clearTimeout(timer);
+      if (active && automaticRef.current && !document.hidden) timer = setTimeout(() => void load(), 10_000);
+    }
+    async function load() {
+      if (!active || inFlight) return;
+      clearTimeout(timer); inFlight = true; setLoading(true);
+      controller = new AbortController();
+      try {
+        const next = await api.stations(selectedRun || undefined, controller.signal);
+        if (active) { setData(next); setError(''); setLastUpdated(new Date().toISOString()); if (!selectedRun && next.run_id) selectRun(next.run_id); }
+      } catch (reason) { if (active) setError((reason as Error).message); }
+      finally { inFlight = false; if (active) { setLoading(false); schedule(); } }
+    }
+    controls.current = {
+      refresh: () => void load(),
+      automatic: (enabled) => { automaticRef.current = enabled; clearTimeout(timer); if (enabled && !document.hidden) void load(); },
+    };
+    const visible = () => { clearTimeout(timer); if (!document.hidden && automaticRef.current) void load(); };
+    document.addEventListener('visibilitychange', visible);
+    if (!document.hidden) void load(); else setLoading(false);
+    return () => { active = false; clearTimeout(timer); controller?.abort(); controls.current = null; document.removeEventListener('visibilitychange', visible); };
+  }, [selectedRun, selectRun]);
+  const refresh = () => controls.current?.refresh();
+  const toggleAutomatic = () => { const next = !automatic; setAutomatic(next); controls.current?.automatic(next); };
   const activeData = !selectedRun || data?.run_id === selectedRun ? data : null;
   const stations = activeData?.stations ?? [];
   const confirmed = stations.filter((station) => station.execution_status === 'confirmed').length;
   const fallback = stations.filter((station) => /fallback|stale|unready|persistence/.test(station.forecast_status)).length;
   const modelValidation = stations.length > 0 && stations.every((station) => isModelValidation(station.source_kind, station.sources, station.provenance));
   return <>
-    <PageTitle eyebrow="ENERGY DECISION OBSERVATORY" title="让每一度电都有理由" description="看懂当前建议，比较替代方案，追踪真实执行。" action={<button className="button secondary" onClick={() => setRefresh((n) => n + 1)} disabled={loading}><Icon name="refresh" size={17} />刷新记录</button>} />
+    <PageTitle eyebrow="ENERGY DECISION OBSERVATORY" title="让每一度电都有理由" description="看懂当前建议，比较替代方案，追踪真实执行。" action={<div className="refresh-controls"><button className={`button secondary ${automatic ? 'automatic-on' : ''}`} onClick={toggleAutomatic} aria-label={automatic ? '暂停自动刷新' : '开启自动刷新'} aria-pressed={automatic}><Icon name="clock" size={17} />{automatic ? '自动刷新 · 10秒' : '自动刷新已暂停'}</button><button className="button secondary" onClick={refresh} disabled={loading}><Icon name="refresh" size={17} />刷新记录</button></div>} />
     <div className="context-bar"><div className="run-select"><label htmlFor="run-select">当前场次</label><select id="run-select" value={selectedRun} onChange={(event) => selectRun(event.target.value)}>{!selectedRun && <option value="">最近场次</option>}{data?.runs.map((run) => <option key={run.run_id} value={run.run_id}>{run.run_id}{isDemo(run.source_kind) ? ' · 人工演示' : ''}</option>)}</select></div><div className="context-note"><Icon name="shield" size={17} />{modelValidation ? '人工输入验证模型接入 · 执行与结算依据独立记录' : stations.length && stations.every((station) => isDemo(station.source_kind)) ? '人工场景 · 未连接设备控制 · 无官方结算' : '页面依据导入记录展示状态'}</div></div>
-    {error && <ErrorBox message={error} retry={() => setRefresh((n) => n + 1)} />}
-    {!activeData && loading ? <Loading /> : !activeData && error ? null : <>
+    <p className="page-update">页面最近更新（UTC）：{time(lastUpdated, true, true)}{activeData ? ' · 状态与年龄以此次响应为准' : ''}{loading && activeData ? ' · 正在读取新记录…' : ''}{error && activeData ? ' · 刷新失败，显示上次成功记录' : ''}</p>
+    {error && <ErrorBox message={error} retry={refresh} />}
+    {activeData && <CollectionInfo collection={activeData.collection} />}
+    {!activeData ? loading ? <Loading /> : error ? null : <div className="empty-state"><h2>尚未读取站点记录</h2><p>页面隐藏时暂停自动读取，可切回页面或手动刷新。</p></div> : <>
       <div className="summary-strip"><div><span className="metric-icon"><Icon name="grid" /></span><span>站点记录<strong>{stations.length}<small>个</small></strong></span></div><div><span className="metric-icon"><Icon name="check" /></span><span>回读确认<strong>{confirmed}<small>个</small></strong></span></div><div><span className="metric-icon amber"><Icon name="info" /></span><span>回退或延续估计<strong>{fallback}<small>个</small></strong></span></div><div><span className="metric-icon"><Icon name="sun" /></span><span>快照光伏合计<strong>{stations.reduce((total, station) => total + station.pv_kw, 0).toFixed(2)}<small>kW</small></strong></span></div></div>
       <div className="section-heading"><h2>站点决策</h2><span>每条建议都关联独立快照</span></div>
-      {stations.length ? <div className="station-grid">{stations.map((station, index) => <StationCard station={station} index={index} settlement={activeData?.settlement ?? null} key={station.id} />)}</div> : <div className="empty-state"><Icon name="battery" size={32} /><h2>这个场次还没有决策</h2><p>通过决策导入接口添加记录，或运行演示数据初始化命令。</p></div>}
+      {stations.length ? <div className="station-grid">{stations.map((station, index) => <StationCard station={station} index={index} settlement={activeData?.settlement ?? null} serverTime={activeData?.server_time} key={station.id} />)}</div> : <div className="empty-state"><Icon name="battery" size={32} /><h2>这个场次还没有决策</h2><p>通过决策导入接口添加记录，或运行演示数据初始化命令。</p></div>}
       <div className="explainer-strip"><div className="explainer-icon"><Icon name="shield" size={24} /></div><div><h3>建议、执行和收益，各有证据</h3><p>求解成功表示找到可行方案。只有关联指令的回读记录才能确认执行；官方收益需要结算结果。</p></div><span className="outline-label">事实优先</span></div>
     </>}
   </>;
@@ -167,6 +216,18 @@ function CompareForm({ decision }: { decision: Decision }) {
   }
   return <section className="panel compare-request"><div className="panel-heading"><Icon name="compare" /><h2>如果首步换一种做法</h2></div><p>固定首步电池充电功率，重新优化后续计划。</p>{!decision.capabilities.counterfactual ? <div className="capability-note"><Badge value="unsupported" /><p>该记录尚未注册对应模型，无法计算替代方案。</p></div> : <form onSubmit={(event) => void submit(event)}><label htmlFor="first-charge">首步电池充电功率</label><div className="compare-input"><input id="first-charge" type="number" min="0" max={decision.snapshot.max_charge_kw} step="0.01" required value={value} onChange={(event) => setValue(event.target.value)} /><span>kW</span></div><small>0 kW 表示首步禁止电池充电；控制动作由策略模块定义。</small><button className="button primary full" disabled={busy}>{busy ? '创建任务…' : '计算替代方案'}<Icon name="arrow" size={17} /></button></form>}{error && <ErrorBox message={error} />}</section>;
 }
+function ReadbackTable({ decision }: { decision: Decision }) {
+  const readbacks = decision.execution_evidence?.readbacks ?? [];
+  const statuses = { verified: '提交后遥测一致', pending: '待回读', mismatch: '不一致', unsupported: '缺少支持证据' };
+  const reasons: Record<string, string> = {
+    missing_submission: '缺少对应提交回执', awaiting_readback: '等待回读', awaiting_device_tick: '等待提交后的设备时刻',
+    awaiting_fresh_readback: '等待提交后的新回读', stale_readback: '回读记录过期', clock_unverified: '时钟待核验',
+    identity_mismatch: '指令或决策身份不一致', command_state_mismatch: '控制模式或方向不一致', setpoint_mismatch: '控制目标不一致',
+    power_balance_mismatch: '功率收支不一致', unexpected_grid_import: '发生非预期购电', battery_mutual_exclusion: '电池同时充放电',
+    grid_mutual_exclusion: '并网点同时购售电', opposite_battery_flow: '电池出现相反方向功率', power_mismatch: '实际功率与指令不一致',
+  };
+  return <section className="panel readback-panel"><div className="panel-heading"><Icon name="shield" /><h2>关联指令的回读证据</h2><span className="outline-label">只读</span></div>{!readbacks.length ? <p className="muted">尚无关联指令的回读证据</p> : <><div className="table-scroll"><table className="readback-table"><caption className="sr-only">关联指令的回读状态与验证原因</caption><thead><tr><th>指令</th><th>回读状态</th><th>采集墙钟（UTC）</th><th>验证原因</th></tr></thead><tbody>{readbacks.map((entry, index) => <tr key={`${entry.observation.observation_id ?? 'observation'}-${index}`}><td>{entry.observation.instruction_id ?? '未提供'}</td><td><Badge value={statuses[entry.verification.status] ?? entry.verification.status} tone={entry.verification.status === 'verified' ? 'green' : entry.verification.status === 'mismatch' ? 'red' : 'amber'} /></td><td>{time(entry.observation.observed_at, true, true)}</td><td>{entry.verification.reasons?.length ? entry.verification.reasons.map((code) => reasons[code] ?? code).join('；') : '无附加原因'}</td></tr>)}</tbody></table></div><p className="scope-note">遥测一致表示提交后的观测与指令相符，不代表设备返回了指令的硬件确认。</p></>}</section>;
+}
 function DecisionPage({ id }: { id: string }) {
   const [data, setData] = useState<Decision | null>(null); const [explanation, setExplanation] = useState<Explanation | null>(null);
   const [error, setError] = useState(''); const [refresh, setRefresh] = useState(0); const [loading, setLoading] = useState(true);
@@ -183,12 +244,15 @@ function DecisionPage({ id }: { id: string }) {
     <PageTitle eyebrow="DECISION EVIDENCE" title={`${data.site_id} · 决策依据`} description={`设备时间 ${time(snapshot.device_time, true)} UTC · 场次 ${data.run_id}`} action={<SourceBadge source={data.source_kind} sources={snapshot.sources} provenance={data.provenance} />} />
     <div className="decision-hero"><div><p>当前策略建议</p><h2>{actionNames[data.action.kind] ?? data.action.kind}<span>{power(data.action.power_kw)}</span></h2><p className="hero-reason">{explanation.summary}</p><span className="control-note">功率含义：{controlLabel(data.action.control_semantics)}</span></div><BatteryRing percent={snapshot.soc_percent} /></div>
     <StatusGrid solver={data.solver_status} forecast={snapshot.forecast_status} execution={data.execution_status} settlement={data.settlement} />
+    <CollectionInfo collection={data.collection} />
+    <p className="detail-status-snapshot">采集状态为读取详情时的快照（服务响应 UTC 时间：{time(data.server_time, true, true)}）；返回总览刷新当前状态。</p>
     <div className="detail-layout"><div className="detail-main">
       <section className="panel"><div className="panel-heading"><Icon name="shield" /><h2>为什么这样做</h2><span className="outline-label">规则生成 · 有证据</span></div><div className="fact-list">{explanation.facts.map((fact, index) => <article className="fact" key={fact.id}><span className="fact-number">{String(index + 1).padStart(2, '0')}</span><div><p>{fact.text}</p><EvidenceRefs values={fact.evidence_refs} /></div></article>)}</div><p className="scope-note">{explanation.scope}</p></section>
       <section className="panel"><div className="panel-heading"><Icon name="sun" /><h2>数据与假设</h2></div><div className="data-summary"><div><span>输入光伏</span><strong>{power(snapshot.pv_kw)}</strong></div><div><span>输入负载</span><strong>{power(snapshot.load_kw)}</strong></div><div><span>充电上限</span><strong>{power(snapshot.max_charge_kw)}</strong></div><div><span>步长</span><strong>{snapshot.step_hours} 小时</strong></div></div><SeriesChart values={snapshot.import_eur_kwh} title="购电价格" /><div className="source-grid">{Object.entries(snapshot.sources).map(([key, value]) => <div key={key}><span>{sourceLabel(key)}</span><strong>{sourceValueLabel(value)}</strong></div>)}<div><span>历史模式</span><strong>{historyLabel(snapshot.history_mode)}</strong></div><div><span>历史尾部（UTC）</span><strong>{time(snapshot.cache_tail, true)}</strong></div></div>{snapshot.fallback_reason && <div className="fallback-note"><Icon name="info" /><div><strong>当前使用降级方案</strong><p>{snapshot.fallback_reason}</p></div></div>}</section>
-      <section className="panel"><div className="panel-heading"><Icon name="clock" /><h2>执行时间线</h2><Badge value={data.execution_status} /></div><div className="timeline"><div className="timeline-item"><span className="timeline-dot" /><div><strong>候选决策已生成</strong><p>{time(data.created_at, true)} UTC · {data.decision_id}</p></div></div>{data.execution_events.map((event) => <div className={`timeline-item ${event.kind}`} key={event.event_id}><span className="timeline-dot" /><div><strong>{label(event.kind)}</strong><p>{time(event.observed_at ?? event.issued_at, true)} UTC · 指令 {event.instruction_id}</p>{event.device_time && <p>设备时间 {time(event.device_time, true)} UTC</p>}{event.note && <p>{event.note}</p>}{event.observed_mode && <p>回读：{event.observed_mode}{event.observed_power_kw != null ? ` · ${power(event.observed_power_kw)}` : ''}</p>}</div></div>)}</div>{!data.execution_events.length && <p className="scope-note">目前只有建议，尚无指令提交或设备回读记录。</p>}</section>
+      <section className="panel"><div className="panel-heading"><Icon name="clock" /><h2>执行时间线</h2><Badge value={data.execution_status} /></div><div className="timeline"><div className="timeline-item"><span className="timeline-dot" /><div><strong>候选决策已生成</strong><p>{time(data.created_at, true)} UTC · {data.decision_id}</p></div></div>{data.execution_events.map((event) => <div className={`timeline-item ${timelineStatus(event, data.source_kind)}`} key={event.event_id}><span className="timeline-dot" /><div><strong>{label(timelineStatus(event, data.source_kind))}</strong><p>{time(event.observed_at ?? event.issued_at, true)} UTC · 指令 {event.instruction_id}</p>{event.device_time && <p>设备时间 {time(event.device_time, true)} UTC</p>}{event.note && <p>{event.note}</p>}{event.observed_mode && <p>回读：{event.observed_mode}{event.observed_power_kw != null ? ` · ${power(event.observed_power_kw)}` : ''}</p>}</div></div>)}</div>{!data.execution_events.length && <p className="scope-note">目前只有建议，尚无指令提交或设备回读记录。</p>}</section>
+      <ReadbackTable decision={data} />
       <QuestionBox decision={data} />
-    </div><aside className="detail-aside"><CompareForm decision={data} /><section className="panel"><div className="panel-heading"><h2>预计费用</h2></div><CostBreakdown cost={data.cost} /><p className="scope-note">费用依据本次输入及模型假设计算。{settlementLabel(data.settlement)}。</p>{data.settlement && <pre className="settlement-record">{JSON.stringify(data.settlement, null, 2)}</pre>}</section><section className="panel provenance-panel"><h2>证据留档</h2><dl><dt>模型版本</dt><dd>{data.model_version}</dd><dt>策略版本</dt><dd>{data.policy_version}</dd><dt>决策 ID</dt><dd>{data.decision_id}</dd><dt>快照 SHA-256</dt><dd className="hash">{data.snapshot_hash}</dd></dl></section></aside></div>
+    </div><aside className="detail-aside"><CompareForm decision={data} /><section className="panel"><div className="panel-heading"><h2>预计费用</h2></div><CostBreakdown cost={data.cost} /><p className="scope-note">费用依据本次输入及模型假设计算。{settlementLabel(data.settlement)}。</p>{data.settlement && <pre className="settlement-record">{JSON.stringify(data.settlement, null, 2)}</pre>}</section><section className="panel provenance-panel"><h2>证据留档</h2><dl><dt>采集墙钟（UTC）</dt><dd>{time(snapshot.observed_at, true, true)}</dd><dt>记录年龄（响应时）</dt><dd>{recordAge(data.server_time, snapshot.observed_at)}</dd><dt>入库墙钟（UTC）</dt><dd>{time(data.created_at, true, true)}</dd><dt>模型版本</dt><dd>{data.model_version}</dd><dt>策略版本</dt><dd>{data.policy_version}</dd><dt>决策 ID</dt><dd>{data.decision_id}</dd><dt>快照 SHA-256</dt><dd className="hash">{data.snapshot_hash}</dd></dl></section></aside></div>
   </>;
 }
 function PlanTable({ scenario }: { scenario: Scenario }) {
@@ -234,7 +298,7 @@ function ComparisonPage({ id }: { id: string }) {
   </>;
 }
 export default function App() {
-  const [view, setView] = useState<View>(currentView); const [selectedRun, setSelectedRun] = useState('');
+  const [view, setView] = useState<View>(currentView); const [selectedRun, setSelectedRun] = useState(''); const [automatic, setAutomatic] = useState(true);
   useEffect(() => { const listener = () => { setView(currentView()); window.scrollTo?.(0, 0); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []);
-  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : '替代方案'}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : <ComparisonPage id={view.id} key={view.id} />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
+  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : '替代方案'}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} automatic={automatic} setAutomatic={setAutomatic} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : <ComparisonPage id={view.id} key={view.id} />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
 }

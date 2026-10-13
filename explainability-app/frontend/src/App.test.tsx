@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import type { Decision, Explanation, Job, Overview } from './api';
 
@@ -69,7 +69,9 @@ function mockApi(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   window.location.hash = '#/';
   vi.stubGlobal('scrollTo', vi.fn());
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
 });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('储能解释用户流程', () => {
   it('呈现人工来源、候选建议与正确场次，刷新保持选择', async () => {
@@ -79,6 +81,9 @@ describe('储能解释用户流程', () => {
     expect(screen.getByText('候选建议')).toBeInTheDocument();
     expect(screen.getByText('求解成功')).toBeInTheDocument();
     expect(screen.getByText('未结算')).toBeInTheDocument();
+    expect(screen.getByText('记录年龄（响应时）：未提供')).toBeInTheDocument();
+    expect(screen.getByText('新鲜度未提供')).toBeInTheDocument();
+    expect(screen.getByText('采集状态未提供')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('当前场次'), { target: { value: 'external-run' } });
     expect(await screen.findByText('这个场次还没有决策')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '刷新记录' }));
@@ -218,5 +223,138 @@ describe('储能解释用户流程', () => {
     expect(await screen.findByText(expected)).toBeInTheDocument();
     if (status === 'pending') expect(screen.queryByText('官方已结算')).not.toBeInTheDocument();
     if (source === 'demo') expect(screen.queryByText('官方已结算')).not.toBeInTheDocument();
+  });
+  it('采集年龄只使用响应墙钟，设备虚拟时钟单独展示', async () => {
+    const timedOverview: Overview = {
+      ...overview, server_time: '2026-10-13T01:00:42Z',
+      stations: overview.stations.map((station) => ({ ...station, device_time: '2027-06-30T04:00:00Z', observed_at: '2026-10-13T01:00:00Z', created_at: '2026-10-13T01:00:02Z', record_freshness: 'fresh' })),
+      collection: { state: 'running', last_success_at: '2026-10-13T01:00:00Z', updated_at: '2026-10-13T01:00:40Z', poll_interval_seconds: 5, freshness_threshold_seconds: 60 },
+    };
+    mockApi({ '/api/stations': timedOverview, '/api/stations?run_id=demo-run': timedOverview });
+    render(<App />);
+    expect(await screen.findByText('记录年龄（响应时）：42 秒')).toBeInTheDocument();
+    expect(screen.getByText(/^设备时钟（UTC）：2027/)).toBeInTheDocument();
+    expect(screen.getByText(/^采集墙钟（UTC）：2026/)).toBeInTheDocument();
+    expect(screen.getByText('记录新鲜')).toBeInTheDocument();
+    expect(screen.getByText('采集器运行中')).toBeInTheDocument();
+    expect(screen.getByText(/三站整轮最近成功（UTC）：/)).toBeInTheDocument();
+  });
+  it('未来采集墙钟与后端未核验状态不会显示为新鲜', async () => {
+    const futureOverview: Overview = {
+      ...overview, server_time: '2026-10-13T01:00:00Z',
+      stations: overview.stations.map((station) => ({ ...station, observed_at: '2026-10-13T01:00:05Z', record_freshness: 'clock_unverified' })),
+      collection: { state: 'unknown' },
+    };
+    mockApi({ '/api/stations': futureOverview, '/api/stations?run_id=demo-run': futureOverview });
+    render(<App />);
+    expect(await screen.findByText('记录年龄（响应时）：时钟待核验')).toBeInTheDocument();
+    expect(screen.getByText('采集时钟待核验')).toBeInTheDocument();
+    expect(screen.getByText('采集器状态未知')).toBeInTheDocument();
+    expect(screen.queryByText('记录新鲜')).not.toBeInTheDocument();
+    expect(screen.queryByText('采集器运行中')).not.toBeInTheDocument();
+  });
+  it('自动刷新保持场次，可暂停和手动刷新，隐藏页面不继续请求', async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const fetchMock = mockApi();
+    await act(async () => { render(<App />); });
+    const count = () => fetchMock.mock.calls.filter(([path]) => path.startsWith('/api/stations')).length;
+    const initial = count();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(count()).toBe(initial + 1);
+    expect(screen.getByLabelText('当前场次')).toHaveValue('demo-run');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '暂停自动刷新' })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(count()).toBe(initial + 1);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新记录' })); });
+    expect(count()).toBe(initial + 2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '开启自动刷新' })); });
+    expect(count()).toBe(initial + 3);
+    hidden = true; fireEvent(document, new Event('visibilitychange'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(count()).toBe(initial + 3);
+    hidden = false;
+    await act(async () => { fireEvent(document, new Event('visibilitychange')); });
+    expect(count()).toBe(initial + 4);
+    expect(screen.getByLabelText('当前场次')).toHaveValue('demo-run');
+  });
+  it('自动轮询等待前一请求完成，等待期间保留站卡', async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockApi();
+    await act(async () => { render(<App />); });
+    const initial = fetchMock.mock.calls.length;
+    let finish: ((value: Response) => void) | undefined;
+    fetchMock.mockImplementationOnce(async () => new Promise<Response>((resolve) => { finish = resolve; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock.mock.calls).toHaveLength(initial + 1);
+    expect(screen.getByRole('heading', { name: '低价充电站' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新记录' })).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(fetchMock.mock.calls).toHaveLength(initial + 1);
+    await act(async () => { finish!(new Response(JSON.stringify(overview), { status: 200 })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock.mock.calls).toHaveLength(initial + 2);
+  });
+  it('刷新失败显示错误并保留上次成功的场次和记录', async () => {
+    const fetchMock = mockApi(); render(<App />);
+    await screen.findByRole('heading', { name: '低价充电站' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新记录' })).not.toBeDisabled());
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ detail: '采集接口暂时离线' }), { status: 503 }));
+    fireEvent.click(screen.getByRole('button', { name: '刷新记录' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('采集接口暂时离线');
+    expect(screen.getByText(/刷新失败，显示上次成功记录/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '低价充电站' })).toBeInTheDocument();
+    expect(screen.getByLabelText('当前场次')).toHaveValue('demo-run');
+  });
+  it('详情固定决策并显示采集墙钟、入库墙钟与年龄', async () => {
+    mockApi({ '/api/decisions/evidence-1': { ...decision, server_time: '2026-10-13T01:00:21Z' } });
+    window.location.hash = '#/decisions/evidence-1'; render(<App />);
+    await screen.findByRole('heading', { name: '低价充电站 · 决策依据' });
+    expect(screen.getByText('采集墙钟（UTC）')).toBeInTheDocument();
+    expect(screen.getByText('入库墙钟（UTC）')).toBeInTheDocument();
+    expect(screen.getByText('20 秒')).toBeInTheDocument();
+    expect(screen.getByText(/采集状态为读取详情时的快照（服务响应 UTC 时间：/)).toHaveTextContent('返回总览刷新当前状态');
+    expect(screen.getByText('尚无关联指令的回读证据')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('你的问题'), { target: { value: '保留正在输入的问题' } });
+    expect(screen.getByLabelText('你的问题')).toHaveValue('保留正在输入的问题');
+    expect(window.location.hash).toBe('#/decisions/evidence-1');
+  });
+  it('详情只读展示回读判定及中文原因，不将unsupported伪装为确认', async () => {
+    const readbacks = [
+      { observation: { observation_id: 'observation-1', instruction_id: 'instruction-1', observed_at: '2026-10-13T01:00:02Z' }, verification: { status: 'verified', reasons: [] } },
+      { observation: { observation_id: 'observation-2', instruction_id: 'instruction-1', observed_at: '2026-10-13T01:00:03Z' }, verification: { status: 'pending', reasons: ['awaiting_device_tick', 'stale_readback', 'clock_unverified'] } },
+      { observation: { observation_id: 'observation-3', instruction_id: 'instruction-1', observed_at: '2026-10-13T01:00:04Z' }, verification: { status: 'mismatch', reasons: ['setpoint_mismatch', 'power_balance_mismatch', 'unexpected_grid_import', 'upstream_custom_reason'] } },
+      { observation: { observation_id: 'observation-4', instruction_id: 'instruction-2', observed_at: '2026-10-13T01:00:05Z' }, verification: { status: 'unsupported', reasons: ['missing_submission'] } },
+    ];
+    mockApi({ '/api/decisions/evidence-1': { ...decision, execution_evidence: { readbacks } } });
+    window.location.hash = '#/decisions/evidence-1'; render(<App />);
+    expect(await screen.findByText('提交后遥测一致')).toBeInTheDocument();
+    expect(screen.getByText('待回读')).toBeInTheDocument();
+    expect(screen.getByText('不一致')).toBeInTheDocument();
+    expect(screen.getByText('缺少支持证据')).toBeInTheDocument();
+    expect(screen.getByText('缺少对应提交回执')).toBeInTheDocument();
+    expect(screen.getByText('等待提交后的设备时刻；回读记录过期；时钟待核验')).toBeInTheDocument();
+    expect(screen.getByText('控制目标不一致；功率收支不一致；发生非预期购电；upstream_custom_reason')).toBeInTheDocument();
+    const panel = screen.getByRole('heading', { name: '关联指令的回读证据' }).closest('section')!;
+    expect(within(panel).getAllByRole('row')).toHaveLength(5);
+    expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getAllByText('候选建议')).toHaveLength(2);
+  });
+  it.each([
+    ['external', 'confirmation_unverified', 'unverified', '回读记录待核验'],
+    ['demo', 'confirmed', undefined, '回读已确认'],
+  ] as const)('旧确认来源 %s 应展示 %s 状态及正确时间线', async (source, executionStatus, verificationStatus, expected) => {
+    const submitted = { event_id: 'legacy-submit', instruction_id: 'legacy-instruction', kind: 'submitted', issued_at: '2027-01-24T00:00:00Z', observed_at: null, device_time: null, note: '', observed_mode: null, observed_power_kw: null };
+    const confirmed = { ...submitted, event_id: 'legacy-confirm', kind: 'confirmed', observed_at: '2026-10-13T01:00:03Z', device_time: '2027-01-24T00:15:00Z', observed_mode: 'charge', observed_power_kw: 3, verification_status: verificationStatus };
+    mockApi({ '/api/decisions/evidence-1': { ...decision, source_kind: source, execution_status: executionStatus, execution_events: [submitted, confirmed] } });
+    window.location.hash = '#/decisions/evidence-1'; render(<App />);
+    expect(await screen.findAllByText(expected)).toHaveLength(3);
+    const timeline = screen.getByRole('heading', { name: '执行时间线' }).closest('section')!;
+    expect(within(timeline).getAllByText(expected)).toHaveLength(2);
+    if (source === 'external') {
+      expect(screen.queryByText('回读已确认')).not.toBeInTheDocument();
+      expect(screen.getAllByText(expected)[0]).toHaveClass('badge-amber');
+    } else expect(screen.queryByText('回读记录待核验')).not.toBeInTheDocument();
   });
 });

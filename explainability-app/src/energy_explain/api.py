@@ -12,6 +12,9 @@ from .facts import explain
 from .providers import get_provider
 from .schemas import DecisionIn, ExecutionEvent, Intervention, Question, SettlementIn
 from .store import Conflict, NotFound, Store
+from .collection import record_freshness
+from .execution import SubmissionReceipt, TelemetryReadback
+from datetime import datetime, timezone
 
 
 def create_app(db_path: str | Path | None = None) -> FastAPI:
@@ -30,7 +33,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def detail(key):
         d = store.get_decision(key)
         provider = get_provider(d)
+        wall = datetime.now(timezone.utc)
+        collection = store.collection_status(d["run_id"], wall)
         return d | {"execution_status":store.execution_status(key),"execution_events":store.execution_events(key),
+                    "execution_evidence":store.execution_evidence(key),
+                    "server_time":wall.isoformat(),"collection":collection,
+                    "record_freshness":record_freshness(d["snapshot"]["observed_at"], collection, wall),
                     "capabilities":{"counterfactual":provider is not None,
                     "supported_interventions":["first_charge_kw"] if provider else []},
                     "settlement":store.get_settlement(d["run_id"])}
@@ -59,6 +67,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/decisions/{key}/execution-events",tags=["接入"])
     def append_execution(key: str,event: ExecutionEvent):
         return store.add_execution(key,event) | {"execution_status":store.execution_status(key)}
+
+    @app.post("/api/decisions/{key}/submission-receipts",tags=["接入"])
+    def submission_receipt(key: str, receipt: SubmissionReceipt):
+        return store.add_submission_receipt(key,receipt) | {"execution_status":store.execution_status(key)}
+
+    @app.post("/api/decisions/{key}/readbacks",tags=["接入"])
+    def readback(key: str, observation: TelemetryReadback):
+        return store.add_readback(key,observation) | {"execution_status":store.execution_status(key)}
+
+    @app.get("/api/decisions/{key}/execution-evidence",tags=["证据"])
+    def execution_evidence(key: str):
+        return store.execution_evidence(key)
 
     @app.post("/api/runs/{run_id}/settlements",tags=["接入"])
     def import_settlement(run_id: str,event: SettlementIn):
