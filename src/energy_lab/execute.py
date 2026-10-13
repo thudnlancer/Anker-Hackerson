@@ -1,4 +1,4 @@
-"""Unified explicit write path for one shadow candidate (design step 2).
+"""Unified explicit write path for one shadow candidate (design steps 2+3).
 
 Decision table (HOLD_SEMANTICS_DESIGN §4 step 2):
 
@@ -8,19 +8,33 @@ Decision table (HOLD_SEMANTICS_DESIGN §4 step 2):
 | idle                 | third-party charge=0 + readback   | refuse: idle_unverified_noop; never silently downgraded |
 | non-optimal fallback | explicit self_use_mode (Q1), marked non-optimizer-attributed | same |
 
+Step 3 adds the per-tick SOC divergence guard (``check_soc_divergence``): a
+verified idle step whose realized SOC diverges from the plan beyond the Q2
+threshold revokes the site's zero_flow_verified; divergence on dispatch steps
+is recorded for forecast-calibration monitoring only and never triggers a
+command-layer action.
+
 Nothing is written unless ``live=True``; the default is a pure dry-run audit
 record. A missing or failed readback is recorded as such, never faked (R5).
-The input is a fresh ``shadow.make_candidate`` record; this layer produces new
-audit artifacts only, so unknown planned labels raise instead of being
-reinterpreted.
+The candidate input is a fresh ``shadow.make_candidate`` record; this layer
+produces new audit artifacts only, so unknown planned labels raise instead of
+being reinterpreted.
 """
 from __future__ import annotations
+
+import math
 
 from .interface_contract import CommandMapping, verify_readback
 
 # Q1-decided explicit fallback label (§8.1); shared by online and offline paths
 # so the fallback branch carries one name everywhere (G3).
 FALLBACK_COMMAND_MODE = "self_use_mode"
+
+# Q2 decision (2026-10-13): initial guard threshold of 2 SOC percent points.
+# A 15 min step at the 5 kW limit can move a 14 kWh battery by ~8.9 points, so
+# the threshold leaves ample room for forecast error while still catching a
+# device that actively works during a commanded zero-flow idle step.
+SOC_DIVERGENCE_THRESHOLD_PERCENT = 2.0
 
 AUDIT_FIELDS = ("site", "device_time", "status", "solver_status",
                 "planned_flow", "planned_power_w", "command_mode", "command_flow",
@@ -130,3 +144,53 @@ def execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verifi
                                                       tolerance_w=readback_tolerance_w),
                    realized_soc=_soc(readback_state), optimizer_attributed=True,
                    writes_performed=int(live), reason=None)
+
+
+def check_soc_divergence(*, planned_flow, planned_soc_percent, actual_soc_percent,
+                         zero_flow_verified,
+                         threshold_percent=SOC_DIVERGENCE_THRESHOLD_PERCENT):
+    """Per-tick SOC divergence guard (design step 3, G4).
+
+    Compares the realized SOC read back at the next tick with the previous
+    step's ``planned_soc_after_15min``. Only a *verified* idle step can revoke
+    ``zero_flow_verified``: divergence there means the device did not honor the
+    charge=0 command, so the site falls back to explicit self-use and the
+    verdict must be persisted by the caller. Dispatch-step divergence is
+    recorded for PV/load calibration monitoring only. Missing or non-finite
+    input never triggers an action (R5). The returned dict is the diagnostic
+    snapshot; it carries no side effects.
+    """
+    def finite(value):
+        try:
+            return math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
+
+    base = {"planned_flow": planned_flow, "planned_soc_percent": None,
+            "actual_soc_percent": None, "soc_divergence_percent": None,
+            "threshold_percent": float(threshold_percent),
+            "zero_flow_verified_before": bool(zero_flow_verified),
+            "zero_flow_verified_after": bool(zero_flow_verified)}
+    if not math.isfinite(float(threshold_percent)) or threshold_percent < 0:
+        return base | {"guard_action": "none", "reason": "invalid_threshold"}
+    if planned_flow not in ("idle", "charge", "discharge"):
+        return base | {"guard_action": "none", "reason": "unknown_planned_flow"}
+    if not (finite(planned_soc_percent) and finite(actual_soc_percent)):
+        return base | {"guard_action": "none", "reason": "guard_input_missing"}
+
+    planned, actual = float(planned_soc_percent), float(actual_soc_percent)
+    divergence = actual - planned
+    base.update({"planned_soc_percent": planned, "actual_soc_percent": actual,
+                 "soc_divergence_percent": divergence})
+    if abs(divergence) <= float(threshold_percent):
+        return base | {"guard_action": "none", "reason": "within_threshold"}
+    if planned_flow == "idle":
+        if not zero_flow_verified:
+            # No zero-flow command was sent, so there is nothing to revoke;
+            # SOC movement under an explicit self-use step is expected.
+            return base | {"guard_action": "none", "reason": "idle_unverified_no_command"}
+        return base | {"guard_action": "revoke_zero_flow_verified",
+                       "zero_flow_verified_after": False,
+                       "reason": "idle_soc_diverged_device_not_honoring_zero_flow"}
+    return base | {"guard_action": "record_only",
+                   "reason": "dispatch_soc_diverged_recorded_for_calibration"}

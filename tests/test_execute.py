@@ -7,7 +7,8 @@ from unittest.mock import patch
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from energy_lab.execute import AUDIT_FIELDS, execute_candidate
+from energy_lab.execute import (AUDIT_FIELDS, SOC_DIVERGENCE_THRESHOLD_PERCENT,
+                                check_soc_divergence, execute_candidate)
 from energy_lab.rolling import RollingPlan
 from energy_lab.shadow import daily_points, make_candidate
 
@@ -224,6 +225,83 @@ class FrozenSnapshotEndToEndTests(unittest.TestCase):
         self.assertEqual(ha.calls, [])
         self.assertEqual(record["writes_performed"], 0)
         self.assertEqual(record["readback_verdict"], "not_sent_dry_run")
+
+
+class SocDivergenceGuardTests(unittest.TestCase):
+    """V1 step-3: injected semantic drift revokes; normal traces never do."""
+
+    def guard(self, **overrides):
+        args = dict(planned_flow="idle", planned_soc_percent=45.0, actual_soc_percent=45.4,
+                    zero_flow_verified=True)
+        return check_soc_divergence(**(args | overrides))
+
+    def test_injected_self_use_drift_revokes_verified_site(self):
+        # Simulated semantic drift: charge=0 was commanded but the device kept
+        # self-consuming, moving SOC 5 points in one step.
+        result = self.guard(actual_soc_percent=50.0)
+        self.assertEqual(result["guard_action"], "revoke_zero_flow_verified")
+        self.assertFalse(result["zero_flow_verified_after"])
+        self.assertTrue(result["zero_flow_verified_before"])
+        self.assertEqual(result["reason"], "idle_soc_diverged_device_not_honoring_zero_flow")
+        self.assertEqual(result["soc_divergence_percent"], 5.0)
+
+    def test_negative_drift_also_revokes(self):
+        result = self.guard(actual_soc_percent=42.5)
+        self.assertEqual(result["guard_action"], "revoke_zero_flow_verified")
+        self.assertAlmostEqual(result["soc_divergence_percent"], -2.5)
+
+    def test_normal_trajectory_never_revokes(self):
+        for actual in (44.0, 45.0, 45.4, 47.0):
+            result = self.guard(actual_soc_percent=actual)
+            self.assertEqual(result["guard_action"], "none")
+            self.assertEqual(result["reason"], "within_threshold")
+            self.assertTrue(result["zero_flow_verified_after"])
+
+    def test_threshold_boundary_is_strictly_greater(self):
+        at = self.guard(actual_soc_percent=45.0 + SOC_DIVERGENCE_THRESHOLD_PERCENT)
+        self.assertEqual(at["guard_action"], "none")
+        beyond = self.guard(actual_soc_percent=45.0 + SOC_DIVERGENCE_THRESHOLD_PERCENT + 0.01)
+        self.assertEqual(beyond["guard_action"], "revoke_zero_flow_verified")
+
+    def test_dispatch_divergence_is_record_only_and_never_revokes(self):
+        for flow in ("charge", "discharge"):
+            result = self.guard(planned_flow=flow, actual_soc_percent=52.0)
+            self.assertEqual(result["guard_action"], "record_only")
+            self.assertEqual(result["reason"], "dispatch_soc_diverged_recorded_for_calibration")
+            self.assertTrue(result["zero_flow_verified_after"])
+
+    def test_unverified_idle_has_no_command_to_guard(self):
+        result = self.guard(zero_flow_verified=False, actual_soc_percent=60.0)
+        self.assertEqual(result["guard_action"], "none")
+        self.assertEqual(result["reason"], "idle_unverified_no_command")
+        self.assertFalse(result["zero_flow_verified_after"])
+
+    def test_missing_or_non_finite_input_never_triggers_action(self):
+        for planned, actual in ((None, 45.0), (45.0, None), ("unavailable", 45.0),
+                                (45.0, float("nan")), (45.0, float("inf"))):
+            result = self.guard(planned_soc_percent=planned, actual_soc_percent=actual)
+            self.assertEqual(result["guard_action"], "none")
+            self.assertEqual(result["reason"], "guard_input_missing")
+            self.assertTrue(result["zero_flow_verified_after"])
+
+    def test_unknown_flow_and_invalid_threshold_never_trigger_action(self):
+        self.assertEqual(self.guard(planned_flow="hold")["reason"], "unknown_planned_flow")
+        self.assertEqual(self.guard(threshold_percent=-1.0)["reason"], "invalid_threshold")
+
+    def test_executed_zero_flow_step_feeds_the_guard(self):
+        # Chain: verified idle dispatch -> next-tick readback shows the device
+        # ignored charge=0 -> guard revokes the site's verification.
+        candidate = idle_candidate()
+        record = execute_candidate(candidate, suffix="1502", ha=StubHA(),
+                                   zero_flow_verified=True, live=True,
+                                   readback_state=readback_state("charge", 0., soc=50.), **SENT)
+        self.assertEqual(record["status"], "zero_flow_dispatched")
+        result = check_soc_divergence(planned_flow=record["planned_flow"],
+                                      planned_soc_percent=candidate["planned_soc_after_15min"],
+                                      actual_soc_percent=record["realized_soc"],
+                                      zero_flow_verified=True)
+        self.assertEqual(result["guard_action"], "revoke_zero_flow_verified")
+        self.assertFalse(result["zero_flow_verified_after"])
 
 
 if __name__ == "__main__":
