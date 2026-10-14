@@ -190,7 +190,7 @@ class ExplainabilityBridgeTests(unittest.TestCase):
             self.assertEqual(exported["stations"], baseline["stations"])
             self.assertEqual(exported["writes_performed"], 0)
             self.assertEqual(exported["explainability_export"]["records_written"], 1)
-            lines = (path / "with-hook" / "explainability-decisions.jsonl").read_text().splitlines()
+            lines = (path / "with-hook" / "explainability-decisions.jsonl").read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(lines), 1)
             record = json.loads(lines[0])
             self.assertEqual(record["run_id"], "offline-unit")

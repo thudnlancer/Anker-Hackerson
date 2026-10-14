@@ -11,11 +11,9 @@ from pathlib import Path
 import re
 
 
-MODEL_VERSION = "shared-milp-0acf526f-cf1"
-# Pinned sha256 of energy_lab/rolling.py. Updated 2026-10-13 for the C2 change
-# (verified time-limit incumbent + suboptimal/mip_gap plan fields); the export
-# contract fields consumed here are unchanged.
-UPSTREAM_SOURCE_SHA256 = "0acf526ff67be2bcd17455ac54f89500d326453f4fe4190f6bc4be87b082ca1e"
+MODEL_VERSION = "shared-milp-603de45c-cf1"
+# Pinned sha256 of energy_lab/rolling.py, including the optional E4 energy floor.
+UPSTREAM_SOURCE_SHA256 = "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4"
 REPOSITORY_URL = "https://github.com/thudnlancer/Anker-Hackerson"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 _POWER_COLUMNS = {"charge_kw": "charge_w", "discharge_kw": "discharge_w",

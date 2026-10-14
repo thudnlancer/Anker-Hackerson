@@ -103,14 +103,29 @@ def _validated_first_step(first_step, first_charge_kw, n):
     return fixed
 
 
-def _intervention_infeasible(times, n, soc_percent):
+def _validated_energy_floor(energy_floor_kwh, n):
+    """Translate optional end-of-step energy floors to energy-variable indexes."""
+    if energy_floor_kwh is None:
+        return {}
+    if not isinstance(energy_floor_kwh, (list, tuple)) or len(energy_floor_kwh) != n:
+        raise ValueError("energy_floor_kwh must have one entry per step")
+    floors = {}
+    for t, value in enumerate(energy_floor_kwh):
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, Real) or not np.isfinite(value) or value < 0:
+            raise ValueError("energy floors must be finite nonnegative kWh values or None")
+        floors[4 * n + t] = float(value)
+    return floors
+
+
+def _intervention_infeasible(times, n, soc_percent, message="first-step intervention exceeds an original variable bound"):
     """Use the original failure shape; never relax an original variable bound."""
     empty = pd.DataFrame({"time": times, "flow": ["idle"] * n, "charge_w": 0.0,
                           "discharge_w": 0.0, "grid_import_w": 0.0,
                           "grid_export_w": 0.0, "soc_end": soc_percent,
                           "intended_command_mode": ["zero_flow_command"] * n})
-    return RollingPlan(empty, float("nan"), "infeasible",
-                       "first-step intervention exceeds an original variable bound")
+    return RollingPlan(empty, float("nan"), "infeasible", message)
 
 
 def optimize_window(
@@ -133,6 +148,7 @@ def optimize_window(
     command_contract: str = "battery",
     first_step: dict[str, float] | None = None,
     first_charge_kw: float | None = None,
+    energy_floor_kwh: list[float | None] | None = None,
 ) -> RollingPlan:
     """Solve a rolling LP or explicit mutually exclusive MILP window."""
     n = len(pv_w)
@@ -141,6 +157,7 @@ def optimize_window(
     if n == 0:
         raise ValueError("empty optimization window")
     fixed_first_step = _validated_first_step(first_step, first_charge_kw, n)
+    energy_floors = _validated_energy_floor(energy_floor_kwh, n)
     arrays = [np.asarray(x, dtype=float) for x in (pv_w, load_w, import_price, export_price)]
     if any(x.ndim != 1 or len(x) != n or not np.isfinite(x).all() for x in arrays):
         raise ValueError("all forecast arrays must have equal length")
@@ -189,6 +206,12 @@ def optimize_window(
             if value < original_lower or (original_upper is not None and value > original_upper):
                 return _intervention_infeasible(times, n, soc_percent)
             fixed_bounds[index] = (value, value)
+        for index, floor in energy_floors.items():
+            original_lower, original_upper = fixed_bounds[index]
+            if original_upper is not None and floor > original_upper:
+                return _intervention_infeasible(times, n, soc_percent,
+                                                "energy floor exceeds an original variable bound")
+            fixed_bounds[index] = (max(original_lower, floor), original_upper)
         result = linprog(c, A_eq=equalities, b_eq=b_eq, bounds=fixed_bounds, method="highs")
     else:
         # Two binary vectors select charging vs discharging and import vs export.
@@ -206,6 +229,11 @@ def optimize_window(
             if value < lower[index] or value > upper[index]:
                 return _intervention_infeasible(times, n, soc_percent)
             lower[index] = upper[index] = value
+        for index, floor in energy_floors.items():
+            if floor > upper[index]:
+                return _intervention_infeasible(times, n, soc_percent,
+                                                "energy floor exceeds an original variable bound")
+            lower[index] = max(lower[index], floor)
         inequality_rows = (6 if command_contract == "sop" else 4)*n
         a = np.zeros((2*n + inequality_rows, 7*n))
         a[:2*n, :5*n] = equalities
