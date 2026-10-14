@@ -24,28 +24,28 @@ Anker 黑客松充电储能赛道场景三："会解释自己的 AI"——基于
 | 项 | 证据 |
 |---|---|
 | 压力闭环回退安全 | 8 场景 408 步，超时/坏预测回退均保持物理约束 |
-| 优化器价值（含损耗口径） | 100 站 MILP vs 自用基线节省 993.76 EUR，100/100 站点改善 |
+| 历史探索性优化器对照 | 曾有 100 站 MILP vs 自用基线的探索性结果；不属于当前冻结参数、零流量口径或正式收益，W1 完成前不对外发布 |
 | 跨站点泛化 | 80/20 留出，三组参数均 20/20 站点为正（未冻结比赛参数） |
 | 比赛口径策略主线 | 20 站 × 2×168h：辐照度 PV + 当前负载最优（+14.612% / +6.441%），第三窗口可加但非门槛 |
 | SOP 控制语义 | 充放/购售互斥、SOC 全量程、第三方模式两条指令、约 1 秒间隔、下一 tick 生效 |
 | Hold 语义差异量化 | pair 实验：自用 idle vs 零流量 idle，persistence 臂 6.238% vs -2.115%，辐照度臂 11.167% vs 9.204% |
-| 回归测试 | 2026-10-14 W1 后当前主仓 `pytest tests -q`：231 passed；Explainability 应用后端：83 passed、49 subtests passed（1 个 Starlette/httpx 弃用警告） |
+| 回归测试 | 2026-10-14 W1 后当前主仓 `pytest tests -q`：235 passed；Explainability 应用后端：83 passed、49 subtests passed（1 个 Starlette/httpx 弃用警告） |
 | 只读采集链路 | 新缓存含 `solar_irradiance_wm2`；持续采集进程已停止，日志最后更新 2026-10-14 01:01:54；B4 心跳仅有一次历史记录，不代表当前健康 |
 | HA 物理校准（B3） | 两轮真实只读审计（夜 12×5s + 日光 18×10s，[报告](outputs/ha_physical_calibration_20261013/report_daylight.json)）：三站 PV/负载符号、充放互斥、电网进出口互斥零违例；三向功率平衡残差 ≤1W；日光轮 PV 激励峰值 1232/1150/720W；30/30 样本可用 |
 | 零流量硬件验证（B1/B2） | 三站真实 `charge=0` 受监管写入全部 verified（live_readback，[证据目录](outputs/zero_flow_verification)）：设定回显正确、电池 0/0W、电网被动结算（进口 150≈158W）、写入后下一 tick 回读、模式恢复回读确认无残留；`stations.{1,2,3}.zero_flow_verified=true` 已落配置；测试后三开关已收回 false |
 
 ### 2.2 已完成或进行中
 
-- 线 A：A1-A4 已提交（`fec9f35`、`ecac401`、`780fe08`、`d11bc87`）；A5 离线回放现已补齐逐步归因字符串和跨站归因计数，仍需报告审计与基线对比；A6 继续核对验收清单。
+- 线 A：A1-A4 已提交（`fec9f35`、`ecac401`、`780fe08`、`d11bc87`）；A5 已拆为“归因报告”和“同输入基线对比”，两项离线验收证据已生成；A6 继续核对验收清单。
 - 线 B：B0-B3 已完成（三站 `charge=0` 只读/受控验证证据已存档，测试后真实写入开关已恢复关闭）。B4 设计完成；本地分片采集、合并读取和监控改造在工作区未提交，watchdog 与故障演练尚未验收；远程机 Tailscale/双节点部署未完成。
-- 线 C：C1-C3 已提交（`31b85af`、`82325b3`、`c223894`）。C4 的 `solver_seconds` 配置映射、2 秒默认值和样例已在工作区；W1 使用同一 72 个冻结病例复跑，结果 72/72 可输出且 0 物理违规；待完成配置 readiness 校验和预算证据登记。
+- 线 C：C1-C3 已提交（`31b85af`、`82325b3`、`c223894`）。C4 的 `solver_seconds` 映射、2 秒默认值、readiness 校验和样例已在工作区；同一 72 个冻结病例复跑结果 72/72 可输出且 0 物理违规；配置快照已保存，待集成负责人验收。
 - 线 D：D2 批 1-20 分析已完成；batch 20 因 ConnectTimeout 仅 14/24 轮，缺口保留。另有 batch 21 完整 24 轮补采（零写入，继承 batch 20），尚未并入 20 批主分析。D3、D4 未完成。
 - 线 E：E1-E3 已在 `main` 的 `922bb48` 合并。E4-1 `energy_floor_kwh` 已从独立分支 `feat/energy-floor`（`f6ff5df`）按功能移植到当前工作基线，并通过 LP/MILP 与应用后端回归；E4-2（可行性检查/光伏分析页面和接口）、E5 未完成。独立 worktree 保留原分支，不合并其余差异。
 - 采集器：重启后采集日志推进至 2026-10-14 01:01:54 后停止；截至本次核验未发现运行进程。新缓存有三站数据和辐照度字段，但存在真实设备时间错位/缺口，必须按时间戳处理。
 
 ### 2.3 能力缺口（不可声称，按优先级）
 
-1. 正式参数仍未冻结，C4 配置映射未提交；A5 离线归因口径未完成，F2 最终零流量口径全量回测未完成。
+1. 正式参数仍未冻结；A5 两项离线证据已完成但尚待集成负责人验收，F1/F2 最终零流量口径全量回测未完成。
 2. `run_live.py` 的 MILP dry-run 接线已完成，但当前工作区未完成端到端 M3 在线只读验收；真实持续写入控制及恢复流程未验收。
 3. 天气预报质量尚未完成 D3；D2 的 PV 误差统计只支持校准方向判断，仍需线 F 用策略收益门槛复核后才能冻结切换规则。
 4. self_consumption 回退分支的 MILP 一致性模型未重建；回退收益需标为非优化器归因。
@@ -83,7 +83,8 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 - [x] A2（步骤 2）`execute.py` 统一执行决策表和审计字段（`ecac401`）
 - [x] A3（步骤 3）SOC 发散守卫，阈值 2pp（`780fe08`）
 - [x] A4（步骤 4）`run_live.py` dry-run 链路和第四道安全开关（`d11bc87`）；实时链路验收仍待 M3
-- [ ] A5（步骤 5）离线口径收尾：工作区仅有 `contest_replay.py` 归因字段初步改动，尚未完成相关审计、报告和测试
+- [x] A5-1（步骤 5a）归因报告：逐步归因字段、汇总计数、旧字段未知处理和离线验收报告已完成，待集成负责人验收（见 `A5_ATTRIBUTION_AND_BASELINE_REPORT.md`）
+- [x] A5-2（步骤 5b）同输入基线对比：旧 self-consumption idle vs 新 zero-flow idle 的收益、fallback、归因步数和物理审计已完成，待集成负责人验收（见 `outputs/w1_a5_compare_20261014_1/a5_same_input_comparison.json`）
 - [ ] A6 核对 V1 清单剩余测试；当前主仓回归已恢复全绿（230 passed）
 
 **验收**：HOLD_SEMANTICS_DESIGN §6 V5 表步骤 0/2/3/4/5 行。
@@ -158,7 +159,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 - [ ] F1 比赛参数冻结：SOC 范围、损耗、吞吐成本、求解时限（C4 输入）、hold 语义口径（A5 输入）。**C3 输入已就绪（2026-10-14）**：SOC 范围冻结建议 = `soc_min=0` / `soc_max=100`，建议冻结清单显式列出 `soc_min_percent` 键且 experiment 覆盖段不得设非零值；依据见 NEXT_STAGE_RESULTS "C3" 节（SOP 固定 0~100%、结构性 infeasible 证据、链路核查全 0）。另注：D2 的 PV 预测切换规则（1h persistence / ≥2h 因果辐照度校准）也在 NEXT_STAGE_RESULTS "D2" 节等待线 F 收益门槛复核后冻结
 - [ ] F2 全量回测重跑：冻结参数下 100 站 + 比赛回放零流量臂，产出正式数字
 - [ ] F3 第三窗口补充评估（可选，非门槛）
-- [ ] F4 赛前检查清单：`check_online_readiness.py` 扩展覆盖新配置项
+- [ ] F4 赛前检查清单：`check_online_readiness.py` 已覆盖 `solver_seconds`、`soc_min_percent`、`poll_seconds` 并保存脱敏配置快照，待集成负责人验收
 
 **验收**：冻结配置文件 + 可复现的正式收益报告（零流量口径）。
 **依赖**：A5 口径、C4 时限、D2 校准结论；阻塞于 A/C/D 相应产出。
@@ -219,7 +220,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
-| W1 | 进行中 | A5 报告审计与 C4 预算收尾 | `feat/explainability-integration`（当前工作树，单 worker 例外） | 全仓 232 passed；72 病例复验 72/72、0 违规；零流量 1 站 smoke 504 行审计通过 |
+| W1 | 进行中 | A5 两项验收已形成，C4 readiness 收尾 | `feat/explainability-integration`（当前工作树，单 worker 例外） | 全仓 235 passed；A5 对比报告与配置快照待集成验收 |
 | W2 | 待集成 | E4-2 应用端服务/API/页面及 E4-4 trace 核算已实现；E4-1 共享优化器能力仍待集成 | `feat/w2-e4-product` @ `D:\Anker黑客松\w2-worktree`, `94e97c3` | 合入 E4-1 哈希基线后，跑真实共享优化器截止约束验收；再补三站点正式 trace 导入和 E5 |
 | W3 | 待集成 | B4.1-B4.4 本地采集冗余、合并视图与监控基线已完成；D1/D3 尚未开始 | `feat/w3-collector-reliability` @ `905a40f` | 主仓集成后运行全量回归；再做本地 watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
@@ -229,10 +230,12 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | 日期 | 角色 | 事项 | 结果/阻塞 | 证据 |
 |---|---|---|---|---|
 | 2026-10-14 | 集成负责人 | 建立并行分工基线 | W1 在主工作树推进；W2 待启动；W3 已转为待集成；当前工作区仍存在跨线未提交改动，禁止直接并发编辑 | 本节 §0、§7、§8 |
-| 2026-10-14 | W1 | A5 初步落地 | trace 新增字符串归因标签；跨站归因计数对 legacy `null` 保持未知，不再求和崩溃；回放摘要显式记录 idle 核算臂，非官方分数仍明确否定 | `tests/test_contest_replay.py`；24 定向测试、231 全仓测试通过 |
+| 2026-10-14 | W1 | A5 初步落地 | trace 新增字符串归因标签；跨站归因计数对 legacy `null` 保持未知，不再求和崩溃；回放摘要显式记录 idle 核算臂，非官方分数仍明确否定 | `tests/test_contest_replay.py`；当时阶段性回归 231 passed（不是当前总数） |
 | 2026-10-14 | W1 | C4 预算复验 | 同一冻结快照/因果校准路径、每站 2 秒预算复跑；65 optimal + 7 verified suboptimal incumbent，72/72 输出；最大/平均 gap 0.755%/0.403%，72 计划物理审计 0 违规；不改 `mip_rel_gap=1e-9` | `outputs/w1_c4_verification_20261014_1/verification_report.json` |
 | 2026-10-14 | W3 | 完成 B4 本地基线与消费者接线 | 分片/heartbeat、merge 视图、监控状态机、watchdog 过滤与过期状态保护；未启动真实采集、未执行远程部署或 HA 写入 | `2eb92ef`、`905a40f`；W3 定向测试 33 passed |
-| 2026-10-14 | W1 | A5 产物 smoke 与 C4 配置门槛 | 1 站 × 168h × 3 臂零流量回放：504 行物理审计通过；optimizer-attributed 计数为辐照度臂 168、持久化臂 168、自用基线 0；`official_score_claim=false`。运行配置新增预算必须为正且短于轮询周期；全仓 232 passed | `outputs/w1_a5_zero_flow_smoke_20261014_1/`；`tests/test_config_solver_seconds.py` |
+| 2026-10-14 | W1 | A5 产物 smoke 与 C4 配置门槛 | 1 站 × 168h × 3 臂零流量回放：504 行物理审计通过；optimizer-attributed 计数为辐照度臂 168、持久化臂 168、自用基线 0；`official_score_claim=false`。运行配置新增预算必须为正且短于轮询周期；当时阶段性回归 232 passed | `outputs/w1_a5_zero_flow_smoke_20261014_1/`；`tests/test_config_solver_seconds.py` |
+| 2026-10-14 | W1 | A5 拆分验收 | 归因报告与同输入基线对比均生成；5 站 × 168h 两口径输入等价，旧/新各 2520 行物理审计通过；收益、fallback、optimizer/non-optimizer 步数均列明；`official_score_claim=false` | `A5_ATTRIBUTION_AND_BASELINE_REPORT.md`；`outputs/w1_a5_compare_20261014_1/a5_same_input_comparison.json` |
+| 2026-10-14 | W1 | readiness 三参数与快照 | `check_online_readiness.py` 检查 `solver_seconds=2.0`、`poll_seconds=5.0`、`soc_min_percent=0.0`；配置检查通过，历史仅 30 小时所以整体 `ready=false`；保存脱敏快照 | `outputs/w1_readiness_actual_20261014/readiness.json`；`config_snapshot.json`；235 全仓测试通过 |
 | 2026-10-14 | W2 | 完成 E4-2/E4-4 第一版 | 持久计划任务队列、基准重放对账、截止 SOC 约束接口、明确状态与调整建议；实现 trace 日核算导入/查询、JSONL CLI 与两页 UI。真实共享优化器调用待 E4-1 进入基线；暂无三站正式 trace 导入 | `feat/w2-e4-product` @ `9bb5d2a`; 94 后端测试、49 subtests、14 前端测试通过，build 通过 |
 
 ### 接口/阻塞记录
