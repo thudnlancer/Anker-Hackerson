@@ -12,6 +12,7 @@
   "live_enabled": false,
   "poll_seconds": 5,
   "stale_after_seconds": 15,
+  "solver_seconds": 2.0,
   "soc_min": 0.0,
   "soc_max": 100.0,
   "capacity_kwh": 14.0,

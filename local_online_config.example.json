@@ -3,7 +3,8 @@
   "local": {
     "timezone": "Asia/Shanghai",
     "poll_seconds": 5,
-    "stale_after_seconds": 15
+    "stale_after_seconds": 15,
+    "solver_seconds": 2.0
   },
   "environment_machine": {
     "host": "<环境机公网IP或域名>",

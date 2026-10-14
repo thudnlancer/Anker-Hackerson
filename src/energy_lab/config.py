@@ -79,6 +79,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "allow_formal_contest": bool(_first(experiment, "allow_formal_contest", default=safety.get("allow_formal_contest", False))),
             "poll_seconds": float(_first(experiment, "poll_seconds", default=local.get("poll_seconds", 5))),
             "stale_after_seconds": float(_first(experiment, "stale_after_seconds", default=local.get("stale_after_seconds", 15))),
+            "solver_seconds": float(_first(experiment, "solver_seconds", default=local.get("solver_seconds", 2.0))),
             "capacity_kwh": float(_first(experiment, "capacity_kwh", default=device.get("capacity_kwh", 14.0))),
             "max_power_w": float(_first(experiment, "max_power_w", default=device.get("max_power_w", 5000.0))),
             "charge_efficiency": float(_first(experiment, "charge_efficiency", default=device.get("charge_efficiency", 0.95))),
@@ -110,6 +111,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "allow_formal_contest": bool(safety.get("allow_formal_contest", False)),
             "poll_seconds": float(local.get("poll_seconds", 5)),
             "stale_after_seconds": float(local.get("stale_after_seconds", 15)),
+            "solver_seconds": float(local.get("solver_seconds", 2.0)),
             "capacity_kwh": float((raw.get("device_defaults") or {}).get("capacity_kwh", 14.0)),
             "max_power_w": float((raw.get("device_defaults") or {}).get("max_power_w", 5000.0)),
             "charge_efficiency": float((raw.get("device_defaults") or {}).get("charge_efficiency", 0.95)),
@@ -134,6 +136,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
         "allow_formal_contest": bool(raw.get("allow_formal_contest", False)),
         "poll_seconds": float(raw.get("poll_seconds", 5)),
         "stale_after_seconds": float(raw.get("stale_after_seconds", 15)),
+        "solver_seconds": float(raw.get("solver_seconds", 2.0)),
         "capacity_kwh": float(raw.get("capacity_kwh", 14.0)),
         "max_power_w": float(raw.get("max_power_w", 5000.0)),
         "charge_efficiency": float(raw.get("charge_efficiency", 0.95)),
@@ -151,6 +154,10 @@ def require_runtime_fields(cfg: dict[str, Any], *, write_enabled: bool = False) 
     missing.extend(site for site, item in cfg.get("stations", {}).items() if is_placeholder(item.get("suffix")))
     if missing:
         raise RuntimeError("runtime configuration is incomplete: " + ", ".join(missing))
+    solver_seconds = float(cfg.get("solver_seconds", 2.0))
+    poll_seconds = float(cfg.get("poll_seconds", 5.0))
+    if not (solver_seconds > 0 and poll_seconds > 0 and solver_seconds < poll_seconds):
+        raise RuntimeError("solver_seconds must be positive and shorter than poll_seconds")
     if write_enabled and not (cfg.get("live_enabled") and cfg.get("allow_ha_write") and cfg.get("allow_formal_contest")):
         raise RuntimeError("write mode requires live_enabled, allow_ha_write, and allow_formal_contest=true")
 
