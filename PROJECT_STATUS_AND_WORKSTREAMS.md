@@ -221,7 +221,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
 | W1 | 进行中 | A5 两项验收已形成，C4 readiness 收尾 | `feat/explainability-integration`（当前工作树，单 worker 例外） | 全仓 235 passed；A5 对比报告与配置快照待集成验收 |
-| W2 | 待集成 | E4-2 应用端服务/API/页面及 E4-4 trace 核算已实现；E4-1 共享优化器能力仍待集成 | `feat/w2-e4-product` @ `D:\Anker黑客松\w2-worktree`, `94e97c3` | 合入 E4-1 哈希基线后，跑真实共享优化器截止约束验收；再补三站点正式 trace 导入和 E5 |
+| W2 | 待集成 | E4-2/E4-4 第一版完成，完整测试通过；停止扩展页面功能 | `feat/w2-e4-product` @ `D:\Anker黑客松\w2-worktree`, `94e97c3` | 阻塞：等待 E4-1 当前哈希基线合入并完成真实截止约束验收；随后导入三站真实 replay trace 完成 E5 数据 |
 | W3 | 待集成 | B4.1-B4.4 本地采集冗余、合并视图与监控基线已完成；D1/D3 尚未开始 | `feat/w3-collector-reliability` @ `905a40f` | 主仓集成后运行全量回归；再做本地 watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
 
@@ -237,12 +237,19 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | 2026-10-14 | W1 | A5 拆分验收 | 归因报告与同输入基线对比均生成；5 站 × 168h 两口径输入等价，旧/新各 2520 行物理审计通过；收益、fallback、optimizer/non-optimizer 步数均列明；`official_score_claim=false` | `A5_ATTRIBUTION_AND_BASELINE_REPORT.md`；`outputs/w1_a5_compare_20261014_1/a5_same_input_comparison.json` |
 | 2026-10-14 | W1 | readiness 三参数与快照 | `check_online_readiness.py` 检查 `solver_seconds=2.0`、`poll_seconds=5.0`、`soc_min_percent=0.0`；配置检查通过，历史仅 30 小时所以整体 `ready=false`；保存脱敏快照 | `outputs/w1_readiness_actual_20261014/readiness.json`；`config_snapshot.json`；235 全仓测试通过 |
 | 2026-10-14 | W2 | 完成 E4-2/E4-4 第一版 | 持久计划任务队列、基准重放对账、截止 SOC 约束接口、明确状态与调整建议；实现 trace 日核算导入/查询、JSONL CLI 与两页 UI。真实共享优化器调用待 E4-1 进入基线；暂无三站正式 trace 导入 | `feat/w2-e4-product` @ `9bb5d2a`; 94 后端测试、49 subtests、14 前端测试通过，build 通过 |
+| 2026-10-14 | W2 | 暂停页面扩展，等待 E4-1 集成 | 主工作区 `rolling.py` 的 E4-1 尚未提交，当前 SHA-256 为 `603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4`，与主工作区应用锁定值一致，但尚不是 W2 可合并的已提交基线；W2 不以 stub 测试冒充真实截止约束验收 | `git status`、`Get-FileHash -Algorithm SHA256`；下一步清单见下方 |
+
+### W2 下一轮验收清单（E4-1 已提交共享基线后）
+
+1. 基于集成负责人确认的 E4-1 提交更新 `SharedMilpProvider` 模型版本和 `SOURCE_SHA256`，同步 README、integration 文档与 smoke 脚本版本号；核对证据导出层版本一致。
+2. 使用**真实共享优化器**的 `energy_floor_kwh` 运行截止约束验收，不以 stub 结果代替：可行目标 SOC、超过设备可达上限、solver timeout、缺失约束能力返回 `unsupported`、deadline 与设备时间步不对齐时拒绝。
+3. 导入三站**真实 replay trace**并记录各站文件、时间窗、arm、行数、物理校验及核算结果；完成 E5 演示数据。mock 或单站样例不得称为正式演示数据。
 
 ### 接口/阻塞记录
 
 | 日期 | 提出者 → 接收者 | 需求或阻塞 | 决策/状态 |
 |---|---|---|---|
-| 2026-10-14 | W2 → 集成负责人 | E4-2 需要 E4-1 `energy_floor_kwh` 在主基线提交并同步应用 `SharedMilpProvider` 模型哈希/版本；现有 W2 分支只锁定旧已提交源码 | 待集成；未匹配或缺少约束能力时显式返回 unsupported，不改共享优化器 |
+| 2026-10-14 | W2 → 集成负责人 | E4-2 需要 E4-1 `energy_floor_kwh` 当前版本成为已提交共享基线，并提供最终源码哈希；W2 分支目前只锁定旧已提交源码 | 阻塞；集成负责人确认基线后 W2 才更新模型版本/哈希和文档，进行真实优化器五类验收，不改共享优化器 |
 
 ## 10. 评审会待办
 
