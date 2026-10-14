@@ -30,6 +30,8 @@ python -m pip install --no-deps -e .
 
 离线光伏核算示例：`python scripts/build_pv_accounting.py trace.csv report.jsonl --arm zero_flow --step-hours 1`。trace 至少需要 `site,time,arm,pv_w,load_w,flow,power_w,soc_after,sell,grid_export_kwh,negative_export_loss_eur`；若要统计充电功率瓶颈，再提供 `--max-charge-kw`。
 
+训练集离线 replay 的无时区 `local_hour_time` 需显式传 `--time-basis dataset_local_hour`，只按原始日期分组；不会补猜 UTC，也不用于在线截止时间。默认仍要求带时区时间。E4 真实共享优化器五类验收：`python scripts/verify_plan_floor.py --output artifacts/e4-floor-acceptance/acceptance.json`（人工输入，不连接设备）。
+
 已从提供的历史日志恢复并接入实际 MILP 源码。运行 `python -m energy_explain verify-model` 可验证 4、24、96 步模型记录；这些记录使用人工输入并明确标记来源。源码版本、启动方式与真实决策重放所需字段见 [恢复模型接入说明](docs/recovered-model-integration.md)。
 
 本目录现在位于共同策略仓库。使用 `shared-milp-603de45c-cf1` 的记录直接调用上层 `energy_lab.rolling`，从同一次 shadow 求解导出输入与费用。共同源码、Python 路径和团队交接步骤见 [共同仓库协作接入说明](../EXPLAINABILITY_COLLABORATION.md)。历史提供器仅服务其明确匹配的旧模型版本，不作为共享模型缺失时的替代。

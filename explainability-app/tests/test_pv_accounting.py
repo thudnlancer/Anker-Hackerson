@@ -38,3 +38,17 @@ def test_mismatched_trace_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         account_rows([row(grid_export_kwh=2, negative_export_loss_eur=0.2)])
+
+
+def test_dataset_clock_is_explicit_and_keeps_original_calendar_date():
+    import pytest
+    naive = row(time="2026-09-14 23:00:00")
+    with pytest.raises(ValueError, match="timezone"):
+        account_rows([naive])
+    reports = account_rows([naive, row(time="2026-09-15 00:00:00")],
+                           time_basis="dataset_local_hour")
+    assert [r["device_date"] for r in reports] == ["2026-09-14", "2026-09-15"]
+    assert all("dataset_local_hour" in r["caveat"] for r in reports)
+    assert sum(r["totals"]["negative_export_loss_eur"] for r in reports) == 0.2
+    with pytest.raises(ValueError, match="must not mix"):
+        account_rows([naive, row()], time_basis="dataset_local_hour")

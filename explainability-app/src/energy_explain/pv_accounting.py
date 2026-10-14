@@ -7,7 +7,10 @@ import math
 
 
 def account_rows(rows: list[dict], *, arm: str = "zero_flow", step_hours: float = 1.0,
-                 max_charge_kw: float | None = None) -> list[dict]:
+                 max_charge_kw: float | None = None,
+                 time_basis: str = "timezone_aware") -> list[dict]:
+    if time_basis not in {"timezone_aware", "dataset_local_hour"}:
+        raise ValueError("unknown trace time basis")
     if not math.isfinite(step_hours) or step_hours <= 0:
         raise ValueError("step_hours must be positive and finite")
     if max_charge_kw is not None and (not math.isfinite(max_charge_kw) or max_charge_kw <= 0):
@@ -17,8 +20,11 @@ def account_rows(rows: list[dict], *, arm: str = "zero_flow", step_hours: float 
         if row.get("arm") != arm:
             continue
         stamp = datetime.fromisoformat(str(row["time"]).replace("Z", "+00:00"))
-        if stamp.tzinfo is None or stamp.utcoffset() is None:
+        aware = stamp.tzinfo is not None and stamp.utcoffset() is not None
+        if time_basis == "timezone_aware" and not aware:
             raise ValueError("trace time requires an explicit timezone")
+        if time_basis == "dataset_local_hour" and aware:
+            raise ValueError("dataset local-hour traces must not mix timezone-aware timestamps")
         buckets[(str(row["site"]), stamp.date().isoformat())].append(row)
     reports = []
     for (site, day), group in sorted(buckets.items()):
@@ -70,5 +76,7 @@ def account_rows(rows: list[dict], *, arm: str = "zero_flow", step_hours: float 
             "allocation_method": "estimate_pv_first_to_load_then_battery_then_grid",
             "source_kind": "replay_trace", "curtailment_status": "not_measured",
             "totals": totals, "bottlenecks": bottlenecks,
-            "caveat": "光伏去向是按功率平衡构造的估算；电网外送与负价外送损失取回放 trace，并非真实设备实测或官方结算。未提供潜在出力，不能核算弃光；未提供额定充电功率时不统计功率瓶颈。"})
+            "caveat": "光伏去向是按功率平衡构造的估算；电网外送与负价外送损失取回放 trace，并非真实设备实测或官方结算。未提供潜在出力，不能核算弃光；未提供额定充电功率时不统计功率瓶颈。"
+                + (" 时间口径为 dataset_local_hour：仅按 CSV 原始设备本地日期分组，时区未知，不补猜 UTC、不用于在线截止约束或跨时区对齐。"
+                   if time_basis == "dataset_local_hour" else " 时间口径为带时区的 trace 原始日期。")})
     return reports
