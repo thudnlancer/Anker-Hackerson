@@ -7,8 +7,8 @@ from pathlib import Path
 from .providers import ModelOutcome
 from .recovered_provider import RecoveredMilpProvider
 
-MODEL_VERSION = "shared-milp-0acf526f-cf1"
-SOURCE_SHA256 = "0acf526ff67be2bcd17455ac54f89500d326453f4fe4190f6bc4be87b082ca1e"
+MODEL_VERSION = "shared-milp-603de45c-cf1"
+SOURCE_SHA256 = "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4"
 
 
 class SharedMilpProvider(RecoveredMilpProvider):

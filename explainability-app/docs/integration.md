@@ -84,4 +84,4 @@ curl --fail-with-body -sS http://127.0.0.1:8080/api/decisions \
 
 ## 共同仓库接入
 
-同次 shadow 证据导出、直接调用共同 MILP 的提供器及完整运行命令见 [共同仓库协作接入说明](../../EXPLAINABILITY_COLLABORATION.md)。新的共享模型记录使用 `shared-milp-0acf526f-cf1`；历史恢复模型与人工四步模型保留各自版本，缺少共享源码时不会互相替代。
+同次 shadow 证据导出、直接调用共同 MILP 的提供器及完整运行命令见 [共同仓库协作接入说明](../../EXPLAINABILITY_COLLABORATION.md)。新的共享模型记录使用 `shared-milp-603de45c-cf1`；历史恢复模型与人工四步模型保留各自版本，缺少共享源码时不会互相替代。
