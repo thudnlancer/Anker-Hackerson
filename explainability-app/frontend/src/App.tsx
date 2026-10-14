@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { api, type Cost, type Decision, type Explanation, type Job, type Overview, type PlanJob, type PVDaily, type Provenance, type QuestionAnswer, type Scenario, type Settlement, type Station } from './api';
+import { api, type Cost, type Decision, type Explanation, type Job, type OfflineReplayStep, type OfflineReplaySummary, type Overview, type PlanJob, type PVDaily, type Provenance, type QuestionAnswer, type Scenario, type Settlement, type Station } from './api';
 
-type View = { kind: 'overview' } | { kind: 'decision'; id: string } | { kind: 'comparison'; id: string } | { kind: 'plans' } | { kind: 'pv' };
+type View = { kind: 'overview' } | { kind: 'decision'; id: string } | { kind: 'comparison'; id: string } | { kind: 'plans' } | { kind: 'pv' } | { kind: 'replay' };
 const actionNames: Record<string, string> = { charge: '充电', discharge: '放电', hold: '保持策略', self_consumption: '自用模式' };
 const statusNames: Record<string, string> = {
   candidate: '候选建议', candidate_only: '候选建议', submitted: '已提交', confirmed: '回读已确认', failed: '失败',
@@ -46,6 +46,7 @@ function currentView(): View {
   if (segments[0] === 'comparisons' && segments[1]) return { kind: 'comparison', id: decodeURIComponent(segments[1]) };
   if (segments[0] === 'plans') return { kind: 'plans' };
   if (segments[0] === 'pv') return { kind: 'pv' };
+  if (segments[0] === 'replay') return { kind: 'replay' };
   return { kind: 'overview' };
 }
 function navigate(path = '/') { window.location.hash = path; }
@@ -326,9 +327,23 @@ function PVPage() {
     })}</div>
   </>;
 }
+function OfflineReplayPage() {
+  const [summary, setSummary] = useState<OfflineReplaySummary | null>(null); const [step, setStep] = useState<OfflineReplayStep | null>(null);
+  const [index, setIndex] = useState(0); const [arm, setArm] = useState('irradiance'); const [error, setError] = useState('');
+  useEffect(() => { api.offlineReplay().then(setSummary).catch((e: Error) => setError(e.message)); }, []);
+  useEffect(() => { api.offlineReplayStep(index, arm).then(setStep).catch((e: Error) => setError(e.message)); }, [index, arm]);
+  if (error) return <ErrorBox message={error} />;
+  if (!summary || !step) return <Loading text="正在读取离线回测…" />;
+  const record = step.record;
+  return <><PageTitle eyebrow="OFFLINE STRATEGY REPLAY" title="真实策略回测记录" description="只读展示 W1 单站历史 trace；不创建在线决策、设备执行或官方结算。" />
+    <section className="panel scope-note"><strong>证据边界</strong><p>站点 {summary.site_id}，{summary.hours_per_arm} 小时 × 3 臂；时间仅标记为 <code>dataset_local_hour</code>（{summary.start_local_hour} 至 {summary.end_local_hour}），没有设备时区，不能用于在线 deadline 或跨时区比较。</p><p>天气为未来实测短波代理，不是归档 API 预报；这是家庭历史离线练习回放，不是现场设备或官方结算。所选窗口负价样本 {summary.negative_price_rows} 条，不能据此宣称已验证负电价应对。PV/负载与计划、指令、物理流分别展示，不能伪装成在线决策。</p></section>
+    <div className="pv-toolbar"><label>回测臂<select aria-label="回测臂" value={arm} onChange={(e) => setArm(e.target.value)}>{summary.arms.map((value) => <option key={value}>{value}</option>)}</select></label><label>小时序号<input aria-label="小时序号" type="number" min="0" max="167" value={index} onChange={(e) => setIndex(Math.max(0, Math.min(167, Number(e.target.value))))} /></label><button className="button secondary" onClick={() => setIndex((value) => (value + 1) % 168)}>下一小时</button></div>
+    <section className="panel"><div className="panel-heading"><Icon name="clock" /><h2>{String(record.local_hour)} · {arm}</h2><Badge value={String(record.solver_status)} /></div><div className="fact-list">{step.facts.map((fact) => <article className="fact" key={fact.text}><span className="fact-number">·</span><div><p>{fact.text}</p><EvidenceRefs values={fact.evidence_refs} /></div></article>)}</div><p className="scope-note">{step.scope}</p><p className="scope-note">来源 SHA-256：<code>{step.source_sha256}</code></p></section>
+  </>;
+}
 export default function App() {
   const [view, setView] = useState<View>(currentView); const [selectedRun, setSelectedRun] = useState('');
   useEffect(() => { const listener = () => { setView(currentView()); window.scrollTo?.(0, 0); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []);
-  const currentName = view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : view.kind === 'comparison' ? '替代方案' : view.kind === 'plans' ? '计划可行性' : '光伏分析';
-  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span><a href="#/plans" className={view.kind === 'plans' ? 'active' : ''}><Icon name="check" />计划检查</a><a href="#/pv" className={view.kind === 'pv' ? 'active' : ''}><Icon name="sun" />光伏分析</a></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{currentName}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : view.kind === 'comparison' ? <ComparisonPage id={view.id} key={view.id} /> : view.kind === 'plans' ? <PlanPage /> : <PVPage />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
+  const currentName = view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : view.kind === 'comparison' ? '替代方案' : view.kind === 'plans' ? '计划可行性' : view.kind === 'pv' ? '光伏分析' : '离线回测';
+  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span><a href="#/plans" className={view.kind === 'plans' ? 'active' : ''}><Icon name="check" />计划检查</a><a href="#/pv" className={view.kind === 'pv' ? 'active' : ''}><Icon name="sun" />光伏分析</a><a href="#/replay" className={view.kind === 'replay' ? 'active' : ''}><Icon name="clock" />离线回测</a></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{currentName}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : view.kind === 'comparison' ? <ComparisonPage id={view.id} key={view.id} /> : view.kind === 'plans' ? <PlanPage /> : view.kind === 'pv' ? <PVPage /> : <OfflineReplayPage />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
 }

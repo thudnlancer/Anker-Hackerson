@@ -44,6 +44,14 @@ Get-FileHash explainability-app/artifacts/e5-real-replay/*,explainability-app/ar
 
 ## 尚未签核的范围
 
+## W1 单站回测接入（后续增量）
+
+增量代码未改变 E5 结论：将 W1 `site_1_trace.csv` 作为独立、只读的 `offline-replay` 资源接入现有解释应用。它不会写入决策/执行/结算表，不进入站点总览的在线决策列表；页面入口为 `/#/replay`，API 为 `/api/offline-replay` 和 `/api/offline-replay/steps/{index}?arm=...`。字段映射、源哈希和复现命令见 [W1 单站接入说明](w1-offline-replay-integration.md)。
+
+真实源文件哈希：`c0a7ff9479f2f8faffc6791cd4c0670f38107beba22599fcfd2c4a5479e99fbf`。三臂各 168 行，原始时间 `2026-09-14 14:00:00` 到 `2026-09-21 13:00:00`，只标记 `dataset_local_hour`；不补设备时区。窗口 `sell < 0` 样本为 0，不能据此声称负电价能力。W1 的 `zero_flow` 只作离线模式语义，非硬件验证。
+
+本轮增量预验：W1 映射 focused tests `13 passed`（应用自身 `.venv`）；带根项目依赖的实验环境应用回归 `97 passed + 49 subtests`；前端 `16 passed`、build 通过；配置真实 trace 的 API/浏览器一站 smoke `passed=true`、无 page error。应用独立 `.venv` 全套跨仓测试有 1 项因缺少根项目 `joblib` 失败（96 passed），该依赖不在解释应用锁文件；不能将其误报成接入逻辑失败。
+
 ## 冻结提交与隔离集成复验
 
 代码冻结提交：`257bf132cfaab3a3cafd0f12081c58eb98e5af24`（8 个文件）。前置离线核算代码选择性集成提交：`8362854`（5 个实现/测试文件，来源 `5b5922d`，排除旧 README/共享状态）。隔离 worktree `D:\Anker黑客松\w2-e5-integration-check` 从主基线 `040257d` 开始，先接入本轮代码为 `64b9641`，再接入前置代码为 `8362854`。工作树干净；没有修改主仓其他 worker 的源码。
