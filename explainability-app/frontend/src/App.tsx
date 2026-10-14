@@ -295,13 +295,14 @@ function PlanPage() {
 }
 function PVPage() {
   const [siteId, setSiteId] = useState('1'); const [days, setDays] = useState<PVDaily[]>([]);
+  const [arm, setArm] = useState('zero_flow');
   const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
   async function load() {
     setError('');
-    try { setDays((await api.pvDaily(siteId)).days); }
+    try { setDays((await api.pvDaily(siteId, arm)).days); }
     catch (e) { setError((e as Error).message); }
   }
-  useEffect(() => { void load(); }, [siteId]);
+  useEffect(() => { setDays([]); void load(); }, [siteId, arm]);
   async function importFile(file?: File) {
     if (!file) return;
     setBusy(true); setError(''); setMessage('');
@@ -314,7 +315,8 @@ function PVPage() {
   }
   return <>
     <PageTitle eyebrow="PV ACCOUNTING" title="光伏消纳分析" description="按回放功率平衡估算光伏去向，并单独展示 trace 中记录的负价外送损失。" />
-    <div className="pv-toolbar"><label>站点<input aria-label="站点编号" value={siteId} onChange={(e) => setSiteId(e.target.value)} /></label><label className="button secondary">导入 JSONL<input aria-label="导入光伏 JSONL" type="file" accept=".jsonl,.ndjson,application/json" disabled={busy} onChange={(e) => void importFile(e.target.files?.[0])} /></label><button className="button secondary" onClick={() => void load()}>刷新</button></div>
+    <div className="pv-toolbar"><label>站点<input aria-label="站点编号" value={siteId} onChange={(e) => setSiteId(e.target.value)} /></label><label>回放口径<select aria-label="回放口径" value={arm} onChange={(e) => setArm(e.target.value)}><option value="zero_flow">zero_flow</option><option value="irradiance">irradiance（历史练习）</option></select></label><label className="button secondary">导入 JSONL<input aria-label="导入光伏 JSONL" type="file" accept=".jsonl,.ndjson,application/json" disabled={busy} onChange={(e) => void importFile(e.target.files?.[0])} /></label><button className="button secondary" onClick={() => void load()}>刷新</button></div>
+    {arm === 'irradiance' && days.length > 0 && <section className="scope-note" aria-label="三站历史回放证据边界"><strong>三站历史练习回放的证据边界</strong><p>这些是家庭历史数据的离线练习站点，不是比赛现场三台设备，也不是官方结算；E1–E3 的人工决策样例与此 PV 核算不是一条完整决策回放。</p><p>天气使用未来实测短波辐照度代理，不是归档的天气 API 预报。弃光状态为 <code>not_measured</code>，不能声称已测得弃光量。所选三站窗口没有负价样本，不能据此声称负电价应对能力。</p><p><code>dataset_local_hour</code> 仅用于按 CSV 原始本地日期核算；时区未知，不得用于在线 deadline 或跨时区比较。</p></section>}
     {message && <p role="status">{message}</p>}{error && <ErrorBox message={error} retry={() => void load()} />}
     {!error && days.length === 0 && <div className="empty-state"><Icon name="sun" size={32} /><h2>暂无光伏核算记录</h2><p>导入由回放 trace 生成的 JSONL 文件后查看站点日汇总。</p></div>}
     <div className="pv-day-list">{days.map((day) => {

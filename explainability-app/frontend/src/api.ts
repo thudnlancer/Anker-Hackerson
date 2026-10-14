@@ -137,5 +137,5 @@ export const api = {
     decision_id: id, target_soc_percent: targetSoc, deadline,
   }),
   planJob: (id: string) => request<PlanJob>(`/api/plans/${encodeURIComponent(id)}`),
-  pvDaily: (siteId: string) => request<{ site_id: string; arm: string; days: PVDaily[] }>(`/api/pv/${encodeURIComponent(siteId)}/daily`),
+  pvDaily: (siteId: string, arm = 'zero_flow') => request<{ site_id: string; arm: string; days: PVDaily[] }>(`/api/pv/${encodeURIComponent(siteId)}/daily?arm=${encodeURIComponent(arm)}`),
 };
