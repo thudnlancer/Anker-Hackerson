@@ -1,0 +1,6 @@
+{
+  "source": "local_online_config.json",
+  "solver_seconds": 2.0,
+  "soc_min_percent": 0.0,
+  "poll_seconds": 5.0
+}

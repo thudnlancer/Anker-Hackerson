@@ -24,19 +24,49 @@ IDLE = pd.Series({"flow": "idle", "charge_w": 0., "discharge_w": 0.})
 PUBLISHED = ["time", "buy", "sell", "shortwave_radiation_wm2"]
 STAGES = {1: ("self_consumption", "persistence"),
           2: ("self_consumption", "persistence", "irradiance"),
-          3: ("self_consumption", "persistence", "irradiance", "load_upper", "guarded")}
+          3: ("self_consumption", "persistence", "irradiance", "load_upper", "guarded"),
+          4: ("self_consumption", "persistence", "irradiance", "hybrid")}
 
 
-def visible_window(raw, index, start, end):
-    """Shrink at actual contest end; estimate inventory using only visible prices."""
+def pv_forecast(paths, published, arm):
+    if arm == "persistence":
+        return paths["persistence_pv"]
+    if arm == "irradiance":
+        return paths["irradiance_pv"]
+    if arm == "hybrid":
+        if not paths.get("calibration") or paths["calibration"].get("samples", 0) < 3:
+            return paths["persistence_pv"].copy()
+        hybrid = paths["irradiance_pv"].copy()
+        # The current measurement is always authoritative; the next device
+        # hour stays persistence because D2 did not establish a 1h benefit.
+        hybrid[:min(2, len(hybrid))] = paths["persistence_pv"][:min(2, len(hybrid))]
+        return hybrid
+    raise ValueError("unknown PV forecast arm")
+
+
+def visible_window(raw, index, start, end, terminal_mode="a5_eval_start_mean"):
+    """Shrink at contest end and calculate a declared terminal-price estimate.
+
+    ``a5_eval_start_mean`` preserves the historical A5 diagnostic.  The
+    causal ``current_visible_mean`` uses only the price points currently
+    published by the API at this decision tick. ``zero`` is a sensitivity
+    ablation with no terminal inventory credit.
+    """
     stop = min(index + 24, end)
     published = raw.iloc[index:stop][PUBLISHED].reset_index(drop=True)
-    terminal_estimate = float(raw.iloc[start:stop].buy.mean())
+    if terminal_mode == "a5_eval_start_mean":
+        terminal_estimate = float(raw.iloc[start:stop].buy.mean())
+    elif terminal_mode == "current_visible_mean":
+        terminal_estimate = float(published.buy.mean())
+    elif terminal_mode == "zero":
+        terminal_estimate = 0.0
+    else:
+        raise ValueError("unknown terminal price mode")
     return published, terminal_estimate
 
 
 def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
-             hold_mode="self_consumption"):
+             hold_mode="self_consumption", terminal_mode="a5_eval_start_mean"):
     with threadpool_limits(limits=1):
         started = perf_counter()
         raw = load_csv(path)
@@ -54,7 +84,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
         records = []
         for index in range(start, end):
             current = raw.iloc[index]
-            published, terminal = visible_window(raw, index, start, end)
+            published, terminal = visible_window(raw, index, start, end, terminal_mode)
             paths = power_inputs(current, raw.iloc[index-168:index], published)
 
             def solve(pv, load, soc):
@@ -65,7 +95,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                     time_limit_seconds=solver_time_limit)
 
             for arm, battery in batteries.items():
-                pv = paths["persistence_pv" if arm == "persistence" else "irradiance_pv"]
+                pv = pv_forecast(paths, published, arm) if arm in ("persistence", "irradiance", "hybrid") else paths["irradiance_pv"]
                 load = paths["interval_load" if arm == "load_upper" else "current_load"]
                 gate_accepted, margin = False, None
                 status, nonoptimal, fallback = "not_applicable", 0, False
@@ -105,6 +135,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                   "accounting_arm": "zero_flow" if hold_mode == "zero_flow" else "self_use_diagnostic",
                   "start_time": str(realized.time.iloc[0]), "end_time": str(realized.time.iloc[-1]),
                   "k_eur": k, "settlement_price_eur_kwh": settlement,
+                  "terminal_price_mode": terminal_mode,
                   "arms": window_metrics(trace, settlement, k, wear), "physical_audit": physics_audit,
                   "guard_accepted_steps": int(trace.gate_accepted.sum()),
                   "elapsed_seconds": perf_counter() - started}
@@ -121,7 +152,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("forecast_data"))
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--stage", type=int, choices=(1, 2, 3), default=3)
+    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4), default=3)
     parser.add_argument("--max-sites", type=int, default=20)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--workers", type=int, default=4)
@@ -132,6 +163,9 @@ def main():
     parser.add_argument("--solver-time-limit", type=float, default=5.)
     parser.add_argument("--hold-mode", choices=("self_consumption", "zero_flow"), default="self_consumption",
                         help="successful-plan idle behavior only; baseline and failure fallback always self-consume")
+    parser.add_argument("--terminal-price-mode", choices=("a5_eval_start_mean", "current_visible_mean", "zero"),
+                        default="a5_eval_start_mean",
+                        help="diagnostic terminal inventory valuation rule; current_visible_mean is causal")
     args = parser.parse_args()
     if min(args.max_sites, args.workers) < 1 or args.offset < 0:
         parser.error("positive sites/workers and nonnegative offset required")
@@ -151,7 +185,8 @@ def main():
     reports, started = [], perf_counter()
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         futures = [pool.submit(evaluate, p, args.output, args.stage, args.offset, args.wear,
-                               args.gate_threshold, args.solver_time_limit, args.hold_mode) for p in paths]
+                               args.gate_threshold, args.solver_time_limit, args.hold_mode,
+                               args.terminal_price_mode) for p in paths]
         for future in as_completed(futures):
             report = future.result()
             reports.append(report)
@@ -160,6 +195,7 @@ def main():
     reports.sort(key=lambda r: int(r["site"]))
     summary = {"mode": "offline_contest_formula_estimate", "writes_performed": 0,
                "successful_plan_idle_mode": args.hold_mode,
+               "terminal_price_mode": args.terminal_price_mode,
                "accounting_arm": "zero_flow" if args.hold_mode == "zero_flow" else "self_use_diagnostic",
                "official_score_claim": False,
                "sites": reports, "aggregate": aggregate_sites(reports),

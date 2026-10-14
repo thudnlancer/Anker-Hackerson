@@ -1,0 +1,80 @@
+{
+  "comparison": "A5_same_input_old_self_consumption_vs_new_zero_flow",
+  "official_score_claim": false,
+  "old_run": "outputs\\w1_a5_compare_self_20261014_1",
+  "new_run": "outputs\\w1_a5_compare_zero_20261014_1",
+  "input_manifest_equivalent": true,
+  "acceptance": {
+    "attribution_report": {
+      "passed": true,
+      "fallback_steps_reported": true
+    },
+    "same_input_baseline_comparison": {
+      "passed": true,
+      "includes_savings_fallback_attribution_and_physics": true
+    }
+  },
+  "sites": 5,
+  "hours_per_site": 168,
+  "arms": {
+    "persistence": {
+      "old_self_consumption_hold": {
+        "settled_saving_eur": 12.0220636479111,
+        "saving_settled_percent_estimate": 6.237739099270205,
+        "fallback_steps": 0,
+        "optimizer_attributed_steps": 329,
+        "non_optimizer_attributed_steps": 511
+      },
+      "new_zero_flow_hold": {
+        "settled_saving_eur": -4.075582489990214,
+        "saving_settled_percent_estimate": -2.1146469520256006,
+        "fallback_steps": 0,
+        "optimizer_attributed_steps": 840,
+        "non_optimizer_attributed_steps": 0
+      },
+      "delta_zero_flow_minus_old_eur": -16.097646137901314,
+      "delta_zero_flow_minus_old_percent_points": -8.352386051295806
+    },
+    "irradiance": {
+      "old_self_consumption_hold": {
+        "settled_saving_eur": 21.522837744117535,
+        "saving_settled_percent_estimate": 11.1672879511878,
+        "fallback_steps": 0,
+        "optimizer_attributed_steps": 495,
+        "non_optimizer_attributed_steps": 345
+      },
+      "new_zero_flow_hold": {
+        "settled_saving_eur": 17.738292059461507,
+        "saving_settled_percent_estimate": 9.203647657680031,
+        "fallback_steps": 0,
+        "optimizer_attributed_steps": 840,
+        "non_optimizer_attributed_steps": 0
+      },
+      "delta_zero_flow_minus_old_eur": -3.7845456846560275,
+      "delta_zero_flow_minus_old_percent_points": -1.963640293507769
+    }
+  },
+  "physical_audit": {
+    "old_self_consumption_hold": {
+      "passed_sites": 5,
+      "total_sites": 5,
+      "audited_rows": 2520,
+      "max_energy_residual_kwh": 1.7763568394002505e-15,
+      "max_grid_residual_kwh": 1.7763568394002505e-15,
+      "max_cost_residual_eur": 0.0
+    },
+    "new_zero_flow_hold": {
+      "passed_sites": 5,
+      "total_sites": 5,
+      "audited_rows": 2520,
+      "max_energy_residual_kwh": 1.7763568394002505e-15,
+      "max_grid_residual_kwh": 1.7763568394002505e-15,
+      "max_cost_residual_eur": 0.0
+    }
+  },
+  "limits": [
+    "Practice-site offline replay only; not official simulator settlement.",
+    "Both runs use the same forecast_data hashes, 168-hour windows, 50% initial SOC, wear and 2s solver budget.",
+    "Old self-consumption hold is non-optimizer-attributed; new zero-flow hold is optimizer-attributed only for successful plans."
+  ]
+}

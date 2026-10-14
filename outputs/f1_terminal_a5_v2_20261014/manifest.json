@@ -1,0 +1,52 @@
+{
+  "parameters": {
+    "data": "forecast_data",
+    "output": "outputs\\f1_terminal_a5_v2_20261014",
+    "stage": 4,
+    "max_sites": 5,
+    "offset": 0,
+    "workers": 2,
+    "wear": 0.02,
+    "gate_threshold": 0.02,
+    "solver_time_limit": 2.0,
+    "hold_mode": "zero_flow",
+    "terminal_price_mode": "a5_eval_start_mean"
+  },
+  "data_sha256": {
+    "forecast_data\\1.csv": "7147b61d5cb08b723ee6291b606e479d0683d72799aabaa4229f51c1d4e05204",
+    "forecast_data\\2.csv": "f26cf6798b3c9fc2ba0e1a056461ef343254ee8f2352c04b2e37e8be402cceb9",
+    "forecast_data\\3.csv": "e41661354ebf7048d8f7e0dc8d167054d7986d15b8483fe647dd270e3255d04f",
+    "forecast_data\\4.csv": "4b655bb47e405b2f07d90b715db7d3769bcde65f7f47a46d0095fea4335256e8",
+    "forecast_data\\5.csv": "119fb4dfcb2567e3a7adaea36bbc0cdc7b5cd1f4f918f9f0babb2780c3c6313e"
+  },
+  "source_sha256": {
+    "D:\\Anker\u9ed1\u5ba2\u677e\\\u5b9e\u9a8c\u73af\u5883\\run_contest_strategy_replay.py": "9f6fbb6a58a2eef7cf80db86f1bdb475c9eb41947219d83edbe7c7086df4cb8a",
+    "src\\energy_lab\\api_policy.py": "9690d8cc26ab375df9110f00b18016371e14c68ec6c25297b1b3cfec49c8552d",
+    "src\\energy_lab\\backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
+    "src\\energy_lab\\calibration.py": "022ed59694244c49099955d67be4e1e1ccf0fc2325ab66efd71db0fe4ba6695f",
+    "src\\energy_lab\\collector_health.py": "127b6b82eb04e815eb6d1a6c45365d2c3ec75a33969ceb525c5f43dda27e6018",
+    "src\\energy_lab\\config.py": "3ef11163a8d25af1333898fca36d09aaefc5f63d9fbf000acf34cfd0f78fb9b6",
+    "src\\energy_lab\\contest_replay.py": "d3432da0f7deaf57416bbca15fbb3658ea83e25afd3d0953d518ec9dad1bf973",
+    "src\\energy_lab\\decision.py": "b4712bc78390edeeac0f40dddeadc84d36df7f417a61a1ec8e5820130105265b",
+    "src\\energy_lab\\execute.py": "37eab25f86b33282040550fa7c0d1ba6dde0630103ba07018c55529c4e4289ac",
+    "src\\energy_lab\\explainability_evidence.py": "23903faa815f63510142b57fdf8bcfb2ad5d091571b2a843ea378ee2501610dc",
+    "src\\energy_lab\\forecast.py": "e0b8355692d0a2c47efacbcf4fb9f0243ab8e7d8ebdceb7cd1e971a7a0acd11a",
+    "src\\energy_lab\\ha_client.py": "d5b0a1e2644e004644976afd767ec88648e8fb04ad4fb1f50bdc351f8b2c062a",
+    "src\\energy_lab\\interface_contract.py": "108978f51243bf2fc5063dd59284f35e01eea68dca9d7c49569a42571d47f8a7",
+    "src\\energy_lab\\model.py": "4d1f29e9f63e47264bcd409ca4a741efef4178ef3dff64183c2ef5688e073c20",
+    "src\\energy_lab\\online_contract.py": "3a12b7acf68097bdde4e93538d35044d6ba919dbd78b49d560296249126b7eff",
+    "src\\energy_lab\\online_inference.py": "926f5f458fac5d848cd020a2ea9b1a98545a3e9f550c70c3321509b55eed5430",
+    "src\\energy_lab\\rolling.py": "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4",
+    "src\\energy_lab\\shadow.py": "fcf1f35a75cf5c6bd04b8d0f46ca450bef6a0bc7ae9dde4b68df2660b26f00ad",
+    "src\\energy_lab\\sim_client.py": "ad4d81ec12a3cb6b82e7eb43d7f5dd9a9e3ba0bfd245d48400287add12e1400c",
+    "src\\energy_lab\\strategy_backtest.py": "29b868def68e1fc0e9df7d339fa42c4d3bcc4734e7bb57ce5cafca9ed77b372e",
+    "src\\energy_lab\\system_model.py": "9e44fc3146629804056d83ed1857b4f0dd32f6eefeeaaab07a456499a9ccffdb",
+    "src\\energy_lab\\validation.py": "967dfd20e2dceb75acb07dbb66e0d95b32a1784e98d295184a51a2bac4275cf0",
+    "src\\energy_lab\\zero_flow.py": "6e359baad10c604a9a32bc09113f19a1e764d128c9ad9a17e2be177335840572",
+    "src\\energy_lab\\__init__.py": "6a4ac4e14ae1976e7b44c4a20f143f1ad88ddffb6c1e436d1fdacdd8a1d224a8"
+  },
+  "no_model_training": true,
+  "initial_soc": 50.0,
+  "hours": 168,
+  "weather_source": "future_observed_shortwave_proxy_not_archived_API_forecast"
+}

@@ -1,0 +1,518 @@
+{
+  "manifest_version": "f1-final-proposal-20261014-1",
+  "status": "final_proposal_pending_integration_signature",
+  "official_score_claim": false,
+  "f2_authorized": false,
+  "scope": "Final F1 parameter proposal, unsigned and locked for integration-owner review; no formal 100-site F2 run.",
+  "parameters": {
+    "solver_seconds": 2.0,
+    "mip_rel_gap": 1e-09,
+    "soc_min_percent": 0.0,
+    "soc_max_percent": 100.0,
+    "poll_seconds": 5.0,
+    "charge_efficiency": 0.95,
+    "discharge_efficiency": 1.0,
+    "efficiency_basis": "SOP and current energy model convention: 5% charging-side loss, no second discharge-side loss; not measured hardware efficiency. Official contradictory parameters require a new manifest and C4/A5/F1 review.",
+    "degradation_cost_eur_per_kwh": 0.02,
+    "terminal_price": {
+      "rule": "current_visible_mean",
+      "definition": "Arithmetic mean of import prices in the API-visible horizon at the current decision tick; explicitly passed to optimizer.",
+      "missing_price": "If any price required in the current optimizer horizon is missing, non-finite or not device-time aligned, skip optimization for that tick; explicitly switch to self_consumption, record non-optimizer-attributed fallback and reason missing_or_invalid_price. Do not fill zero, reuse stale prices or invoke optimizer terminal-price default.",
+      "settlement_inventory_value": "Report separately using the contest evaluation-window settlement price; do not conflate with optimizer terminal estimate."
+    },
+    "successful_plan_idle": "zero_flow",
+    "failure_fallback_idle": "self_consumption",
+    "failure_fallback_attribution": "non-optimizer-attributed",
+    "online_price_anomaly_acceptance": {
+      "evidence": "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md",
+      "checks": [
+        "missing",
+        "non_finite",
+        "device_time_misaligned"
+      ],
+      "policy": "Skip optimizer for this tick; explicitly switch to self_consumption; audit reason and non-optimizer-attributed; never impute a price.",
+      "scope_limit": "Mocked online runner/HA client chain, not remote contest-machine acceptance."
+    },
+    "pv_forecast": {
+      "status": "offline_f2_candidate_pending_integration_approval",
+      "current_point": "Current HA PV measurement is authoritative.",
+      "lead_1_device_hour": "persistence",
+      "lead_ge_2_device_hours": "causal 168-hour irradiance calibration",
+      "minimum_daylight_samples": 3,
+      "calibration_failure": "persistence for the full forecast horizon",
+      "offline_f2_scope": "Hybrid rule is a diagnostic F2 offline candidate only; it uses observed shortwave proxy rather than archived API forecasts.",
+      "online_scope": "Use persistence-only until D3 validates real API forecast field, device-time alignment, quality, missing and delayed updates; no online hybrid activation from this manifest."
+    },
+    "offline_time_step": "1 hour",
+    "online_time_step": "Use official API/device granularity; not frozen by the offline hourly study."
+  },
+  "readiness": {
+    "config_snapshot": "outputs/w1_readiness_actual_20261014/config_snapshot.json",
+    "config_snapshot_sha256": "103f32a460489b852f6c5dc457f75bc5f4e60570de0c989ee01627d5f082f8b6",
+    "readiness_report": "outputs/w1_readiness_actual_20261014/readiness.json",
+    "control_config_ready": true,
+    "overall_ready": false,
+    "observations_per_station_device_hours": {
+      "1": 30,
+      "2": 30,
+      "3": 30
+    },
+    "note": "Control configuration check passes; full online readiness is false because stations have 30 device-hours versus 168 required. This is not a prerequisite for offline F2."
+  },
+  "evidence": {
+    "a5_same_input": "outputs/w1_a5_compare_20261014_1/a5_same_input_comparison.json",
+    "a5_report": "A5_ATTRIBUTION_AND_BASELINE_REPORT.md",
+    "c4_report": "outputs/w1_c4_verification_20261014_1/verification_report.json",
+    "terminal_price_sensitivity": {
+      "sites": 5,
+      "hours_per_site": 168,
+      "stage": 4,
+      "hold_mode": "zero_flow",
+      "wear_eur_per_kwh": 0.02,
+      "solver_seconds": 2.0,
+      "runs": {
+        "a5_eval_start_mean": {
+          "output": "outputs/f1_terminal_a5_v2_20261014",
+          "k_eur": 192.7311074828,
+          "savings_percent": {
+            "persistence": -2.1146469520256006,
+            "irradiance": 9.203647657680031,
+            "hybrid": 9.049398978597512
+          },
+          "savings_eur": {
+            "persistence": -4.075582489990214,
+            "irradiance": 17.738292059461507,
+            "hybrid": 17.44100687198818
+          },
+          "fallback_steps": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "nonoptimal_solves": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "optimizer_attributed_steps": {
+            "persistence": 840,
+            "irradiance": 840,
+            "hybrid": 840
+          },
+          "non_optimizer_attributed_steps": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "positive_sites": {
+            "persistence": 2,
+            "irradiance": 5,
+            "hybrid": 5
+          },
+          "physical_audit_passed_sites": 5,
+          "site_count": 5,
+          "official_score_claim": false
+        },
+        "current_visible_mean": {
+          "output": "outputs/f1_terminal_current_v2_20261014",
+          "k_eur": 192.7311074828,
+          "savings_percent": {
+            "persistence": 2.469420342708376,
+            "irradiance": 9.036159182651248,
+            "hybrid": 8.969948185434253
+          },
+          "savings_eur": {
+            "persistence": 4.759341174907409,
+            "irradiance": 17.41548966663248,
+            "hybrid": 17.28788047842076
+          },
+          "fallback_steps": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "nonoptimal_solves": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "optimizer_attributed_steps": {
+            "persistence": 840,
+            "irradiance": 840,
+            "hybrid": 840
+          },
+          "non_optimizer_attributed_steps": {
+            "persistence": 0,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "positive_sites": {
+            "persistence": 3,
+            "irradiance": 5,
+            "hybrid": 5
+          },
+          "physical_audit_passed_sites": 5,
+          "site_count": 5,
+          "official_score_claim": false
+        },
+        "zero": {
+          "output": "outputs/f1_terminal_zero_v2_20261014",
+          "k_eur": 192.7311074828,
+          "savings_percent": {
+            "persistence": -3.626923366344401,
+            "irradiance": 4.086864204331148,
+            "hybrid": 3.642304054305752
+          },
+          "savings_eur": {
+            "persistence": -6.990209571508017,
+            "irradiance": 7.876658642325544,
+            "hybrid": 7.019852941754401
+          },
+          "fallback_steps": {
+            "persistence": 4,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "nonoptimal_solves": {
+            "persistence": 4,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "optimizer_attributed_steps": {
+            "persistence": 836,
+            "irradiance": 840,
+            "hybrid": 840
+          },
+          "non_optimizer_attributed_steps": {
+            "persistence": 4,
+            "irradiance": 0,
+            "hybrid": 0
+          },
+          "positive_sites": {
+            "persistence": 2,
+            "irradiance": 5,
+            "hybrid": 4
+          },
+          "physical_audit_passed_sites": 5,
+          "site_count": 5,
+          "official_score_claim": false
+        }
+      },
+      "conclusion": "Use current API-visible import-price mean as the causal optimizer terminal price; A5 evaluation-start mean reuses past prices in later ticks. Keep contest-window inventory settlement valuation distinct from optimizer terminal estimate."
+    },
+    "pv_rule_evidence": {
+      "d2_bootstrap": "outputs/irradiance_d2_expansion_20261013/final_bootstrap_all20.json",
+      "lead_1h": {
+        "verdict": "inconclusive_keep_persistence",
+        "daylight_pairs": 508,
+        "device_days": 19,
+        "mae_ratio_calibrated_over_persistence": 1.0996937231991926,
+        "ratio_ci95": [
+          0.9476192236018062,
+          1.3365918080390093
+        ],
+        "calibrated_mae_w": 476.95751641487186,
+        "persistence_mae_w": 433.7185039370079,
+        "calibrated_bias_w": -4.1476905391252155,
+        "per_site": {
+          "1": {
+            "pairs": 169,
+            "mae_ratio": 1.4199747046014586,
+            "calibrated_mae_w": 597.1707821310027,
+            "persistence_mae_w": 420.55029585798815
+          },
+          "2": {
+            "pairs": 163,
+            "mae_ratio": 1.1696406326604112,
+            "calibrated_mae_w": 319.4410554855431,
+            "persistence_mae_w": 273.11042944785277
+          },
+          "3": {
+            "pairs": 176,
+            "mae_ratio": 0.8526304825754679,
+            "calibrated_mae_w": 507.4071824685905,
+            "persistence_mae_w": 595.1079545454545
+          }
+        },
+        "shrinkage_diagnostic": {
+          "best_alpha": 0.5,
+          "alpha_mae_w": 409.31042642690454,
+          "alpha_over_persistence_ci95": [
+            0.8653199268033539,
+            1.0625593911478552
+          ],
+          "caveat": "alpha selected on this sample; CI not selection-corrected"
+        }
+      },
+      "lead_2h": {
+        "verdict": "calibrated",
+        "daylight_pairs": 468,
+        "device_days": 19,
+        "mae_ratio_calibrated_over_persistence": 0.629838464057732,
+        "ratio_ci95": [
+          0.5408305074854798,
+          0.7634621437487796
+        ],
+        "calibrated_mae_w": 505.7966234728237,
+        "persistence_mae_w": 803.0576923076923,
+        "calibrated_bias_w": -40.65610946926011,
+        "per_site": {
+          "1": {
+            "pairs": 164,
+            "mae_ratio": 0.7616596172750262,
+            "calibrated_mae_w": 625.8473478361628,
+            "persistence_mae_w": 821.689024390244
+          },
+          "2": {
+            "pairs": 141,
+            "mae_ratio": 0.9699150059976573,
+            "calibrated_mae_w": 356.1307779468845,
+            "persistence_mae_w": 367.177304964539
+          },
+          "3": {
+            "pairs": 163,
+            "mae_ratio": 0.4429927578664782,
+            "calibrated_mae_w": 514.474938954847,
+            "persistence_mae_w": 1161.361963190184
+          }
+        },
+        "shrinkage_diagnostic": {
+          "best_alpha": 1.0,
+          "alpha_mae_w": 505.7966234728237,
+          "alpha_over_persistence_ci95": [
+            0.5411611528216905,
+            0.7712582422224993
+          ],
+          "caveat": "alpha selected on this sample; CI not selection-corrected"
+        }
+      },
+      "lead_4h": {
+        "verdict": "calibrated",
+        "daylight_pairs": 410,
+        "device_days": 19,
+        "mae_ratio_calibrated_over_persistence": 0.41304173979839354,
+        "ratio_ci95": [
+          0.3557240120622921,
+          0.4956761896867917
+        ],
+        "calibrated_mae_w": 502.0663385892331,
+        "persistence_mae_w": 1215.5341463414634,
+        "calibrated_bias_w": -56.05346654512279,
+        "per_site": {
+          "1": {
+            "pairs": 134,
+            "mae_ratio": 0.4594115711756415,
+            "calibrated_mae_w": 650.5850683422456,
+            "persistence_mae_w": 1416.1268656716418
+          },
+          "2": {
+            "pairs": 126,
+            "mae_ratio": 0.8631952042128361,
+            "calibrated_mae_w": 366.2961998321581,
+            "persistence_mae_w": 424.3492063492063
+          },
+          "3": {
+            "pairs": 150,
+            "mae_ratio": 0.2842183839651672,
+            "calibrated_mae_w": 483.43652323248506,
+            "persistence_mae_w": 1700.9333333333334
+          }
+        },
+        "shrinkage_diagnostic": {
+          "best_alpha": 1.0,
+          "alpha_mae_w": 502.0663385892331,
+          "alpha_over_persistence_ci95": [
+            0.3565974607555668,
+            0.4958123975353589
+          ],
+          "caveat": "alpha selected on this sample; CI not selection-corrected"
+        }
+      },
+      "strategy_replay": {
+        "current_visible_hybrid": 8.969948185434253,
+        "current_visible_hybrid_positive_sites": 5,
+        "limitation": "Five practice sites and future observed shortwave proxy, not archived API forecasts or official scoring."
+      },
+      "candidate_rule": "Current HA PV observation wins at the current point; persistence at +1 device hour; calibrated forecast irradiance at >=2 device hours using prior 168h and >=3 daylight samples; otherwise persistence for the full forecast."
+    },
+    "limitations": [
+      "Practice-site offline replay, not official settlement.",
+      "Future observed shortwave radiation is only a proxy for issued API weather forecasts.",
+      "Five-site strategy evidence is directional and not a formal 100-site result.",
+      "PV hybrid is implemented in the offline diagnostic arm; online API forecast integration remains unverified."
+    ]
+  },
+  "parameter_provenance": {
+    "solver_seconds": "C4 72 frozen cases, 72/72 emitted and zero physics violations",
+    "mip_rel_gap": "rolling.py MILP option; no relaxation from 1e-9",
+    "soc_min_percent": "C3 and contest SOP 0-100% physical interval",
+    "soc_max_percent": "contest SOP 0-100% physical interval",
+    "poll_seconds": "actual online control-config snapshot, 5s > 2s solver budget",
+    "charge_efficiency": "rolling.py and PhysicalParameters charging-side energy equation; model convention, not hardware measurement",
+    "discharge_efficiency": "PhysicalParameters and replay model, no second discharge-side loss; model convention",
+    "degradation_cost_eur_per_kwh": "A5 replay manifest wear=0.02 explicitly passed to solver and accounting; rolling.py generic default 0.002 is not used for F2",
+    "terminal_price": "F1 five-site paired terminal sensitivity; current-visible mean is causal and agrees with rolling.py default only when optimizer horizon equals the visible price window",
+    "successful_plan_idle": "A5 zero-flow same-input comparison and B1/B2 verified device semantics",
+    "failure_fallback_idle": "A2 execution decision table and A5 non-optimizer attribution",
+    "pv_forecast": "D2 lead-error bootstrap plus five-site offline proxy strategy replay; not online API forecast validation",
+    "offline_time_step": "current practice dataset and replay implementation use hourly rows",
+    "online_time_step": "official API/device granularity remains authoritative and is not inferred from offline data"
+  },
+  "reproducibility": {
+    "replay_command_template": "python run_contest_strategy_replay.py --data forecast_data --output <new-dir> --stage 4 --max-sites 5 --workers 2 --wear 0.02 --solver-time-limit 2 --hold-mode zero_flow --terminal-price-mode <a5_eval_start_mean|current_visible_mean|zero>",
+    "source_sha256": {
+      "build_f1_manifest.py": "6142f1e7dc888e37f3fa7f9cf6bed75b9aae6b45ca0582c8a2f5e96dbb10c6e2",
+      "run_contest_strategy_replay.py": "9f6fbb6a58a2eef7cf80db86f1bdb475c9eb41947219d83edbe7c7086df4cb8a",
+      "run_live.py": "edd3421055b046fcbc499e3675c92ae51480fcf4ee54915702075f31e1708d48",
+      "src/energy_lab/backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
+      "src/energy_lab/contest_replay.py": "d3432da0f7deaf57416bbca15fbb3658ea83e25afd3d0953d518ec9dad1bf973",
+      "src/energy_lab/execute.py": "37eab25f86b33282040550fa7c0d1ba6dde0630103ba07018c55529c4e4289ac",
+      "src/energy_lab/interface_contract.py": "108978f51243bf2fc5063dd59284f35e01eea68dca9d7c49569a42571d47f8a7",
+      "src/energy_lab/model.py": "4d1f29e9f63e47264bcd409ca4a741efef4178ef3dff64183c2ef5688e073c20",
+      "src/energy_lab/rolling.py": "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4",
+      "src/energy_lab/shadow.py": "fcf1f35a75cf5c6bd04b8d0f46ca450bef6a0bc7ae9dde4b68df2660b26f00ad",
+      "src/energy_lab/validation.py": "967dfd20e2dceb75acb07dbb66e0d95b32a1784e98d295184a51a2bac4275cf0"
+    },
+    "available_practice_dataset_count": 100,
+    "available_practice_dataset_sha256": {
+      "forecast_data/1.csv": "7147b61d5cb08b723ee6291b606e479d0683d72799aabaa4229f51c1d4e05204",
+      "forecast_data/10.csv": "9b8aea373dc48d956cf025433bae7151a38bb5b7893d116ebbafc8f81b8eebc0",
+      "forecast_data/100.csv": "61261115e1df10862ca9f9642bd71129d57de727b96658c6c845afef1ffd16b3",
+      "forecast_data/11.csv": "67590692542f6d7a5abeed8f37c6431f6f49bc4d26564f01d983dc4644beb09a",
+      "forecast_data/12.csv": "44ccc9a52394f82d636b2038c90a643fc2c127232b9a2d6a364d56d4e01bb89f",
+      "forecast_data/13.csv": "05efd85c32bb1f5414a4e4ac2fb22bb5da653c216d4a5bead2ffbe03f07dfdf4",
+      "forecast_data/14.csv": "2109024c5e62c194773ab18ac14d8adf56a0255e876615aef88135029e5f02fd",
+      "forecast_data/15.csv": "7dfc841a115e2bc3da89c8f1aadd59c3c3a163f6f452dcbd092c5bedbd67c424",
+      "forecast_data/16.csv": "2e252f1d817414cb24e9a1cd9ea23856f3c4f6a273ab3b2ca4264ba2a7de464a",
+      "forecast_data/17.csv": "aa8da2953b755b9fb971bee28d7ecb953ed18d2c4a5c972eb75fe3343733fca1",
+      "forecast_data/18.csv": "889b24c53049f32140e8bceda4f766350772c48f902a96f82bd24145942c75fe",
+      "forecast_data/19.csv": "e036ec6b2a3e964d379abc5cca4fa3464bf41e150d38cc3bc08f923369637511",
+      "forecast_data/2.csv": "f26cf6798b3c9fc2ba0e1a056461ef343254ee8f2352c04b2e37e8be402cceb9",
+      "forecast_data/20.csv": "2ff4d495bfa9d1df85d20fe380cbbff140f174c0b3d880c8848ed0c2e03ca977",
+      "forecast_data/21.csv": "3c482f551081a4fb672a84ddd9f8450ca0b49070d8450341f6544ec56ad73bee",
+      "forecast_data/22.csv": "954e151bb0375facbb7e1a2c67cc9ec31a8d88d3e211750a540372e840aea914",
+      "forecast_data/23.csv": "acd6d4153b04b57a3718dedcceec5a23446c42c5016a9dd203639291f3296c46",
+      "forecast_data/24.csv": "259d5cd9bf62de053551a2dcd5c984a170820a9302cddbbe09668248de909d95",
+      "forecast_data/25.csv": "4ee75f2c52367b07dff71be610677da2f75affa24aef2005bf8b17067246bc97",
+      "forecast_data/26.csv": "08f17a16ad8e6d850102b93e3ebe2833a84213816f23ef8f0fc1c4aa2bd17a1d",
+      "forecast_data/27.csv": "85ef9786c49b5646dd9d7f8622589e0b96cd929fb0a49e8ee85927678a1cc958",
+      "forecast_data/28.csv": "98e0215f7cbcf95b989ec1af90ccb699eae4308d074d95fb241c2f54230de2d4",
+      "forecast_data/29.csv": "be404211c9f345f0c0e0906231d305a179049c7e509ecfd52a6ffd86595f0e7e",
+      "forecast_data/3.csv": "e41661354ebf7048d8f7e0dc8d167054d7986d15b8483fe647dd270e3255d04f",
+      "forecast_data/30.csv": "7870626b202a1cccad2ef2250aa0c70fd2b629504eee3992d09be9f2682ed012",
+      "forecast_data/31.csv": "cb77ac76f8a8d55000f58fa7ef57436941c1796c96b11e92a1c275949de30103",
+      "forecast_data/32.csv": "24a4973af25a849046771efc63147c208aff71d0f7b413be8d387632ec4958c2",
+      "forecast_data/33.csv": "4b9a3e5b3312d2d96f2c9ade9c4bf5ee83250f553c04da7cf18a4303f76d272a",
+      "forecast_data/34.csv": "f6bbd870b3809f36e2ee5d2818597d22261cf8911b89c76687a25ff856245432",
+      "forecast_data/35.csv": "d0150350b0fedcde3239edd7921da73634a38f252f6e150c10dda272893a4cfe",
+      "forecast_data/36.csv": "ad77a662e2f47320939adf26762b98d79362cd3e0b15a96258c5d52cdd3805f3",
+      "forecast_data/37.csv": "82cdb3acb5d604aa458bd80a71c5e02dc672c12e2ae71ea48a94769567f6aa25",
+      "forecast_data/38.csv": "b5c435155284652847da4dcff562942c366fbf5bc30cec897787b41268a39079",
+      "forecast_data/39.csv": "f42b8675a790bb4087ce21d2dd24b4b5dd5bc05fc764cce986b7685567805b59",
+      "forecast_data/4.csv": "4b655bb47e405b2f07d90b715db7d3769bcde65f7f47a46d0095fea4335256e8",
+      "forecast_data/40.csv": "bf71e7cd2c3e02d1f60e3e60827d4873e0498a50797dd6d37e3a071304453dc7",
+      "forecast_data/41.csv": "81e04aac29b0fb3582814a712a628186064a09e9da787949f4c15b7e129b4a66",
+      "forecast_data/42.csv": "76ac7e173e32a16607e47e6f228324f53af5de29b479c2f88297e36662a90889",
+      "forecast_data/43.csv": "ea7f9f8185a55d5c58d69da81c351c5285262952b163dc62faaf72d8b8f1035f",
+      "forecast_data/44.csv": "3fdceb275ff7446a08d546b615157275281ba26fe8c74af763b7bafce73cefb7",
+      "forecast_data/45.csv": "2aaf167c07c27816d9da10d87bb7df64f261f28d7c9ef2d69de664be94aef741",
+      "forecast_data/46.csv": "345e9a806c1da21c939ba1926614afafd394de6802d0339c04acd0b82de129bd",
+      "forecast_data/47.csv": "ebe6b8d2f11c2f4c2a8b31a191ca5176fec7a8cffd4040ad96a271f55c21df3d",
+      "forecast_data/48.csv": "e1da64a167c94e9a4b1d165b38e530cecc8e578fca521caca353db18191b7da7",
+      "forecast_data/49.csv": "5c6ac28fd883d1051b6803f74e3a897eca6e85a6f47124456f10570e9ef03d3d",
+      "forecast_data/5.csv": "119fb4dfcb2567e3a7adaea36bbc0cdc7b5cd1f4f918f9f0babb2780c3c6313e",
+      "forecast_data/50.csv": "e10716641a2771230486ba86f6bcf5663f1f3a7e1ebef33348f0c63288c96262",
+      "forecast_data/51.csv": "5d1fe298c532a602751cd10c73b5eec72c5027e45df7e1413306db57c00b055a",
+      "forecast_data/52.csv": "f7493a0fb222fdda3fa1694cf3a400e4e55b8bd8c602502ac488c8117f2ea549",
+      "forecast_data/53.csv": "b1c1a31ae5d6091f5622d55ec9184bd386019b007e3dbf58c698452aa07a54aa",
+      "forecast_data/54.csv": "58e9c5e5b0825ad216b7641c9c29b63e9ac4225d68b575d2f561e572e1951f8c",
+      "forecast_data/55.csv": "114e5ffd3e9d03c1a28cf5c5b9a79e9e18a8f88bcf0bbfcbc219351382634779",
+      "forecast_data/56.csv": "4103dd86730627eb01c0b83ce3d2e246b78474df8812a48365ed94c2670e6ad3",
+      "forecast_data/57.csv": "76117ae39e1c682606c38d406ee68f02c3181f58a652a045b88f6c8c8b7727d7",
+      "forecast_data/58.csv": "1a329cd4faf0f9991704b26a2e1a0bdeafbdf46c5f7e65953fe58cebe4e4e8fb",
+      "forecast_data/59.csv": "fedfe3b4658f957a5cb0e89f68327bbe08d4d109a8163fa4adacd00b3f09cfe1",
+      "forecast_data/6.csv": "c9a8e96928d3c456aa15dfadad19af7ea12ed1062872b899e104dc3ffac20325",
+      "forecast_data/60.csv": "de087294e43071bbf0f4002d5287f1ed3d307b35b57789c59c2c0ed79d15f21b",
+      "forecast_data/61.csv": "9a0b4b971ea4ccc066cc8c92b7b64da862e52a4f86766deabd39584a328f120f",
+      "forecast_data/62.csv": "6bb009b6fc0fab93eac10505fda60dfcfce49d953780519fd3b4e4dd821472a3",
+      "forecast_data/63.csv": "c50472dc29a2452ddb53d636db45215dfffc2f7853ceee68de67c4b08426ea47",
+      "forecast_data/64.csv": "ed9ce68b29aa3d68440af00b8522ac922bb719395421d35d7aefe7bbf26906b6",
+      "forecast_data/65.csv": "6d5f4e3e1b277e9b1b19a6c5727469d811c390b3ac1538cdafc5f8577c68d822",
+      "forecast_data/66.csv": "f4520164ddfe50de890f3d9e019362fe278e2fbb455a9674c4c8c26d8d1a09a0",
+      "forecast_data/67.csv": "3175463a85d3194333f5efb3ba6e8b7dff38ab1bae3cc02f7bcc949e61683ebf",
+      "forecast_data/68.csv": "39b3bd58c9e99067bee21a45c8987d80642378c76090c68a45254f98e0c10ac4",
+      "forecast_data/69.csv": "5f6c13828a5f4c8ccce56a10374178204ea9f31b6caf8baf3e709f7315e92619",
+      "forecast_data/7.csv": "acc56f05f48aaf9cd2386088e754c51a1fb30e843b5804869e6a5413bb85e9b6",
+      "forecast_data/70.csv": "9e84e1d081b510abfa432fe5976d1f8021fcd59143a6c64a85569c0dcb4413c6",
+      "forecast_data/71.csv": "521c6bf837fb0037d716a836dca0f1a47a2afdb3656f6b4e3d6093caa083eacc",
+      "forecast_data/72.csv": "e7cde59c6ba5b13bd388e85b3badf61e6f91990ebabd15cae9855522a6b8bf32",
+      "forecast_data/73.csv": "08fd4ee583de6911d36544732036cf634e34dc7df50f34d8207e438c4fb929c5",
+      "forecast_data/74.csv": "035e46e2e6df8250a4c22ab8ada8be82c2bb06ed76d6685b481ca77b7aec885c",
+      "forecast_data/75.csv": "670231df535612807f188181e778fa2338469f82bc282d21a365a50e566b522e",
+      "forecast_data/76.csv": "ec5ae0dae976be0ec5ccd444d7deaed45e0ef377d9eee591212abf55d64fc44e",
+      "forecast_data/77.csv": "1df06b4fcc4dcb814a2b5c37408534ac304cdd3ae8946651b81bac08bf6700b2",
+      "forecast_data/78.csv": "18f5e3a0cd0eee73145368ec3c32787929f3af83d65bcd4cd8279aee1452ffe8",
+      "forecast_data/79.csv": "45ab417803151ea701c77cc9ed2132828f9503761fb44973a2d5b517e309c77b",
+      "forecast_data/8.csv": "4468fbe2d2a4216531e0d95ebed0bd09b612ee757ec0f5148caab488585adb1a",
+      "forecast_data/80.csv": "51995966c7aba382de06b495011c0fde1739317add7fca9fa3098b4b04431827",
+      "forecast_data/81.csv": "5e92f537f7fc49e87f71a6d65c2a68e3b6069c867491c4b061e586959d302952",
+      "forecast_data/82.csv": "7557698799a3bdf631dca5e807aa6ae8430149859d8cae6189c8101c587f9eec",
+      "forecast_data/83.csv": "7266d0a2baa7abe906c8eefa90c0e986eae04e46d99f51943549a13c6604a0a4",
+      "forecast_data/84.csv": "0039de3216937f166b627f8c6a0f411f578df54e4076e89e56f6c43e43fb9e1b",
+      "forecast_data/85.csv": "d59f6f5e510a4db376d84b1406ce373065e05c44dba76733396cfa6323004b85",
+      "forecast_data/86.csv": "a9170fa9cefb05e26c2f6d802d106bf67e36d1dfd1653fcd3535806f2f1c6e5d",
+      "forecast_data/87.csv": "db4c5989c12546cf6bf46076244782207b3e2d70362edc0f86445de07a6e4fc9",
+      "forecast_data/88.csv": "106a3119740c85276210332049538eb8c442eddd03f53996c46711034cb6f1ca",
+      "forecast_data/89.csv": "0fcd251004824dc311bcaa232b52ce3c110be8e5fc4dab28d5394f11052f5cbf",
+      "forecast_data/9.csv": "01d389914bf790d81bd31c45a43388f76de66affbd4c196233bcf68c17c735ae",
+      "forecast_data/90.csv": "0ef30b73b9acb32407948a3bd618663702815f9c2c9537476fd82ad0522481fb",
+      "forecast_data/91.csv": "243cd4ea8d1e8e182a326c1767c42df8674dd0c31d350e6aba4fc7e87f9bcc28",
+      "forecast_data/92.csv": "622615272c02a903e63297b8dcc744449d05305262e5276733cff284b3eea322",
+      "forecast_data/93.csv": "a877a7aa9414b1037438c24def549cbbbc94e97968a9dac54a4bb52017652604",
+      "forecast_data/94.csv": "b5621740acd81d5376075611ff6b9b51c4c39684b3d7d14c6876b9f8f7eaa15a",
+      "forecast_data/95.csv": "8dbf2eddd8073dc5bc6b6277066366edc3b688e04e5f9b7ae9b3a4ae3b53b6f0",
+      "forecast_data/96.csv": "8dad00c8f5a707abc435b328a29e0f3bebe9c904ae5889f1afa1f76eadb8ac01",
+      "forecast_data/97.csv": "3b33883f41825a244dc278294464dc97131d26c2d12cc183a57a3c90ee0a30b3",
+      "forecast_data/98.csv": "e165cb3705b58617bc140c04a9e4afda5288a30306a94359bd330d3ad0d55166",
+      "forecast_data/99.csv": "7912e7ca93641e23cc8485a22337b84d645f8bbf68e5f8eaf9bcff312792f003"
+    },
+    "diagnostic_replay_input_count": 5,
+    "diagnostic_replay_input_sha256": {
+      "forecast_data\\1.csv": "7147b61d5cb08b723ee6291b606e479d0683d72799aabaa4229f51c1d4e05204",
+      "forecast_data\\2.csv": "f26cf6798b3c9fc2ba0e1a056461ef343254ee8f2352c04b2e37e8be402cceb9",
+      "forecast_data\\3.csv": "e41661354ebf7048d8f7e0dc8d167054d7986d15b8483fe647dd270e3255d04f",
+      "forecast_data\\4.csv": "4b655bb47e405b2f07d90b715db7d3769bcde65f7f47a46d0095fea4335256e8",
+      "forecast_data\\5.csv": "119fb4dfcb2567e3a7adaea36bbc0cdc7b5cd1f4f918f9f0babb2780c3c6313e"
+    },
+    "evidence_artifact_sha256": {
+      "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md": "ee1cf0ffa8255f8d7d67e1401763a068199078196afce1bdced06a7e115e75ec",
+      "F1_PARAMETER_FREEZE_CHECKLIST.md": "51e1cc0a049e6e82e6c18759014075feb9f1e1f19d1744cfd5c3e891dbb4d184",
+      "F1_TERMINAL_PV_EVIDENCE.md": "fb9c750f7d7b07a7c6cc8df01cd6bae65f9a70322d61a6f5560dcb388c304650",
+      "outputs/f1_terminal_a5_v2_20261014/manifest.json": "9bfce522c33d1da5edbace16543baff3220e8b58661685a7139049405186083c",
+      "outputs/f1_terminal_a5_v2_20261014/summary.json": "2735ea35fc346a0fab91f85ce276dea02b3779762cba0df8a24b2858d8f6dff7",
+      "outputs/f1_terminal_current_v2_20261014/manifest.json": "82711d4c25b9d9e05540083da73c57fca64f77cd4659049ca829bb83b190d154",
+      "outputs/f1_terminal_current_v2_20261014/summary.json": "f618d0f0e1566301f23e3290eba40a979bef135f49a5781db8bcca8f56b8c930",
+      "outputs/f1_terminal_zero_v2_20261014/manifest.json": "0a74425a5d6a5d021a43819a59ba9826a05ec2369076ae6586cf266b08d9efdf",
+      "outputs/f1_terminal_zero_v2_20261014/summary.json": "ea6db84a17da763b90a6f7931be634c6c05810c2e5ac86e6f8e5ea20ba179e39",
+      "outputs/irradiance_d2_expansion_20261013/final_bootstrap_all20.json": "eb37d2683ab9783e5e520d1617f147bcc43aed5834939a184e47fe92cddc1d7b",
+      "outputs/w1_a5_compare_20261014_1/a5_same_input_comparison.json": "6e72be160d83e759622e48573449904917df0f7fdffd653f2d2a82e81faaa5d0",
+      "outputs/w1_c4_verification_20261014_1/verification_report.json": "96e91ef18da35a1e431fa48e8f38bd2553f2bf205da19a1a633e8e8578f6d2e8",
+      "outputs/w1_readiness_actual_20261014/config_snapshot.json": "103f32a460489b852f6c5dc457f75bc5f4e60570de0c989ee01627d5f082f8b6",
+      "outputs/w1_readiness_actual_20261014/readiness.json": "33793c7610e2231f2cb941f06a8c5aa7307db818fc68a5baadfd283f5de53878",
+      "tests/test_run_live_chain.py": "f1b5cb52ed8daf400a70214ff1e075ca6bf6730a7b9da697a977160f3bb55e8c"
+    },
+    "no_model_training": true
+  },
+  "signature": {
+    "a5_1_accepted": true,
+    "a5_2_accepted": true,
+    "c4_accepted": true,
+    "acceptance_basis": "PROJECT_STATUS_AND_WORKSTREAMS.md 2026-10-14 integration-owner A5/C4 offline evidence signoff",
+    "integration_owner": "",
+    "signed_at": "",
+    "approved_unsigned_manifest_sha256": "",
+    "terminal_price_rule_approved": false,
+    "pv_scope_approved": false,
+    "f2_authorization": false
+  }
+}

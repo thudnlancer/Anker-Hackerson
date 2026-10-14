@@ -1,0 +1,28 @@
+{
+  "pilot_dir": "outputs\\irradiance_post_reboot_20261013",
+  "solver_budget_s": 2.0,
+  "total_station_calls": 72,
+  "availability": {
+    "optimal": 65,
+    "suboptimal_incumbent": 7,
+    "explicit_self_use_fallback": 0,
+    "blocked_or_error": 0,
+    "candidates_emitted": 72,
+    "emission_rate": 1.0
+  },
+  "suboptimal_mip_gap": {
+    "count": 7,
+    "max": 0.007554472041683593,
+    "mean": 0.00402847549177905
+  },
+  "physical_audit": {
+    "audited_candidate_calls": 72,
+    "violations": 0,
+    "failed_rows": []
+  },
+  "limits": [
+    "Replay of frozen pilot snapshots through the exact live path (causal calibration pairs), 2s per-station budget, read-only.",
+    "Physical audit checks exclusivity, power/SOC bounds, SOP import ban while discharging, energy dynamics, and first-step grid balance against the observation.",
+    "Suboptimal incumbents remain labeled; availability gain is NOT achieved by relaxing mip_rel_gap (R8)."
+  ]
+}

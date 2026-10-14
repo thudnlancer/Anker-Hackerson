@@ -15,7 +15,7 @@ from energy_lab.contest_replay import (
 )
 from energy_lab.model import Battery
 from energy_lab.rolling import optimize_window
-from run_contest_strategy_replay import evaluate, visible_window
+from run_contest_strategy_replay import evaluate, pv_forecast, visible_window
 
 
 class ContestReplayTests(unittest.TestCase):
@@ -99,6 +99,26 @@ class ContestReplayTests(unittest.TestCase):
         pd.testing.assert_frame_equal(before, after)
         self.assertEqual(estimate, changed)
         self.assertEqual(len(visible_window(raw, 209, 168, 210)[0]), 1)
+
+    def test_terminal_price_current_visible_mode_is_causal_and_distinct(self):
+        raw = self.frame(220)
+        raw.loc[168:179, "buy"] = .9
+        published, current_mean = visible_window(raw, 180, 168, 210, "current_visible_mean")
+        _, legacy_mean = visible_window(raw, 180, 168, 210, "a5_eval_start_mean")
+        self.assertAlmostEqual(current_mean, published.buy.mean())
+        self.assertNotAlmostEqual(current_mean, legacy_mean)
+        _, zero = visible_window(raw, 180, 168, 210, "zero")
+        self.assertEqual(zero, 0.0)
+
+    def test_hybrid_pv_rule_uses_persistence_for_first_future_hour(self):
+        paths = {"persistence_pv": np.array([111., 222., 333., 444.]),
+                 "irradiance_pv": np.array([111., 999., 888., 777.]),
+                 "calibration": {"samples": 3}}
+        result = pv_forecast(paths, SimpleNamespace(), "hybrid")
+        np.testing.assert_array_equal(result, [111., 222., 888., 777.])
+        paths["calibration"]["samples"] = 2
+        np.testing.assert_array_equal(pv_forecast(paths, SimpleNamespace(), "hybrid"),
+                                      paths["persistence_pv"])
 
     def test_full_battery_self_use_does_not_consume_phantom_charge(self):
         row = self.frame().iloc[0]

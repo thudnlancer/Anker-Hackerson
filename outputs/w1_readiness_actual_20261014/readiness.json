@@ -1,0 +1,116 @@
+{
+  "ready": false,
+  "degraded_model_usable": true,
+  "strategy_ready": true,
+  "reason": "degraded_model_available",
+  "models": {
+    "pv": {
+      "path": "models\\online_api\\shared_pv.joblib",
+      "features": [
+        "hour",
+        "hour_sin",
+        "hour_cos",
+        "day_of_year_sin",
+        "day_of_year_cos",
+        "day_of_week",
+        "temperature_c",
+        "cloud_cover_percent",
+        "lag_1",
+        "lag_24",
+        "lag_168",
+        "rolling_24"
+      ]
+    },
+    "load": {
+      "path": "models\\online_api\\shared_load.joblib",
+      "features": [
+        "hour",
+        "hour_sin",
+        "hour_cos",
+        "day_of_year_sin",
+        "day_of_year_cos",
+        "day_of_week",
+        "temperature_c",
+        "cloud_cover_percent",
+        "lag_1",
+        "lag_24",
+        "lag_168",
+        "rolling_24"
+      ]
+    }
+  },
+  "compatibility": {
+    "pv": {
+      "compatible": true,
+      "required": [
+        "cloud_cover_percent",
+        "temperature_c"
+      ],
+      "available": [
+        "cloud_cover_percent",
+        "temperature_c"
+      ],
+      "missing": [],
+      "decision": "load_model"
+    },
+    "load": {
+      "compatible": true,
+      "required": [
+        "cloud_cover_percent",
+        "temperature_c"
+      ],
+      "available": [
+        "cloud_cover_percent",
+        "temperature_c"
+      ],
+      "missing": [],
+      "decision": "load_model"
+    }
+  },
+  "stations": {
+    "1": {
+      "observations": 99,
+      "unique_device_hours": 30,
+      "minimum_required": 168,
+      "degraded_minimum": 24,
+      "history_ready": false,
+      "coverage_ratio": 1.0,
+      "max_gap_hours": 0.0,
+      "model_tier": "degraded_minimum",
+      "history_error": "station 1 requires 168 hourly observations; got 30"
+    },
+    "2": {
+      "observations": 99,
+      "unique_device_hours": 30,
+      "minimum_required": 168,
+      "degraded_minimum": 24,
+      "history_ready": false,
+      "coverage_ratio": 1.0,
+      "max_gap_hours": 0.0,
+      "model_tier": "degraded_minimum",
+      "history_error": "station 2 requires 168 hourly observations; got 30"
+    },
+    "3": {
+      "observations": 98,
+      "unique_device_hours": 30,
+      "minimum_required": 168,
+      "degraded_minimum": 24,
+      "history_ready": false,
+      "coverage_ratio": 1.0,
+      "max_gap_hours": 0.0,
+      "model_tier": "degraded_minimum",
+      "history_error": "station 3 requires 168 hourly observations; got 30"
+    }
+  },
+  "control_config": {
+    "ready": true,
+    "snapshot": {
+      "source": "local_online_config.json",
+      "solver_seconds": 2.0,
+      "soc_min_percent": 0.0,
+      "poll_seconds": 5.0
+    },
+    "issues": []
+  },
+  "policy": "API-first strategy remains runnable; use full model only when ready=true, degraded model when degraded_model_usable=true, otherwise use persistence fallback"
+}

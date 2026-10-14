@@ -29,7 +29,7 @@ from energy_lab.model import dispatch
 from energy_lab.sim_client import SimulatorClient
 from energy_lab.shadow import daily_points, make_candidate
 from energy_lab.interface_contract import (CommandMapping, map_battery_action, state_is_fresh,
-                                           verify_readback)
+                                           verify_readback, align_hourly_points)
 
 
 def numeric(value: object) -> float:
@@ -62,6 +62,34 @@ def price_window(response: object) -> list[dict]:
             raise RuntimeError(f"simulator returned only {len(points)} price points; need explicit today/tomorrow data")
         return points
     return daily_points(response)
+
+
+def validate_milp_price_window(points: list[dict], device_time: object) -> str | None:
+    """Validate the complete optimizer horizon before any solver call."""
+    if not points:
+        return "missing_price_data:empty_window"
+    try:
+        tick = pd.Timestamp(device_time)
+        if pd.isna(tick):
+            return "device_time_misaligned:invalid_device_time"
+        horizon = 24 if tick.minute == 0 and tick.second == 0 and tick.microsecond == 0 else 25
+        aligned = align_hourly_points(points, tick, horizon=horizon)
+    except (TypeError, ValueError, OverflowError) as exc:
+        detail = str(exc)
+        if "horizon incomplete" in detail or "empty price/weather horizon" in detail:
+            return "missing_price_data:incomplete_optimizer_horizon"
+        return "device_time_misaligned:price_timestamp_alignment_failed"
+    for field in ("import_price", "export_price"):
+        if field not in aligned:
+            return f"missing_price_data:missing_{field}"
+        values = pd.to_numeric(aligned[field], errors="coerce").to_numpy(dtype=float)
+        if any(value is None or value == "" for value in aligned[field]):
+            return f"missing_price_data:missing_{field}"
+        if not all(math.isfinite(value) for value in values):
+            return f"non_finite_price:{field}"
+        if field == "import_price" and (values <= 0).any():
+            return "invalid_price_value:non_positive_import_price"
+    return None
 
 
 def current_price_and_future(points: list[dict], device_time: object) -> tuple[dict, list[float]]:
@@ -163,7 +191,12 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
     from config, revocable by the SOC guard); ``carry["previous"]`` keeps each
     site's last candidate/record for next-tick readback and divergence checks.
     """
-    points = price_window(sim.prices())
+    try:
+        points = price_window(sim.prices())
+        price_payload_error = None
+    except Exception as exc:
+        points = []
+        price_payload_error = f"missing_price_data:price_api_unavailable:{type(exc).__name__}"
     results: list[dict] = []
     audit_rows: list[dict] = []
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
@@ -209,20 +242,25 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     if guard["guard_action"] == "revoke_zero_flow_verified":
                         carry["verified"][site] = verified = False
 
-            try:
-                candidate = make_candidate(
-                    state, points,
-                    solver_seconds=float(cfg.get("solver_seconds", 2.0)),
-                    capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
-                    soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
-                    device_timezone=cfg.get("device_timezone"),
-                    idle_candidate="zero_charge_unverified" if verified else "legacy_hold")
-            except Exception as exc:
-                # Data/window failures produce no new command at all; the Q1
-                # fallback applies to solver outcomes, not to broken inputs.
-                results.append({"site": site, "status": "candidate_error", "device_time": stamp,
-                                "error": str(exc), "write_enabled": False})
-                continue
+            price_error = price_payload_error or validate_milp_price_window(points, stamp)
+            if price_error:
+                candidate = {"status": "blocked", "solver_status": "not_run",
+                             "device_time": stamp, "fallback": price_error}
+            else:
+                try:
+                    candidate = make_candidate(
+                        state, points,
+                        solver_seconds=float(cfg.get("solver_seconds", 2.0)),
+                        capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
+                        soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
+                        device_timezone=cfg.get("device_timezone"),
+                        idle_candidate="zero_charge_unverified" if verified else "legacy_hold")
+                except Exception as exc:
+                    # Keep failures outside the explicitly classified price
+                    # policy on the existing fail-closed path.
+                    results.append({"site": site, "status": "candidate_error", "device_time": stamp,
+                                    "error": str(exc), "write_enabled": False})
+                    continue
             issued_at = _utcnow_iso()
             record = execute_candidate(candidate, suffix=suffix, ha=ha, site=site,
                                        zero_flow_verified=verified, live=write_enabled,
@@ -232,7 +270,10 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
             row = {"received_at": _utcnow_iso(), "site": site,
                    "observed_soc": state.get("soc"), "observed_pv": state.get("solar_power"),
                    "observed_load": state.get("home_load"), "write_enabled": write_enabled,
-                   **record, "previous_readback_verdict": previous_verdict,
+                   **record,
+                   "attribution": ("optimizer-attributed" if record["optimizer_attributed"] else
+                                   "non-optimizer-attributed"),
+                   "previous_readback_verdict": previous_verdict,
                    "guard_action": None if guard is None else guard["guard_action"],
                    "guard_reason": None if guard is None else guard["reason"],
                    "soc_divergence_percent": None if guard is None else guard["soc_divergence_percent"]}

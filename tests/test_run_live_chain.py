@@ -117,12 +117,51 @@ class DryRunChainTests(unittest.TestCase):
                                     StubSim(make_prices()))
         self.assertEqual(results[0]["status"], "stale_or_unavailable")
 
-    def test_broken_price_window_produces_no_command_and_no_fallback_write(self):
+    def assert_online_price_anomaly_falls_back(self, prices, expected_reason):
         ha = StubHA({"1502": state()})
-        results, _ = self.run_chain(ha, cfg(verified=True), StubSim(make_prices(0.0)),
-                                    write_enabled=True)
-        self.assertEqual(results[0]["status"], "candidate_error")
-        self.assertEqual(ha.calls, [])
+        with tempfile.TemporaryDirectory() as temp, patch("energy_lab.shadow.optimize_window") as optimize:
+            audit = Path(temp) / "audit.csv"
+            results = run_once_milp(cfg(verified=True), ha, StubSim(prices),
+                                    write_enabled=True, carry={}, audit_csv=audit)
+            logged = pd.read_csv(audit).iloc[0]
+        row = results[0]
+        self.assertEqual(row["status"], "fallback_self_use_mode")
+        self.assertFalse(row["optimizer_attributed"])
+        self.assertEqual(row["attribution"], "non-optimizer-attributed")
+        self.assertEqual(row["reason"], expected_reason)
+        self.assertEqual(row["writes_performed"], 1)
+        self.assertEqual(logged["reason"], expected_reason)
+        self.assertEqual(logged["attribution"], "non-optimizer-attributed")
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        optimize.assert_not_called()
+
+    def test_missing_online_price_falls_back_and_is_not_optimized(self):
+        prices = make_prices()
+        prices["today"]["points"] = prices["today"]["points"][1:]
+        self.assert_online_price_anomaly_falls_back(
+            prices, "missing_price_data:incomplete_optimizer_horizon")
+
+    def test_nonfinite_online_price_falls_back_and_is_not_optimized(self):
+        prices = make_prices()
+        prices["today"]["points"][3]["import_price"] = float("nan")
+        self.assert_online_price_anomaly_falls_back(prices, "non_finite_price:import_price")
+
+    def test_device_time_misalignment_falls_back_and_is_not_optimized(self):
+        ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00")})
+        with tempfile.TemporaryDirectory() as temp, patch("energy_lab.shadow.optimize_window") as optimize:
+            audit = Path(temp) / "audit.csv"
+            results = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                    write_enabled=True, carry={}, audit_csv=audit)
+            logged = pd.read_csv(audit).iloc[0]
+        row = results[0]
+        self.assertEqual(row["status"], "fallback_self_use_mode")
+        self.assertFalse(row["optimizer_attributed"])
+        self.assertEqual(row["reason"], "device_time_misaligned:price_timestamp_alignment_failed")
+        self.assertEqual(row["writes_performed"], 1)
+        self.assertEqual(logged["reason"], row["reason"])
+        self.assertEqual(logged["attribution"], "non-optimizer-attributed")
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        optimize.assert_not_called()
 
 
 class FourSafetySwitchTests(unittest.TestCase):

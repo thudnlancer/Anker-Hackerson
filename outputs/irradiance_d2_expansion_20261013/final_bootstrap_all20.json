@@ -1,0 +1,171 @@
+{
+  "inputs": [
+    "outputs\\irradiance_d2_expansion_20261013\\batch_01\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_02\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_03\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_04\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_05\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_06\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_07\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_08\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_09\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_10\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_11\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_12\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_13\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_14\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_15\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_16\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_17\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_18\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_19\\analysis.json",
+    "outputs\\irradiance_d2_expansion_20261013\\batch_20\\analysis.json"
+  ],
+  "resamples": 10000,
+  "seed": 20261013,
+  "min_days": 15,
+  "min_pairs": 200,
+  "daylight_rule": "truth_pv_w>50.0 or predicted_pv_w>50.0",
+  "leads": {
+    "1": {
+      "verdict": "inconclusive_keep_persistence",
+      "daylight_pairs": 508,
+      "device_days": 19,
+      "mae_ratio_calibrated_over_persistence": 1.0996937231991926,
+      "ratio_ci95": [
+        0.9476192236018062,
+        1.3365918080390093
+      ],
+      "calibrated_mae_w": 476.95751641487186,
+      "persistence_mae_w": 433.7185039370079,
+      "calibrated_bias_w": -4.1476905391252155,
+      "per_site": {
+        "1": {
+          "pairs": 169,
+          "mae_ratio": 1.4199747046014586,
+          "calibrated_mae_w": 597.1707821310027,
+          "persistence_mae_w": 420.55029585798815
+        },
+        "2": {
+          "pairs": 163,
+          "mae_ratio": 1.1696406326604112,
+          "calibrated_mae_w": 319.4410554855431,
+          "persistence_mae_w": 273.11042944785277
+        },
+        "3": {
+          "pairs": 176,
+          "mae_ratio": 0.8526304825754679,
+          "calibrated_mae_w": 507.4071824685905,
+          "persistence_mae_w": 595.1079545454545
+        }
+      },
+      "shrinkage_diagnostic": {
+        "best_alpha": 0.5,
+        "alpha_mae_w": 409.31042642690454,
+        "alpha_over_persistence_ci95": [
+          0.8653199268033539,
+          1.0625593911478552
+        ],
+        "caveat": "alpha selected on this sample; CI not selection-corrected"
+      }
+    },
+    "2": {
+      "verdict": "calibrated",
+      "daylight_pairs": 468,
+      "device_days": 19,
+      "mae_ratio_calibrated_over_persistence": 0.629838464057732,
+      "ratio_ci95": [
+        0.5408305074854798,
+        0.7634621437487796
+      ],
+      "calibrated_mae_w": 505.7966234728237,
+      "persistence_mae_w": 803.0576923076923,
+      "calibrated_bias_w": -40.65610946926011,
+      "per_site": {
+        "1": {
+          "pairs": 164,
+          "mae_ratio": 0.7616596172750262,
+          "calibrated_mae_w": 625.8473478361628,
+          "persistence_mae_w": 821.689024390244
+        },
+        "2": {
+          "pairs": 141,
+          "mae_ratio": 0.9699150059976573,
+          "calibrated_mae_w": 356.1307779468845,
+          "persistence_mae_w": 367.177304964539
+        },
+        "3": {
+          "pairs": 163,
+          "mae_ratio": 0.4429927578664782,
+          "calibrated_mae_w": 514.474938954847,
+          "persistence_mae_w": 1161.361963190184
+        }
+      },
+      "shrinkage_diagnostic": {
+        "best_alpha": 1.0,
+        "alpha_mae_w": 505.7966234728237,
+        "alpha_over_persistence_ci95": [
+          0.5411611528216905,
+          0.7712582422224993
+        ],
+        "caveat": "alpha selected on this sample; CI not selection-corrected"
+      }
+    },
+    "4": {
+      "verdict": "calibrated",
+      "daylight_pairs": 410,
+      "device_days": 19,
+      "mae_ratio_calibrated_over_persistence": 0.41304173979839354,
+      "ratio_ci95": [
+        0.3557240120622921,
+        0.4956761896867917
+      ],
+      "calibrated_mae_w": 502.0663385892331,
+      "persistence_mae_w": 1215.5341463414634,
+      "calibrated_bias_w": -56.05346654512279,
+      "per_site": {
+        "1": {
+          "pairs": 134,
+          "mae_ratio": 0.4594115711756415,
+          "calibrated_mae_w": 650.5850683422456,
+          "persistence_mae_w": 1416.1268656716418
+        },
+        "2": {
+          "pairs": 126,
+          "mae_ratio": 0.8631952042128361,
+          "calibrated_mae_w": 366.2961998321581,
+          "persistence_mae_w": 424.3492063492063
+        },
+        "3": {
+          "pairs": 150,
+          "mae_ratio": 0.2842183839651672,
+          "calibrated_mae_w": 483.43652323248506,
+          "persistence_mae_w": 1700.9333333333334
+        }
+      },
+      "shrinkage_diagnostic": {
+        "best_alpha": 1.0,
+        "alpha_mae_w": 502.0663385892331,
+        "alpha_over_persistence_ci95": [
+          0.3565974607555668,
+          0.4958123975353589
+        ],
+        "caveat": "alpha selected on this sample; CI not selection-corrected"
+      }
+    }
+  },
+  "all_hours_secondary": {
+    "1": {
+      "pairs": 839,
+      "mae_ratio": 1.08375480381602
+    },
+    "2": {
+      "pairs": 776,
+      "mae_ratio": 0.6133484822160724
+    },
+    "4": {
+      "pairs": 688,
+      "mae_ratio": 0.3678433295116995
+    }
+  }
+}
