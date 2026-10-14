@@ -220,7 +220,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
 | W1 | 进行中 | A5 报告审计与 C4 预算收尾 | `feat/explainability-integration`（当前工作树，单 worker 例外） | 全仓 232 passed；72 病例复验 72/72、0 违规；零流量 1 站 smoke 504 行审计通过 |
-| W2 | 待开始 | E4-2 API/前端设计 | 待建立独立 worktree | 可行性检查最小闭环 |
+| W2 | 待集成 | E4-2 应用端服务/API/页面及 E4-4 trace 核算已实现；E4-1 共享优化器能力仍待集成 | `feat/w2-e4-product` @ `D:\Anker黑客松\w2-worktree`, `94e97c3` | 合入 E4-1 哈希基线后，跑真实共享优化器截止约束验收；再补三站点正式 trace 导入和 E5 |
 | W3 | 待集成 | B4.1-B4.4 本地采集冗余、合并视图与监控基线已完成；D1/D3 尚未开始 | `feat/w3-collector-reliability` @ `905a40f` | 主仓集成后运行全量回归；再做本地 watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
 
@@ -233,12 +233,13 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | 2026-10-14 | W1 | C4 预算复验 | 同一冻结快照/因果校准路径、每站 2 秒预算复跑；65 optimal + 7 verified suboptimal incumbent，72/72 输出；最大/平均 gap 0.755%/0.403%，72 计划物理审计 0 违规；不改 `mip_rel_gap=1e-9` | `outputs/w1_c4_verification_20261014_1/verification_report.json` |
 | 2026-10-14 | W3 | 完成 B4 本地基线与消费者接线 | 分片/heartbeat、merge 视图、监控状态机、watchdog 过滤与过期状态保护；未启动真实采集、未执行远程部署或 HA 写入 | `2eb92ef`、`905a40f`；W3 定向测试 33 passed |
 | 2026-10-14 | W1 | A5 产物 smoke 与 C4 配置门槛 | 1 站 × 168h × 3 臂零流量回放：504 行物理审计通过；optimizer-attributed 计数为辐照度臂 168、持久化臂 168、自用基线 0；`official_score_claim=false`。运行配置新增预算必须为正且短于轮询周期；全仓 232 passed | `outputs/w1_a5_zero_flow_smoke_20261014_1/`；`tests/test_config_solver_seconds.py` |
+| 2026-10-14 | W2 | 完成 E4-2/E4-4 第一版 | 持久计划任务队列、基准重放对账、截止 SOC 约束接口、明确状态与调整建议；实现 trace 日核算导入/查询、JSONL CLI 与两页 UI。真实共享优化器调用待 E4-1 进入基线；暂无三站正式 trace 导入 | `feat/w2-e4-product` @ `9bb5d2a`; 94 后端测试、49 subtests、14 前端测试通过，build 通过 |
 
 ### 接口/阻塞记录
 
 | 日期 | 提出者 → 接收者 | 需求或阻塞 | 决策/状态 |
 |---|---|---|---|
-| — | — | 暂无；新增需求先登记在此，不跨文件域直接修改 | — |
+| 2026-10-14 | W2 → 集成负责人 | E4-2 需要 E4-1 `energy_floor_kwh` 在主基线提交并同步应用 `SharedMilpProvider` 模型哈希/版本；现有 W2 分支只锁定旧已提交源码 | 待集成；未匹配或缺少约束能力时显式返回 unsupported，不改共享优化器 |
 
 ## 10. 评审会待办
 
