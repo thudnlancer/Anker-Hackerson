@@ -87,6 +87,9 @@ class ContestReplayTests(unittest.TestCase):
             self.assertTrue(result["physical_audit"]["passed"])
             trace = pd.read_csv(directory / "site_1_trace.csv")
             self.assertTrue(trace.command_mode.eq("self_consumption").all())
+            self.assertTrue(trace.attribution.eq("non-optimizer-attributed").all())
+            self.assertEqual(result["successful_plan_idle_mode"], "zero_flow")
+            self.assertEqual(result["accounting_arm"], "zero_flow")
 
     def test_window_shrinks_and_estimate_does_not_use_unpublished_prices(self):
         raw = self.frame()
@@ -116,6 +119,8 @@ class ContestReplayTests(unittest.TestCase):
         result = execute_command(Battery(), row, SimpleNamespace(flow="idle"), row.pv, row.load)
         self.assertEqual(result["command_mode"], "self_consumption")
         self.assertEqual(result["power_w"], 500.)
+        self.assertFalse(result["optimizer_attributed"])
+        self.assertEqual(result["attribution"], "non-optimizer-attributed")
 
     def test_zero_flow_is_explicit_offline_diagnostic(self):
         row = self.frame().iloc[0]
@@ -124,6 +129,8 @@ class ContestReplayTests(unittest.TestCase):
         self.assertEqual(result["command_mode"], "zero_flow")
         self.assertEqual(result["command_flow"], "charge")
         self.assertEqual(result["power_w"], 0.)
+        self.assertTrue(result["optimizer_attributed"])
+        self.assertEqual(result["attribution"], "optimizer-attributed")
 
     def test_zero_charge_executes_optimizer_energy_grid_and_objective(self):
         # Include genuine idle, charge and discharge plans. With exact powers,
@@ -181,6 +188,23 @@ class ContestReplayTests(unittest.TestCase):
                    {"k_eur": 900., "arms": {"candidate": {"settled_saving_eur": 0., "final_soc": 50.,
                     "saving_settled_percent_estimate": 0.}}}]
         self.assertEqual(aggregate_sites(reports)["arms"]["candidate"]["saving_settled_percent_estimate"], 1.)
+
+    def test_attribution_counts_and_legacy_null_aggregate(self):
+        trace = pd.DataFrame({"arm": ["self_consumption", "self_consumption", "candidate", "candidate"],
+                              "cost_eur": [1., 1., 1., 1.], "soc_after": [50.] * 4,
+                              "throughput_kwh": [0.] * 4, "fallback": [False, False, False, True],
+                              "nonoptimal_solves": [0, 0, 0, 1],
+                              "optimizer_attributed": [False, False, True, False]})
+        metrics = window_metrics(trace, .2, 10., .02)
+        self.assertEqual(metrics["candidate"]["optimizer_attributed_steps"], 1)
+        self.assertEqual(metrics["candidate"]["non_optimizer_attributed_steps"], 1)
+        self.assertEqual(metrics["self_consumption"]["optimizer_attributed_steps"], 0)
+        legacy = trace.drop(columns="optimizer_attributed")
+        old_metrics = window_metrics(legacy, .2, 10., .02)
+        self.assertIsNone(old_metrics["candidate"]["optimizer_attributed_steps"])
+        combined = aggregate_sites([{"k_eur": 10., "arms": old_metrics},
+                                    {"k_eur": 10., "arms": metrics}])
+        self.assertIsNone(combined["arms"]["candidate"]["optimizer_attributed_steps"])
 
     def test_gate_rejects_if_any_scenario_loses(self):
         plan = SimpleNamespace(status="optimal", plan=None)

@@ -52,8 +52,15 @@ def execute_command(battery, row, action, planned_pv, planned_load, *, hold_mode
                      if flow == "discharge" else power)
         result = _policy_step(battery, flow, requested, row, row.buy, row.sell, 0.)
         mode, target = flow, float(mapping.target_w)
+    attributed = mode != "self_consumption"
     return {**result, "command_mode": mode, "command_flow": command_flow, "command_target_w": target,
-            "planned_flow": flow, "planned_power_w": power}
+            "planned_flow": flow, "planned_power_w": power,
+            # A5 attribution convention, identical to the online execute layer:
+            # an explicit self-use step is device-driven and never optimizer-
+            # attributed (baseline arm and failure fallback); dispatch and
+            # zero-flow commands execute the optimizer's plan.
+            "optimizer_attributed": attributed,
+            "attribution": "optimizer-attributed" if attributed else "non-optimizer-attributed"}
 
 
 def power_inputs(current, history, published):
@@ -160,7 +167,13 @@ def window_metrics(trace, settlement_price, k_eur, wear):
                       "throughput_kwh": throughput, "internal_wear_eur": throughput * wear,
                       "final_soc": float(part.soc_after.iloc[-1]),
                       "fallback_steps": int(part.fallback.sum()),
-                      "nonoptimal_solves": int(part.nonoptimal_solves.sum())}
+                      "nonoptimal_solves": int(part.nonoptimal_solves.sum()),
+                      # A5: present in new traces; legacy traces keep a null so
+                      # the audit can tell "not validated" from "zero" (R6).
+                      "optimizer_attributed_steps": (int(part.optimizer_attributed.sum())
+                                                     if "optimizer_attributed" in part else None),
+                      "non_optimizer_attributed_steps": (int((~part.optimizer_attributed.astype(bool)).sum())
+                                                         if "optimizer_attributed" in part else None)}
     base = arms["self_consumption"]
     for item in arms.values():
         item["operating_saving_eur"] = base["operating_cost_eur"] - item["operating_cost_eur"]
@@ -176,7 +189,8 @@ def aggregate_sites(reports):
     totals = {}
     for arm in reports[0]["arms"]:
         entries = [r["arms"][arm] for r in reports]
-        totals[arm] = {key: sum(e[key] for e in entries) for key in entries[0]
+        totals[arm] = {key: (None if any(e[key] is None for e in entries)
+                             else sum(e[key] for e in entries)) for key in entries[0]
                        if key not in ("final_soc", "saving_settled_percent_estimate")}
         totals[arm]["saving_settled_percent_estimate"] = totals[arm]["settled_saving_eur"] / k_total * 100
         totals[arm]["positive_sites"] = sum(e["settled_saving_eur"] > 1e-8 for e in entries)

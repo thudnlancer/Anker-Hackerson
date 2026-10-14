@@ -101,6 +101,8 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
         settlement = float(realized.buy.mean())
         k = float((realized.load / 1000 * realized.buy).sum())
         report = {"site": path.stem, "start_index": start, "hours": 168,
+                  "successful_plan_idle_mode": hold_mode,
+                  "accounting_arm": "zero_flow" if hold_mode == "zero_flow" else "self_use_diagnostic",
                   "start_time": str(realized.time.iloc[0]), "end_time": str(realized.time.iloc[-1]),
                   "k_eur": k, "settlement_price_eur_kwh": settlement,
                   "arms": window_metrics(trace, settlement, k, wear), "physical_audit": physics_audit,
@@ -157,6 +159,9 @@ def main():
                               "scores": {k: v["saving_settled_percent_estimate"] for k, v in report["arms"].items()}}), flush=True)
     reports.sort(key=lambda r: int(r["site"]))
     summary = {"mode": "offline_contest_formula_estimate", "writes_performed": 0,
+               "successful_plan_idle_mode": args.hold_mode,
+               "accounting_arm": "zero_flow" if args.hold_mode == "zero_flow" else "self_use_diagnostic",
+               "official_score_claim": False,
                "sites": reports, "aggregate": aggregate_sites(reports),
                "elapsed_seconds": perf_counter()-started,
                "limits": [
