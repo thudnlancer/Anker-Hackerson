@@ -69,7 +69,7 @@ def utcnow() -> str:
 
 def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
             node_id: str | None = None, diagnostics: dict | None = None,
-            configured_timezone: str | None = None) -> int:
+            configured_timezone: str | None = None, epoch_id: str | None = None) -> int:
     # HA state is a hard contract.  Weather is an optional forecast input: a
     # malformed/missing forecast must not discard an otherwise valid HA tick.
     prepared = []
@@ -84,6 +84,8 @@ def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
                 except (ValueError, TypeError, AttributeError):
                     timezone_name = None
             observation = normalize_station_observation(site, item["state"], item["received_at"], device_timezone=timezone_name)
+            if epoch_id:
+                observation["epoch_id"] = epoch_id
             observation["device_timezone_source"] = (timezone_source if observation["device_timezone_assumption"] else "ha_timestamp")
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             rejected[str(site)] = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -134,7 +136,7 @@ def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
 def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str,
                     cycle: int, last_success_at: str | None, consecutive_errors: int,
                     error: str | None, device_times: dict, cache_dir: Path,
-                    diagnostics: dict | None = None) -> Path:
+                    diagnostics: dict | None = None, epoch_id: str | None = None) -> Path:
     """Atomically replace the per-node heartbeat file (tmp + os.replace)."""
     health_dir.mkdir(parents=True, exist_ok=True)
     cache_bytes = {}
@@ -148,6 +150,7 @@ def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str
                "last_error": error, "device_times": device_times,
                "cache_bytes": cache_bytes, "writes_performed": 0}
     payload["station_diagnostics"] = diagnostics or {}
+    payload["epoch_id"] = epoch_id
     tmp = health_dir / f"heartbeat_{node_id}.json.tmp"
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     destination = health_dir / f"heartbeat_{node_id}.json"
@@ -166,6 +169,7 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=1, help="use 0 to run until interrupted")
     parser.add_argument("--node-id", default="nodeA",
                         help="shard/heartbeat identity of this collector instance (B4)")
+    parser.add_argument("--epoch-id", help="independent simulator epoch/cache identity")
     parser.add_argument("--health-dir", type=Path, default=Path("outputs/collector_health"))
     parser.add_argument("--max-consecutive-errors", type=int, default=12,
                         help="exit non-zero after this many failed cycles; 0 disables")
@@ -176,8 +180,12 @@ def main() -> None:
         parser.error("max-consecutive-errors must be nonnegative")
     if not args.node_id.replace("_", "").replace("-", "").isalnum():
         parser.error("node-id must be filename-safe")
+    if args.epoch_id is not None and (not args.epoch_id.strip() or
+            not args.epoch_id.replace("_", "").replace("-", "").isalnum()):
+        parser.error("epoch-id must be nonempty and filename-safe")
 
     started_at = utcnow()
+    epoch_id = args.epoch_id or f"collector-{started_at}"
     # Generic local.timezone is a display/location setting, not confirmed HA
     # device-clock evidence. Never silently use it for a naive HA timestamp.
     confirmed_timezone = configured_device_timezone(args.config)
@@ -195,7 +203,8 @@ def main() -> None:
             snapshot = (json.loads(args.snapshot.read_text(encoding="utf-8")) if args.snapshot
                         else fetch_snapshot(args.config, include_prices=False))
             count = capture(snapshot, args.cache_dir, args.device_timezone, node_id=args.node_id,
-                            diagnostics=diagnostics, configured_timezone=confirmed_timezone)
+                            diagnostics=diagnostics, configured_timezone=confirmed_timezone,
+                            epoch_id=epoch_id)
         except Exception as exc:
             count = 0
             error_type = type(exc).__name__
@@ -210,7 +219,8 @@ def main() -> None:
                         cycle=iteration + 1, last_success_at=last_success_at,
                         consecutive_errors=consecutive_errors,
                         error=(f"{error_type}:{error_detail}" if error_type else None),
-                        device_times=device_times, cache_dir=args.cache_dir, diagnostics=diagnostics)
+                        device_times=device_times, cache_dir=args.cache_dir, diagnostics=diagnostics,
+                        epoch_id=epoch_id)
         print(json.dumps({"iteration": iteration + 1, "node_id": args.node_id,
                           "observations_cached": count,
                           "writes_performed": 0, "cache_dir": str(args.cache_dir),
