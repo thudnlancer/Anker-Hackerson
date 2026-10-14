@@ -33,6 +33,7 @@ def summarize(data_root: Path, health_dir: Path, node_id: str = "nodeA") -> dict
         old_tail = stamp(old_file.get("last_device_time"))
         new_start = stamp(site.get("device_start"))
         sites.append({"site": site["site"], "new_rows": site["valid_rows"],
+            "weather_missing_rows": site["valid_rows"] - site.get("irradiance_rows", 0),
             "last_received_at": site["last_received_at"],
             "wall_age_seconds": site["wall_age_seconds"],
             "new_unique_device_ticks": site["unique_device_ticks"],
@@ -52,6 +53,9 @@ def summarize(data_root: Path, health_dir: Path, node_id: str = "nodeA") -> dict
             heartbeat.get("consecutive_errors") == 0 and heartbeat.get("writes_performed") == 0,
         "site_coverage": sorted(s["site"] for s in sites),
         "missing_sites": sorted({"1", "2", "3"}-{s["site"] for s in sites}),
+        "current_station_diagnostics": heartbeat.get("station_diagnostics", {}),
+        "device_time_stalled": bool(sites) and all(s["new_unique_device_ticks"] <= 1 for s in sites),
+        "device_time_aligned_across_sites": len({s["new_device_end"] for s in sites}) <= 1,
         "sites": sites, "d3_started": False,
         "warning": "Current device time is an accelerated simulation clock. Old 2028 cache and new 2026 data are separate epochs; do not merge into contiguous history."}
 

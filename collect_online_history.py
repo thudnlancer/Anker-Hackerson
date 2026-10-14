@@ -20,7 +20,46 @@ from energy_lab.online_contract import (append_observation, normalize_station_ob
                                         normalize_weather_payload, infer_payload_timezone)
 from run_shadow_dry_run import fetch_snapshot
 
-COLLECTOR_VERSION = "collector/1.1"
+COLLECTOR_VERSION = "collector/1.2-weather-degraded"
+
+
+def configured_device_timezone(path: Path) -> str | None:
+    """Only an explicit device-clock coordinate is trusted, not a local/UI timezone."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    value = (raw.get("local") or {}).get("device_timezone") or raw.get("device_timezone")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("configured device_timezone must be a nonempty timezone string")
+    return value.strip()
+
+
+def last_cached_observation(path: Path) -> dict | None:
+    """Read only the last JSONL row; cache size must not slow each poll."""
+    if not path.exists():
+        return None
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        end = handle.tell()
+        if not end:
+            return None
+        position = end - 1
+        while position >= 0:
+            handle.seek(position)
+            if handle.read(1) not in (b"\r", b"\n"):
+                break
+            position -= 1
+        last = position
+        while position >= 0:
+            handle.seek(position)
+            if handle.read(1) == b"\n":
+                break
+            position -= 1
+        handle.seek(position + 1)
+        try:
+            return json.loads(handle.read(last - position).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
 
 
 def utcnow() -> str:
@@ -29,33 +68,73 @@ def utcnow() -> str:
 
 
 def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
-            node_id: str | None = None) -> int:
-    # Validate and normalize the complete station snapshot before appending any
-    # rows, so bad weather/time alignment cannot leave a partial station batch.
+            node_id: str | None = None, diagnostics: dict | None = None,
+            configured_timezone: str | None = None) -> int:
+    # HA state is a hard contract.  Weather is an optional forecast input: a
+    # malformed/missing forecast must not discard an otherwise valid HA tick.
     prepared = []
+    rejected = {}
     for site, item in snapshot["stations"].items():
-        weather = normalize_weather_payload(item["weather"])
-        timezone_name = device_timezone or infer_payload_timezone(item["weather"])
-        observation = normalize_station_observation(site, item["state"], item["received_at"], device_timezone=timezone_name)
-        hour = observation["device_time"][:13]
-        matches = weather[weather["time"].dt.strftime("%Y-%m-%dT%H") == hour]
-        if matches.empty:
-            raise ValueError(f"site {site}: weather has no point for device hour {hour}")
-        point = matches.iloc[0]
-        observation["temperature_c"] = float(point["temperature_c"])
-        observation["cloud_cover_percent"] = float(point["cloud_cover_percent"])
-        observation["solar_irradiance_wm2"] = float(point["solar_irradiance_wm2"])
-        observation["irradiance_source"] = "api_weather_at_HA_device_hour"
+        try:
+            timezone_name = device_timezone or configured_timezone
+            timezone_source = ("cli" if device_timezone else "confirmed_config" if configured_timezone else "api_timestamp")
+            if not timezone_name:
+                try:
+                    timezone_name = infer_payload_timezone(item.get("weather", {}))
+                except (ValueError, TypeError, AttributeError):
+                    timezone_name = None
+            observation = normalize_station_observation(site, item["state"], item["received_at"], device_timezone=timezone_name)
+            observation["device_timezone_source"] = (timezone_source if observation["device_timezone_assumption"] else "ha_timestamp")
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            rejected[str(site)] = f"{type(exc).__name__}: {str(exc)[:200]}"
+            continue
+        for field in ("temperature_c", "cloud_cover_percent", "solar_irradiance_wm2"):
+            observation[field] = None
+        observation["weather_status"] = "missing"
+        observation["weather_missing_reason"] = None
+        observation["irradiance_source"] = None
+        try:
+            weather_payload = item.get("weather", {})
+            weather = normalize_weather_payload(weather_payload)
+            hour = observation["device_time"][:13]
+            matches = weather[weather["time"].dt.strftime("%Y-%m-%dT%H") == hour]
+            if matches.empty:
+                raise ValueError(f"no forecast point for device hour {hour}")
+            point = matches.iloc[0]
+            observation["temperature_c"] = float(point["temperature_c"])
+            observation["cloud_cover_percent"] = float(point["cloud_cover_percent"])
+            observation["solar_irradiance_wm2"] = float(point["solar_irradiance_wm2"])
+            observation["weather_status"] = "valid"
+            observation["irradiance_source"] = "api_weather_at_HA_device_hour"
+        except Exception as exc:
+            # Deliberately do not carry forward or interpolate weather values.
+            observation["weather_missing_reason"] = f"{type(exc).__name__}: {str(exc)[:200]}"
         prepared.append(observation)
 
+    if diagnostics is not None:
+        diagnostics.update({"rejected_stations": rejected,
+            "weather_missing": {row["site"]: row["weather_missing_reason"]
+                                for row in prepared if row["weather_status"] == "missing"}})
+    if not prepared:
+        raise ValueError(f"no valid HA stations: {rejected}")
+
+    written = 0
     for observation in prepared:
-        append_observation(cache_dir, observation, node_id=node_id)
-    return len(prepared)
+        suffix = f".{node_id}" if node_id else ""
+        destination = cache_dir / f"site_{observation['site']}{suffix}.jsonl"
+        previous = last_cached_observation(destination)
+        comparable = lambda row: {k: v for k, v in row.items() if k != "received_at"}
+        duplicate = previous is not None and comparable(previous) == comparable(observation)
+        if not duplicate:
+            append_observation(cache_dir, observation, node_id=node_id)
+            written += 1
+    return written
 
 
 def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str,
                     cycle: int, last_success_at: str | None, consecutive_errors: int,
-                    error: str | None, device_times: dict, cache_dir: Path) -> Path:
+                    error: str | None, device_times: dict, cache_dir: Path,
+                    diagnostics: dict | None = None) -> Path:
     """Atomically replace the per-node heartbeat file (tmp + os.replace)."""
     health_dir.mkdir(parents=True, exist_ok=True)
     cache_bytes = {}
@@ -68,6 +147,7 @@ def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str
                "consecutive_errors": consecutive_errors,
                "last_error": error, "device_times": device_times,
                "cache_bytes": cache_bytes, "writes_performed": 0}
+    payload["station_diagnostics"] = diagnostics or {}
     tmp = health_dir / f"heartbeat_{node_id}.json.tmp"
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     destination = health_dir / f"heartbeat_{node_id}.json"
@@ -80,7 +160,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=Path("local_online_config.json"))
     parser.add_argument("--cache-dir", type=Path, default=Path("data/online_history"))
     parser.add_argument("--snapshot", type=Path, help="offline snapshot replay; no network")
-    parser.add_argument("--device-timezone", help="optional override; otherwise infer from API timestamps")
+    parser.add_argument("--device-timezone", help="explicit HA device-clock timezone; overrides local.device_timezone, then API timestamp")
     parser.add_argument("--interval-seconds", type=float, default=5,
                         help="target wall-clock interval; use a short interval for accelerated device time")
     parser.add_argument("--iterations", type=int, default=1, help="use 0 to run until interrupted")
@@ -98,6 +178,9 @@ def main() -> None:
         parser.error("node-id must be filename-safe")
 
     started_at = utcnow()
+    # Generic local.timezone is a display/location setting, not confirmed HA
+    # device-clock evidence. Never silently use it for a naive HA timestamp.
+    confirmed_timezone = configured_device_timezone(args.config)
     iteration = 0
     consecutive_errors = 0
     last_success_at: str | None = None
@@ -107,10 +190,12 @@ def main() -> None:
         snapshot = None
         error_type = None
         error_detail = None
+        diagnostics = {}
         try:
             snapshot = (json.loads(args.snapshot.read_text(encoding="utf-8")) if args.snapshot
                         else fetch_snapshot(args.config, include_prices=False))
-            count = capture(snapshot, args.cache_dir, args.device_timezone, node_id=args.node_id)
+            count = capture(snapshot, args.cache_dir, args.device_timezone, node_id=args.node_id,
+                            diagnostics=diagnostics, configured_timezone=confirmed_timezone)
         except Exception as exc:
             count = 0
             error_type = type(exc).__name__
@@ -125,7 +210,7 @@ def main() -> None:
                         cycle=iteration + 1, last_success_at=last_success_at,
                         consecutive_errors=consecutive_errors,
                         error=(f"{error_type}:{error_detail}" if error_type else None),
-                        device_times=device_times, cache_dir=args.cache_dir)
+                        device_times=device_times, cache_dir=args.cache_dir, diagnostics=diagnostics)
         print(json.dumps({"iteration": iteration + 1, "node_id": args.node_id,
                           "observations_cached": count,
                           "writes_performed": 0, "cache_dir": str(args.cache_dir),
@@ -135,6 +220,7 @@ def main() -> None:
                           "error_type": error_type,
                           "error_detail": error_detail,
                           "consecutive_errors": consecutive_errors,
+                          "station_diagnostics": diagnostics,
                           "device_times": device_times,
                           "device_times_aligned": (len(set(map(str, device_times.values()))) <= 1
                                                     if device_times else False)}, ensure_ascii=False), flush=True)

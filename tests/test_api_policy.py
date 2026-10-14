@@ -43,6 +43,13 @@ class ApiPolicyTests(unittest.TestCase):
             build_api_power_path({"solar_power": "100", "home_load": "300"}, payload,
                                  "2032-04-02T08:15:00Z")
 
+    def test_missing_weather_uses_persistence_path(self):
+        payload = self.weather()
+        payload["today"]["points"][8]["solar_irradiance_wm2"] = None
+        with self.assertRaises(ValueError):
+            build_api_power_path({"solar_power": "100", "home_load": "300"}, payload,
+                                 "2032-04-02T08:15:00Z")
+
 
 if __name__ == "__main__":
     unittest.main()

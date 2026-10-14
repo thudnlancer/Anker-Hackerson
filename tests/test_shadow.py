@@ -90,6 +90,19 @@ class ShadowTests(unittest.TestCase):
         self.assertIn("api_weather_uncalibrated", result["stations"]["1"]["forecast_mode"])
         self.assertEqual(result["writes_performed"], 0)
 
+    def test_weather_null_falls_back_to_persistence_without_blocking_station(self):
+        prices = {day: {"date": date, "points": [dict(start=f"{date}T{h:02d}:00:00Z", import_price=.3, export_price=.1) for h in range(24)]}
+                  for day, date in (("today", "2031-01-01"), ("tomorrow", "2031-01-02"))}
+        weather = {"today": {"points": [{"timestamp": "2031-01-01T00:00:00Z", "condition": "clear",
+                    "temperature_c": 20, "cloud_cover_percent": 0, "solar_irradiance_wm2": None}]}}
+        state = dict(soc=50, solar_power=100, home_load=300, device_time="2031-01-01T00:15:00Z",
+                     device_time_last_changed="2026-10-10T00:00:04Z")
+        result = evaluate_snapshot({"prices": prices, "stations": {"1": dict(state=state,
+                         received_at="2026-10-10T00:00:05Z", weather=weather)}},
+                                   now="2026-10-10T00:00:06Z", solver_seconds=5.)
+        self.assertEqual(result["stations"]["1"]["status"], "candidate_only")
+        self.assertIn("api_fallback_current_power_persistence", result["stations"]["1"]["forecast_mode"])
+
     def test_shadow_uses_full_sop_soc_range_by_default(self):
         prices = {day: {"date": date, "points": [dict(start=f"{date}T{h:02d}:00:00Z", import_price=.3, export_price=.1) for h in range(24)]}
                   for day, date in (("today", "2031-01-01"), ("tomorrow", "2031-01-02"))}

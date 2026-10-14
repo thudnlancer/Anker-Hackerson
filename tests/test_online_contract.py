@@ -5,11 +5,13 @@ import unittest
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.online_contract import (
     OnlineContractError, append_observation, load_observation_history,
     merge_observation_history,
+    cached_pv_calibration,
     CONTEST_HISTORY_FIELDS, cache_contest_history, hourly_observation_history,
     model_compatibility, normalize_contest_history, normalize_station_observation, normalize_weather_payload,
 )
@@ -103,6 +105,13 @@ class OnlineContractTests(unittest.TestCase):
             frame = load_observation_history(path)
         self.assertEqual(len(frame), 1)
         self.assertEqual(float(frame.loc[0, "pv"]), 120)
+
+    def test_null_weather_becomes_nan_and_calibration_degrades_when_insufficient(self):
+        frame = pd.DataFrame({"time": pd.to_datetime(["2032-01-01T08:00:00Z", "2032-01-01T09:00:00Z"]),
+                              "pv": [100., 200.], "solar_irradiance_wm2": [np.nan, 500.]})
+        result = cached_pv_calibration(frame, minimum_device_hours=3)
+        self.assertEqual(result["mode"], "current_pv_persistence")
+        self.assertEqual(result["eligible_device_hours"], 1)
 
     def test_old_model_is_rejected_without_aliases(self):
         report = model_compatibility(("temperature_c", "shortwave_radiation_wm2"),

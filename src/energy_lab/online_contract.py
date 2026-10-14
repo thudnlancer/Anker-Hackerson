@@ -301,11 +301,43 @@ def load_observation_history(path: Path) -> pd.DataFrame:
                      "soc": normalized["soc"], "pv": normalized["pv"],
                      "load": normalized["load"], "site": normalized["site"]}
         for field in ("temperature_c", "cloud_cover_percent", "solar_irradiance_wm2"):
-            if field in item:
+            if field in item and item[field] is not None:
                 row[field] = float(item[field])
+            elif field in item:
+                row[field] = np.nan
         rows.append(row)
     result = pd.DataFrame(rows).sort_values("time").drop_duplicates(["site", "time"], keep="last").reset_index(drop=True)
     return result
+
+
+def cached_pv_calibration(history: pd.DataFrame, *, minimum_device_hours: int = 3) -> dict[str, Any]:
+    """Fit only observed API-irradiance/HA-PV pairs; otherwise require persistence.
+
+    This is an input-readiness gate, not an independent weather-forecast score.
+    Multiple ticks in one device hour count as one sample.
+    """
+    if minimum_device_hours < 1:
+        raise ValueError("minimum_device_hours must be positive")
+    required = {"time", "pv", "solar_irradiance_wm2"}
+    if not required.issubset(history.columns):
+        return {"mode": "current_pv_persistence", "reason": "missing_calibration_fields",
+                "eligible_device_hours": 0, "calibration": None}
+    frame = history[["time", "pv", "solar_irradiance_wm2"]].copy()
+    frame["time"] = pd.to_datetime(frame["time"], utc=True)
+    frame["pv"] = pd.to_numeric(frame["pv"], errors="coerce")
+    frame["solar_irradiance_wm2"] = pd.to_numeric(frame["solar_irradiance_wm2"], errors="coerce")
+    frame = frame.replace([np.inf, -np.inf], np.nan).dropna()
+    frame = frame[(frame["solar_irradiance_wm2"] > 25) & (frame["pv"] >= 0)]
+    frame["hour"] = frame["time"].dt.floor("h")
+    hourly = frame.groupby("hour")[["pv", "solar_irradiance_wm2"]].median()
+    eligible = len(hourly)
+    if eligible < minimum_device_hours:
+        return {"mode": "current_pv_persistence", "reason": "insufficient_valid_daylight_device_hours",
+                "eligible_device_hours": eligible, "calibration": None}
+    from .system_model import calibrate_pv_scale
+    calibration = calibrate_pv_scale(hourly["solar_irradiance_wm2"], hourly["pv"])
+    return {"mode": "api_irradiance_calibrated_pv", "reason": None,
+            "eligible_device_hours": eligible, "calibration": calibration}
 
 
 def merge_observation_history(path: Path) -> pd.DataFrame:
