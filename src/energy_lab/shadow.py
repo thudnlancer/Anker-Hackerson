@@ -154,7 +154,7 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
     return candidate
 
 
-def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., device_timezone=None, evidence_sink=None, evidence_identity=None):
+def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., device_timezone=None, evidence_sink=None, evidence_identity=None, idle_candidate="legacy_hold"):
     now = pd.Timestamp.now(tz="UTC") if now is None else now
     results = {}
     prices = daily_points(snapshot["prices"])
@@ -191,7 +191,7 @@ def evaluate_snapshot(snapshot, *, now=None, max_age=15., solver_seconds=1., dev
                 identity["site_id"] = str(site)
                 evidence_options = {"evidence_sink": evidence_sink, "evidence_identity": identity,
                                     "evidence_observed_at": item["received_at"]}
-            result = make_candidate(state, prices, forecast=forecast,
+            result = make_candidate(state, prices, forecast=forecast, idle_candidate=idle_candidate,
                                     forecast_mode=forecast_mode,
                                     solver_seconds=solver_seconds, device_timezone=effective_timezone,
                                     **evidence_options)

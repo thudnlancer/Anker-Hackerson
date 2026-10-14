@@ -1,0 +1,25 @@
+{
+  "mode": "dry-run",
+  "ha_base": "<HA_BASE_URL>",
+  "ha_token": "<OPTIONAL_HA_TOKEN_OR_SET_NULL_TO_USE_LOGIN>",
+  "ha_username": "<HA_USERNAME>",
+  "ha_password": "<HA_PASSWORD>",
+  "sim_base": "<SIMULATOR_BASE_URL>",
+  "sim_username": "<SIMULATOR_USERNAME>",
+  "sim_password": "<SIMULATOR_PASSWORD>",
+  "stations": {
+    "1": {"suffix": "<HA_ENTITY_SUFFIX_SITE_1>"},
+    "2": {"suffix": "<HA_ENTITY_SUFFIX_SITE_2>"},
+    "3": {"suffix": "<HA_ENTITY_SUFFIX_SITE_3>"}
+  },
+  "live_enabled": false,
+  "allow_ha_write": false,
+  "allow_formal_contest": false,
+  "poll_seconds": 5,
+  "stale_after_seconds": 15,
+  "capacity_kwh": 14,
+  "max_power_w": 5000,
+  "charge_efficiency": 0.95,
+  "soc_min": 0,
+  "soc_max": 100
+}
