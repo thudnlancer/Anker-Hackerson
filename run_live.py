@@ -64,7 +64,8 @@ def price_window(response: object) -> list[dict]:
     return daily_points(response)
 
 
-def validate_milp_price_window(points: list[dict], device_time: object) -> str | None:
+def validate_milp_price_window(points: list[dict], device_time: object,
+                               device_timezone: str | None = None) -> str | None:
     """Validate the complete optimizer horizon before any solver call."""
     if not points:
         return "missing_price_data:empty_window"
@@ -72,11 +73,21 @@ def validate_milp_price_window(points: list[dict], device_time: object) -> str |
         tick = pd.Timestamp(device_time)
         if pd.isna(tick):
             return "device_time_misaligned:invalid_device_time"
+        if tick.tzinfo is None and device_timezone is not None:
+            tick = tick.tz_localize(device_timezone)
         horizon = 24 if tick.minute == 0 and tick.second == 0 and tick.microsecond == 0 else 25
         aligned = align_hourly_points(points, tick, horizon=horizon)
     except (TypeError, ValueError, OverflowError) as exc:
         detail = str(exc)
         if "horizon incomplete" in detail or "empty price/weather horizon" in detail:
+            try:
+                timestamps = pd.to_datetime(
+                    [point.get("time", point.get("start")) for point in points], utc=True)
+                requested = tick.tz_convert("UTC").floor("h")
+                if requested < timestamps.min() or requested > timestamps.max():
+                    return "device_time_misaligned:outside_price_window"
+            except (TypeError, ValueError, AttributeError):
+                pass
             return "missing_price_data:incomplete_optimizer_horizon"
         return "device_time_misaligned:price_timestamp_alignment_failed"
     for field in ("import_price", "export_price"):
@@ -242,7 +253,8 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     if guard["guard_action"] == "revoke_zero_flow_verified":
                         carry["verified"][site] = verified = False
 
-            price_error = price_payload_error or validate_milp_price_window(points, stamp)
+            price_error = price_payload_error or validate_milp_price_window(
+                points, stamp, cfg.get("device_timezone"))
             if price_error:
                 candidate = {"status": "blocked", "solver_status": "not_run",
                              "device_time": stamp, "fallback": price_error}

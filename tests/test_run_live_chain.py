@@ -137,7 +137,7 @@ class DryRunChainTests(unittest.TestCase):
 
     def test_missing_online_price_falls_back_and_is_not_optimized(self):
         prices = make_prices()
-        prices["today"]["points"] = prices["today"]["points"][1:]
+        del prices["today"]["points"][3]
         self.assert_online_price_anomaly_falls_back(
             prices, "missing_price_data:incomplete_optimizer_horizon")
 
@@ -147,7 +147,7 @@ class DryRunChainTests(unittest.TestCase):
         self.assert_online_price_anomaly_falls_back(prices, "non_finite_price:import_price")
 
     def test_device_time_misalignment_falls_back_and_is_not_optimized(self):
-        ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00")})
+        ha = StubHA({"1502": state(device_time="2031-01-03T00:15:00+00:00")})
         with tempfile.TemporaryDirectory() as temp, patch("energy_lab.shadow.optimize_window") as optimize:
             audit = Path(temp) / "audit.csv"
             results = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
@@ -156,10 +156,20 @@ class DryRunChainTests(unittest.TestCase):
         row = results[0]
         self.assertEqual(row["status"], "fallback_self_use_mode")
         self.assertFalse(row["optimizer_attributed"])
-        self.assertEqual(row["reason"], "device_time_misaligned:price_timestamp_alignment_failed")
+        self.assertEqual(row["reason"], "device_time_misaligned:outside_price_window")
         self.assertEqual(row["writes_performed"], 1)
         self.assertEqual(logged["reason"], row["reason"])
         self.assertEqual(logged["attribution"], "non-optimizer-attributed")
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        optimize.assert_not_called()
+
+    def test_timezone_ambiguous_online_tick_falls_back(self):
+        ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00")})
+        with patch("energy_lab.shadow.optimize_window") as optimize:
+            results = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                    write_enabled=True, carry={})
+        self.assertEqual(results[0]["reason"],
+                         "device_time_misaligned:price_timestamp_alignment_failed")
         self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
         optimize.assert_not_called()
 

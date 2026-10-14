@@ -363,7 +363,7 @@
     "source_sha256": {
       "build_f1_manifest.py": "6142f1e7dc888e37f3fa7f9cf6bed75b9aae6b45ca0582c8a2f5e96dbb10c6e2",
       "run_contest_strategy_replay.py": "9f6fbb6a58a2eef7cf80db86f1bdb475c9eb41947219d83edbe7c7086df4cb8a",
-      "run_live.py": "edd3421055b046fcbc499e3675c92ae51480fcf4ee54915702075f31e1708d48",
+      "run_live.py": "83c04c165eba3e38d130eca93f58b1bdcd3424d32b02d44b6f51c2c7341a6a06",
       "src/energy_lab/backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
       "src/energy_lab/contest_replay.py": "d3432da0f7deaf57416bbca15fbb3658ea83e25afd3d0953d518ec9dad1bf973",
       "src/energy_lab/execute.py": "37eab25f86b33282040550fa7c0d1ba6dde0630103ba07018c55529c4e4289ac",
@@ -485,7 +485,7 @@
       "forecast_data\\5.csv": "119fb4dfcb2567e3a7adaea36bbc0cdc7b5cd1f4f918f9f0babb2780c3c6313e"
     },
     "evidence_artifact_sha256": {
-      "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md": "ee1cf0ffa8255f8d7d67e1401763a068199078196afce1bdced06a7e115e75ec",
+      "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md": "2eb70d2be8698ccaa2b968a344408afef157c3a25cf2eb708abd8804d5c4c4cc",
       "F1_PARAMETER_FREEZE_CHECKLIST.md": "51e1cc0a049e6e82e6c18759014075feb9f1e1f19d1744cfd5c3e891dbb4d184",
       "F1_TERMINAL_PV_EVIDENCE.md": "fb9c750f7d7b07a7c6cc8df01cd6bae65f9a70322d61a6f5560dcb388c304650",
       "outputs/f1_terminal_a5_v2_20261014/manifest.json": "9bfce522c33d1da5edbace16543baff3220e8b58661685a7139049405186083c",
@@ -499,7 +499,7 @@
       "outputs/w1_c4_verification_20261014_1/verification_report.json": "96e91ef18da35a1e431fa48e8f38bd2553f2bf205da19a1a633e8e8578f6d2e8",
       "outputs/w1_readiness_actual_20261014/config_snapshot.json": "103f32a460489b852f6c5dc457f75bc5f4e60570de0c989ee01627d5f082f8b6",
       "outputs/w1_readiness_actual_20261014/readiness.json": "33793c7610e2231f2cb941f06a8c5aa7307db818fc68a5baadfd283f5de53878",
-      "tests/test_run_live_chain.py": "f1b5cb52ed8daf400a70214ff1e075ca6bf6730a7b9da697a977160f3bb55e8c"
+      "tests/test_run_live_chain.py": "5c188e98d85d1ea7e654d3de881c179163b46f16c78aaa8f7e40ee608efdf95c"
     },
     "no_model_training": true
   },
