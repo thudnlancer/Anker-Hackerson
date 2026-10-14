@@ -58,7 +58,7 @@ def main() -> None:
     # dependencies. Shared collector/calibration work in the same worktree is
     # intentionally outside this submission and must not alter this hash set.
     source_files = [ROOT / name for name in (
-        "run_contest_strategy_replay.py", "run_live.py", "build_f1_manifest.py",
+        "run_contest_strategy_replay.py", "prepare_f2_command.py", "run_live.py", "build_f1_manifest.py",
         "src/energy_lab/backtest.py", "src/energy_lab/contest_replay.py",
         "src/energy_lab/execute.py", "src/energy_lab/interface_contract.py",
         "src/energy_lab/model.py", "src/energy_lab/rolling.py",
@@ -82,6 +82,9 @@ def main() -> None:
                  ROOT / "F1_TERMINAL_PV_EVIDENCE.md",
                  ROOT / "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md",
                  ROOT / "tests/test_run_live_chain.py",
+                 ROOT / "tests/test_contest_replay.py",
+                 ROOT / "tests/test_rolling_milp.py",
+                 ROOT / "tests/test_prepare_f2_command.py",
                  *(ROOT / directory / filename
                    for directory in replay_dirs.values()
                    for filename in ("manifest.json", "summary.json"))]
@@ -110,7 +113,7 @@ def main() -> None:
     config_snapshot = read_json("outputs/w1_readiness_actual_20261014/config_snapshot.json")
     selected_inputs = read_json(f"{replay_dirs['current_visible_mean']}/manifest.json")["data_sha256"]
     manifest = {
-        "manifest_version": "f1-final-proposal-20261014-1",
+        "manifest_version": "f1-final-proposal-20261015-2",
         "status": "final_proposal_pending_integration_signature",
         "official_score_claim": False,
         "f2_authorized": False,
@@ -118,6 +121,8 @@ def main() -> None:
         "parameters": {
             "solver_seconds": 2.0,
             "mip_rel_gap": 1e-9,
+            "capacity_kwh": 14.0,
+            "max_power_w": 5000.0,
             "soc_min_percent": 0.0,
             "soc_max_percent": 100.0,
             "poll_seconds": 5.0,
@@ -134,6 +139,7 @@ def main() -> None:
             "successful_plan_idle": "zero_flow",
             "failure_fallback_idle": "self_consumption",
             "failure_fallback_attribution": "non-optimizer-attributed",
+            "time_limit_incumbent": "Accept only rolling.py independently verified feasible limit_reached incumbent; preserve solver_status=limit_reached, mip_gap and accepted_incumbent=true. Reject unverified or infeasible plans to self_consumption.",
             "online_price_anomaly_acceptance": {
                 "evidence": "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md",
                 "checks": ["missing", "non_finite", "device_time_misaligned"],
@@ -174,10 +180,13 @@ def main() -> None:
                 "Future observed shortwave radiation is only a proxy for issued API weather forecasts.",
                 "Five-site strategy evidence is directional and not a formal 100-site result.",
                 "PV hybrid is implemented in the offline diagnostic arm; online API forecast integration remains unverified.",
+                "Existing five-site terminal/PV artifacts were produced before incumbent-alignment source changes; they remain frozen historical diagnostics and are not F2 results. Recompute after F1 signature before comparing new policy outcomes.",
             ],
         },
         "parameter_provenance": {
             "solver_seconds": "C4 72 frozen cases, 72/72 emitted and zero physics violations",
+            "capacity_kwh": "current replay/model device capacity convention; explicitly passed for F2",
+            "max_power_w": "current replay/model device power limit convention; explicitly passed for F2",
             "mip_rel_gap": "rolling.py MILP option; no relaxation from 1e-9",
             "soc_min_percent": "C3 and contest SOP 0-100% physical interval",
             "soc_max_percent": "contest SOP 0-100% physical interval",
@@ -193,7 +202,7 @@ def main() -> None:
             "online_time_step": "official API/device granularity remains authoritative and is not inferred from offline data",
         },
         "reproducibility": {
-            "replay_command_template": "python run_contest_strategy_replay.py --data forecast_data --output <new-dir> --stage 4 --max-sites 5 --workers 2 --wear 0.02 --solver-time-limit 2 --hold-mode zero_flow --terminal-price-mode <a5_eval_start_mean|current_visible_mean|zero>",
+            "replay_command_template": "prepare_f2_command.py --manifest outputs/f1_parameter_manifest_20261014.json --expected-sha256 <signed-manifest-sha256> --data forecast_data --output <new-dir> --workers 2; gate prints an explicit stage-4 command with all frozen parameters; it does not start replay",
             "source_sha256": hashes(source_files),
             "available_practice_dataset_count": len(data_files),
             "available_practice_dataset_sha256": hashes(data_files),

@@ -37,6 +37,7 @@ FALLBACK_COMMAND_MODE = "self_use_mode"
 SOC_DIVERGENCE_THRESHOLD_PERCENT = 2.0
 
 AUDIT_FIELDS = ("site", "device_time", "status", "solver_status",
+                "accepted_incumbent", "mip_gap",
                 "planned_flow", "planned_power_w", "command_mode", "command_flow",
                 "target_w", "readback_verdict", "realized_soc",
                 "optimizer_attributed", "writes_performed", "reason")
@@ -101,7 +102,8 @@ def execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verifi
         if live:
             ha.set_self_consumption(suffix, live=True)
         return _record(site=site, device_time=device_time, status="fallback_self_use_mode",
-                       solver_status=solver_status, planned_flow=None, planned_power_w=None,
+                       solver_status=solver_status, accepted_incumbent=False, mip_gap=None,
+                       planned_flow=None, planned_power_w=None,
                        command_mode=FALLBACK_COMMAND_MODE, command_flow="self_consumption",
                        target_w=None,
                        readback_verdict=_fallback_readback(readback_state, live=live),
@@ -120,7 +122,8 @@ def execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verifi
             # Hard refusal: an unplanned self-use downgrade would silently
             # change semantics, so no write happens on this path at all.
             return _record(site=site, device_time=device_time, status="idle_unverified_noop",
-                           solver_status=solver_status, planned_flow="idle",
+                           solver_status=solver_status, accepted_incumbent=False, mip_gap=None,
+                           planned_flow="idle",
                            planned_power_w=planned_power, command_mode=None, command_flow=None,
                            target_w=None, readback_verdict="not_applicable_no_command",
                            realized_soc=_soc(readback_state), optimizer_attributed=False,
@@ -136,6 +139,8 @@ def execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verifi
         ha.set_dispatch(suffix, command_flow, target_w, live=True)
     status = "dispatched" if command_mode == "dispatch" else "zero_flow_dispatched"
     return _record(site=site, device_time=device_time, status=status, solver_status=solver_status,
+                   accepted_incumbent=bool(candidate.get("accepted_incumbent", False)),
+                   mip_gap=candidate.get("mip_gap"),
                    planned_flow=planned_flow, planned_power_w=planned_power,
                    command_mode=command_mode, command_flow=command_flow, target_w=target_w,
                    readback_verdict=_command_readback(command_flow, target_w, readback_state,

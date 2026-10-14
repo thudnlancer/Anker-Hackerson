@@ -147,7 +147,8 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
     if getattr(result, "suboptimal", False):
         # Feasible time-limit incumbent: executable, but optimality is
         # uncertified; the gap is reported, never hidden (R8).
-        candidate.update({"suboptimal_incumbent": True, "mip_gap": getattr(result, "mip_gap", None),
+        candidate.update({"suboptimal_incumbent": True, "accepted_incumbent": True,
+                          "mip_gap": getattr(result, "mip_gap", None),
                           "attribution": "optimizer-suboptimal-incumbent"})
     if evidence_sink is not None:
         # Evidence is a sidecar: exporting must not change the chosen action.

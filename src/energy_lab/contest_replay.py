@@ -136,7 +136,10 @@ def select_guarded(point_plan, interval_plan, published, paths, initial_soc,
                    terminal_price, wear, threshold, hold_mode="self_consumption"):
     if not np.isfinite(threshold) or threshold < 0:
         raise ValueError("nonnegative finite gate threshold required")
-    if point_plan.status != "optimal" or interval_plan.status != "optimal":
+    def usable(plan):
+        return plan.status == "optimal" or (
+            plan.status == "limit_reached" and getattr(plan, "suboptimal", False) is True)
+    if not usable(point_plan) or not usable(interval_plan):
         return False, None
     gains = []
     try:
@@ -167,6 +170,8 @@ def window_metrics(trace, settlement_price, k_eur, wear):
                       "throughput_kwh": throughput, "internal_wear_eur": throughput * wear,
                       "final_soc": float(part.soc_after.iloc[-1]),
                       "fallback_steps": int(part.fallback.sum()),
+                      "accepted_incumbent_steps": (int(part.accepted_incumbent.sum())
+                                                   if "accepted_incumbent" in part else None),
                       "nonoptimal_solves": int(part.nonoptimal_solves.sum()),
                       # A5: present in new traces; legacy traces keep a null so
                       # the audit can tell "not validated" from "zero" (R6).

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
+from scipy.optimize import milp as scipy_milp
 
 import numpy as np
 import pandas as pd
@@ -54,6 +55,41 @@ class MilpTests(unittest.TestCase):
     def test_nonfinite_input_rejected(self):
         with self.assertRaises(ValueError):
             solve([np.nan], [0], [.3], [.1])
+
+    def test_time_limit_incumbent_requires_independent_constraint_recheck(self):
+        captured = []
+
+        def capture(*args, **kwargs):
+            result = scipy_milp(*args, **kwargs)
+            captured.append(result)
+            return result
+
+        with patch("energy_lab.rolling.milp", side_effect=capture):
+            optimal = solve([0], [1000], [.3], [.1], soc=50, command_contract="sop")
+        self.assertEqual(optimal.status, "optimal")
+        raw = captured[0]
+        incumbent = SimpleNamespace(success=False, status=1, message="injected limit",
+                                    x=raw.x.copy(), fun=raw.fun, mip_gap=.125)
+        with patch("energy_lab.rolling.milp", return_value=incumbent):
+            accepted = solve([0], [1000], [.3], [.1], soc=50, command_contract="sop")
+        self.assertEqual(accepted.status, "limit_reached")
+        self.assertTrue(accepted.suboptimal)
+        self.assertEqual(accepted.mip_gap, .125)
+        self.assertEqual(accepted.plan.flow.iloc[0], optimal.plan.flow.iloc[0])
+
+        invalid = SimpleNamespace(**vars(incumbent))
+        invalid.x = raw.x.copy()
+        invalid.x[0] = 1000.0  # Original power bound and balance violation.
+        with patch("energy_lab.rolling.milp", return_value=invalid):
+            rejected = solve([0], [1000], [.3], [.1], soc=50, command_contract="sop")
+        self.assertEqual(rejected.status, "limit_reached")
+        self.assertFalse(rejected.suboptimal)
+
+        infeasible = SimpleNamespace(success=False, status=2, message="injected infeasible")
+        with patch("energy_lab.rolling.milp", return_value=infeasible):
+            rejected = solve([0], [1000], [.3], [.1], soc=50, command_contract="sop")
+        self.assertEqual(rejected.status, "infeasible")
+        self.assertFalse(rejected.suboptimal)
 
 
 if __name__ == "__main__":

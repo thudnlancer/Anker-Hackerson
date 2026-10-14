@@ -28,6 +28,14 @@ STAGES = {1: ("self_consumption", "persistence"),
           4: ("self_consumption", "persistence", "irradiance", "hybrid")}
 
 
+def accepted_plan(plan):
+    """Only optimal or independently verified time-limit incumbents execute."""
+    if plan.status == "optimal":
+        return True, False
+    accepted_incumbent = plan.status == "limit_reached" and getattr(plan, "suboptimal", False) is True
+    return accepted_incumbent, accepted_incumbent
+
+
 def pv_forecast(paths, published, arm):
     if arm == "persistence":
         return paths["persistence_pv"]
@@ -66,7 +74,11 @@ def visible_window(raw, index, start, end, terminal_mode="a5_eval_start_mean"):
 
 
 def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
-             hold_mode="self_consumption", terminal_mode="a5_eval_start_mean"):
+             hold_mode="self_consumption", terminal_mode="a5_eval_start_mean",
+             capacity_kwh=14.0, max_power_w=5000.0, soc_min=0.0, soc_max=100.0,
+             charge_efficiency=0.95, discharge_efficiency=1.0):
+    if discharge_efficiency != 1.0:
+        raise ValueError("replay model has no independent discharge-efficiency parameter")
     with threadpool_limits(limits=1):
         started = perf_counter()
         raw = load_csv(path)
@@ -80,7 +92,9 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
         end = start + 168
         if start < 168 or end > len(raw):
             raise ValueError("full 168-hour evaluation plus prior 168-hour history required")
-        batteries = {arm: Battery(soc=50.) for arm in STAGES[stage]}
+        batteries = {arm: Battery(soc=50., capacity_kwh=capacity_kwh,
+                                  max_power_w=max_power_w, charge_efficiency=charge_efficiency)
+                     for arm in STAGES[stage]}
         records = []
         for index in range(start, end):
             current = raw.iloc[index]
@@ -90,7 +104,9 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
             def solve(pv, load, soc):
                 return optimize_window(
                     published.time, pv, load, published.buy.to_numpy(), published.sell.to_numpy(),
-                    soc, solver="milp", command_contract="sop", soc_min=0., step_hours=1.,
+                    soc, capacity_kwh=capacity_kwh, max_power_w=max_power_w,
+                    charge_efficiency=charge_efficiency, solver="milp", command_contract="sop",
+                    soc_min=soc_min, soc_max=soc_max, step_hours=1.,
                     terminal_price=terminal, degradation_cost_eur_kwh=wear,
                     time_limit_seconds=solver_time_limit)
 
@@ -99,6 +115,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                 load = paths["interval_load" if arm == "load_upper" else "current_load"]
                 gate_accepted, margin = False, None
                 status, nonoptimal, fallback = "not_applicable", 0, False
+                accepted_incumbent, mip_gap = False, None
                 if arm == "self_consumption":
                     action = IDLE
                 else:
@@ -112,13 +129,16 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                         if gate_accepted:
                             plan, load = candidate, paths["interval_load"]
                     status = plan.status
-                    fallback = status != "optimal"
+                    usable, accepted_incumbent = accepted_plan(plan)
+                    fallback = not usable
+                    mip_gap = getattr(plan, "mip_gap", None) if accepted_incumbent else None
                     action = IDLE if fallback else plan.plan.iloc[0]
                 # Baseline and failure fallback never inherit diagnostic idle semantics.
                 execution_hold_mode = "self_consumption" if arm == "self_consumption" or fallback else hold_mode
                 step = execute_command(battery, current, action, pv[0], load[0], hold_mode=execution_hold_mode)
                 records.append({"site": path.stem, "time": current.time, "arm": arm,
                                 "solver_status": status, "nonoptimal_solves": nonoptimal,
+                                "accepted_incumbent": accepted_incumbent, "mip_gap": mip_gap,
                                 "fallback": fallback, "gate_accepted": gate_accepted,
                                 "gate_worst_gain_eur": margin,
                                 "horizon_hours": len(published), "terminal_estimate": terminal,
@@ -126,7 +146,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                                 "pv_w": float(current.pv), "load_w": float(current.load),
                                 "buy": float(current.buy), "sell": float(current.sell), **step})
         trace = pd.DataFrame(records)
-        physics_audit = audit_trace(trace.rename(columns={"arm": "policy"}), raw, soc_min=0.)
+        physics_audit = audit_trace(trace.rename(columns={"arm": "policy"}), raw, soc_min=soc_min)
         realized = raw.iloc[start:end]
         settlement = float(realized.buy.mean())
         k = float((realized.load / 1000 * realized.buy).sum())
@@ -161,6 +181,12 @@ def main():
     parser.add_argument("--gate-threshold", type=float, default=.02,
                         help="minimum worst-scenario plan improvement in EUR; exploratory, not tuned")
     parser.add_argument("--solver-time-limit", type=float, default=5.)
+    parser.add_argument("--capacity-kwh", type=float, default=14.)
+    parser.add_argument("--max-power-w", type=float, default=5000.)
+    parser.add_argument("--soc-min", type=float, default=0.)
+    parser.add_argument("--soc-max", type=float, default=100.)
+    parser.add_argument("--charge-efficiency", type=float, default=.95)
+    parser.add_argument("--discharge-efficiency", type=float, default=1.)
     parser.add_argument("--hold-mode", choices=("self_consumption", "zero_flow"), default="self_consumption",
                         help="successful-plan idle behavior only; baseline and failure fallback always self-consume")
     parser.add_argument("--terminal-price-mode", choices=("a5_eval_start_mean", "current_visible_mean", "zero"),
@@ -169,8 +195,13 @@ def main():
     args = parser.parse_args()
     if min(args.max_sites, args.workers) < 1 or args.offset < 0:
         parser.error("positive sites/workers and nonnegative offset required")
-    if (not np.isfinite([args.wear, args.gate_threshold, args.solver_time_limit]).all()
-            or min(args.wear, args.gate_threshold) < 0 or args.solver_time_limit <= 0):
+    if (not np.isfinite([args.wear, args.gate_threshold, args.solver_time_limit,
+                         args.capacity_kwh, args.max_power_w, args.soc_min, args.soc_max,
+                         args.charge_efficiency, args.discharge_efficiency]).all()
+            or min(args.wear, args.gate_threshold) < 0 or args.solver_time_limit <= 0
+            or args.capacity_kwh <= 0 or args.max_power_w <= 0
+            or not 0 <= args.soc_min <= args.soc_max <= 100
+            or not 0 < args.charge_efficiency <= 1 or args.discharge_efficiency != 1.):
         parser.error("invalid wear/threshold/solver limit")
     paths = sorted(args.data.glob("*.csv"), key=lambda p: int(p.stem))[:args.max_sites]
     if len(paths) != args.max_sites:
@@ -186,7 +217,9 @@ def main():
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         futures = [pool.submit(evaluate, p, args.output, args.stage, args.offset, args.wear,
                                args.gate_threshold, args.solver_time_limit, args.hold_mode,
-                               args.terminal_price_mode) for p in paths]
+                               args.terminal_price_mode, args.capacity_kwh, args.max_power_w,
+                               args.soc_min, args.soc_max, args.charge_efficiency,
+                               args.discharge_efficiency) for p in paths]
         for future in as_completed(futures):
             report = future.result()
             reports.append(report)

@@ -1,5 +1,5 @@
 {
-  "manifest_version": "f1-final-proposal-20261014-1",
+  "manifest_version": "f1-final-proposal-20261015-2",
   "status": "final_proposal_pending_integration_signature",
   "official_score_claim": false,
   "f2_authorized": false,
@@ -7,6 +7,8 @@
   "parameters": {
     "solver_seconds": 2.0,
     "mip_rel_gap": 1e-09,
+    "capacity_kwh": 14.0,
+    "max_power_w": 5000.0,
     "soc_min_percent": 0.0,
     "soc_max_percent": 100.0,
     "poll_seconds": 5.0,
@@ -23,6 +25,7 @@
     "successful_plan_idle": "zero_flow",
     "failure_fallback_idle": "self_consumption",
     "failure_fallback_attribution": "non-optimizer-attributed",
+    "time_limit_incumbent": "Accept only rolling.py independently verified feasible limit_reached incumbent; preserve solver_status=limit_reached, mip_gap and accepted_incumbent=true. Reject unverified or infeasible plans to self_consumption.",
     "online_price_anomaly_acceptance": {
       "evidence": "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md",
       "checks": [
@@ -339,11 +342,14 @@
       "Practice-site offline replay, not official settlement.",
       "Future observed shortwave radiation is only a proxy for issued API weather forecasts.",
       "Five-site strategy evidence is directional and not a formal 100-site result.",
-      "PV hybrid is implemented in the offline diagnostic arm; online API forecast integration remains unverified."
+      "PV hybrid is implemented in the offline diagnostic arm; online API forecast integration remains unverified.",
+      "Existing five-site terminal/PV artifacts were produced before incumbent-alignment source changes; they remain frozen historical diagnostics and are not F2 results. Recompute after F1 signature before comparing new policy outcomes."
     ]
   },
   "parameter_provenance": {
     "solver_seconds": "C4 72 frozen cases, 72/72 emitted and zero physics violations",
+    "capacity_kwh": "current replay/model device capacity convention; explicitly passed for F2",
+    "max_power_w": "current replay/model device power limit convention; explicitly passed for F2",
     "mip_rel_gap": "rolling.py MILP option; no relaxation from 1e-9",
     "soc_min_percent": "C3 and contest SOP 0-100% physical interval",
     "soc_max_percent": "contest SOP 0-100% physical interval",
@@ -359,18 +365,19 @@
     "online_time_step": "official API/device granularity remains authoritative and is not inferred from offline data"
   },
   "reproducibility": {
-    "replay_command_template": "python run_contest_strategy_replay.py --data forecast_data --output <new-dir> --stage 4 --max-sites 5 --workers 2 --wear 0.02 --solver-time-limit 2 --hold-mode zero_flow --terminal-price-mode <a5_eval_start_mean|current_visible_mean|zero>",
+    "replay_command_template": "prepare_f2_command.py --manifest outputs/f1_parameter_manifest_20261014.json --expected-sha256 <signed-manifest-sha256> --data forecast_data --output <new-dir> --workers 2; gate prints an explicit stage-4 command with all frozen parameters; it does not start replay",
     "source_sha256": {
-      "build_f1_manifest.py": "6142f1e7dc888e37f3fa7f9cf6bed75b9aae6b45ca0582c8a2f5e96dbb10c6e2",
-      "run_contest_strategy_replay.py": "9f6fbb6a58a2eef7cf80db86f1bdb475c9eb41947219d83edbe7c7086df4cb8a",
+      "build_f1_manifest.py": "039f83a9344d74f6b1fd50339bf7a6cc4e512281980424aab7f8c7bf662f510d",
+      "prepare_f2_command.py": "397b0b1e1c8a6947acfa621e6c0f2bbb62730dca741197b3203c71738c0946bb",
+      "run_contest_strategy_replay.py": "6e1f5b10fdcec4f00255013ecebcf73b1045f3786230bc40aeb50f4b1210e15f",
       "run_live.py": "83c04c165eba3e38d130eca93f58b1bdcd3424d32b02d44b6f51c2c7341a6a06",
       "src/energy_lab/backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
-      "src/energy_lab/contest_replay.py": "d3432da0f7deaf57416bbca15fbb3658ea83e25afd3d0953d518ec9dad1bf973",
-      "src/energy_lab/execute.py": "37eab25f86b33282040550fa7c0d1ba6dde0630103ba07018c55529c4e4289ac",
+      "src/energy_lab/contest_replay.py": "1f4d436ad4b9a4ea66f6990ffe87f229bf859b64c8b4ac99704d71b17c427bfa",
+      "src/energy_lab/execute.py": "e96727ca7954fdcbef50d587007f5aa9a10c67f7911b35ffa768dcf1f2ceef2e",
       "src/energy_lab/interface_contract.py": "108978f51243bf2fc5063dd59284f35e01eea68dca9d7c49569a42571d47f8a7",
       "src/energy_lab/model.py": "4d1f29e9f63e47264bcd409ca4a741efef4178ef3dff64183c2ef5688e073c20",
       "src/energy_lab/rolling.py": "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4",
-      "src/energy_lab/shadow.py": "fcf1f35a75cf5c6bd04b8d0f46ca450bef6a0bc7ae9dde4b68df2660b26f00ad",
+      "src/energy_lab/shadow.py": "a1f6dc2264763ac1a06a47679fe611b998485385c51d098e123aeea452d4f0c1",
       "src/energy_lab/validation.py": "967dfd20e2dceb75acb07dbb66e0d95b32a1784e98d295184a51a2bac4275cf0"
     },
     "available_practice_dataset_count": 100,
@@ -485,7 +492,7 @@
       "forecast_data\\5.csv": "119fb4dfcb2567e3a7adaea36bbc0cdc7b5cd1f4f918f9f0babb2780c3c6313e"
     },
     "evidence_artifact_sha256": {
-      "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md": "d63eb711a176dbbb752923c322ec5fec425df02d1f53e06ec2d8c794b61029c5",
+      "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md": "aba7763d0921f6d87956ce0eef34af6b5575c7330ce0e8c2253f56947a3c1ce0",
       "F1_PARAMETER_FREEZE_CHECKLIST.md": "51e1cc0a049e6e82e6c18759014075feb9f1e1f19d1744cfd5c3e891dbb4d184",
       "F1_TERMINAL_PV_EVIDENCE.md": "fb9c750f7d7b07a7c6cc8df01cd6bae65f9a70322d61a6f5560dcb388c304650",
       "outputs/f1_terminal_a5_v2_20261014/manifest.json": "9bfce522c33d1da5edbace16543baff3220e8b58661685a7139049405186083c",
@@ -499,7 +506,10 @@
       "outputs/w1_c4_verification_20261014_1/verification_report.json": "96e91ef18da35a1e431fa48e8f38bd2553f2bf205da19a1a633e8e8578f6d2e8",
       "outputs/w1_readiness_actual_20261014/config_snapshot.json": "103f32a460489b852f6c5dc457f75bc5f4e60570de0c989ee01627d5f082f8b6",
       "outputs/w1_readiness_actual_20261014/readiness.json": "33793c7610e2231f2cb941f06a8c5aa7307db818fc68a5baadfd283f5de53878",
-      "tests/test_run_live_chain.py": "5c188e98d85d1ea7e654d3de881c179163b46f16c78aaa8f7e40ee608efdf95c"
+      "tests/test_contest_replay.py": "298574550c098fe3ba68da7ce28287c11e551d29e3e163156988241ec66f1fcb",
+      "tests/test_prepare_f2_command.py": "6c2ed8169387f6a3c97c47e4c86a0998cf3ad5da7fec4e709c2eb669567f3e4e",
+      "tests/test_rolling_milp.py": "a65349355cf78f98a9ea55c8d56680a38c91a5e0eacccf96126026cba05d7f6b",
+      "tests/test_run_live_chain.py": "675e516c973c856ac1cc7668365101e8582ebf1410d7191d7002a3561f7cfd99"
     },
     "no_model_training": true
   },

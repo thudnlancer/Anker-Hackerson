@@ -19,4 +19,10 @@
 pytest -q tests/test_run_live_chain.py tests/test_run_live_time.py tests/test_execute.py tests/test_contest_replay.py
 ```
 
-结果：定向组合 `61 passed`，全仓 `254 passed`。该证据不表示远程比赛机在线验收，也不授权 F2。
+结果：在线链路及 replay/MILP/F2 门槛定向组合 `71 passed`，全仓 `269 passed`。该证据不表示远程比赛机在线验收，也不授权 F2。
+
+## 超时 incumbent 与 F2 门槛
+
+- 独立约束复验通过的超时解以 `solver_status=limit_reached`、`accepted_incumbent=true` 和 `mip_gap` 保留，执行但不标为 `optimal`。
+- 缺少独立验证的 `limit_reached` 解、`infeasible` 解均拒绝执行，使用 `self_consumption` 回退。
+- `prepare_f2_command.py` 只在签核 manifest 的顶层和 `signature` 同时授权、且传入准确 SHA-256 时打印显式 F2 命令；它本身不启动 replay。当前 manifest 仍未授权。

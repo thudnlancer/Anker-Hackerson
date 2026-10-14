@@ -204,6 +204,25 @@ class FourSafetySwitchTests(unittest.TestCase):
         self.assertFalse(results[0]["optimizer_attributed"])
         self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
 
+    def test_verified_time_limit_incumbent_keeps_status_gap_and_audit_marker(self):
+        ha = StubHA({"1502": state()})
+        incumbent = plan(flow="charge", charge=2000., soc=50., status="limit_reached")
+        incumbent.suboptimal = True
+        incumbent.mip_gap = .125
+        with tempfile.TemporaryDirectory() as temp:
+            audit = Path(temp) / "audit.csv"
+            with patch("energy_lab.shadow.optimize_window", return_value=incumbent):
+                results = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                        write_enabled=True, carry={}, audit_csv=audit)
+            logged = pd.read_csv(audit).iloc[0]
+        row = results[0]
+        self.assertEqual(row["status"], "dispatched")
+        self.assertEqual(row["solver_status"], "limit_reached")
+        self.assertTrue(row["accepted_incumbent"])
+        self.assertEqual(row["mip_gap"], .125)
+        self.assertTrue(logged["accepted_incumbent"])
+        self.assertEqual(logged["mip_gap"], .125)
+
     def test_live_dispatch_sends_setpoint(self):
         ha = StubHA({"1502": state()})
         results = self.run_live(ha, cfg(), plan(flow="charge", charge=2000.0, soc=50.0))

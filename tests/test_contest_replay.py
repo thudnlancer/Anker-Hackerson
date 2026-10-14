@@ -15,7 +15,7 @@ from energy_lab.contest_replay import (
 )
 from energy_lab.model import Battery
 from energy_lab.rolling import optimize_window
-from run_contest_strategy_replay import evaluate, pv_forecast, visible_window
+from run_contest_strategy_replay import accepted_plan, evaluate, pv_forecast, visible_window
 
 
 class ContestReplayTests(unittest.TestCase):
@@ -90,6 +90,54 @@ class ContestReplayTests(unittest.TestCase):
             self.assertTrue(trace.attribution.eq("non-optimizer-attributed").all())
             self.assertEqual(result["successful_plan_idle_mode"], "zero_flow")
             self.assertEqual(result["accounting_arm"], "zero_flow")
+
+    def test_verified_time_limit_incumbent_is_executed_without_claiming_optimal(self):
+        raw = self.frame(840).rename(columns={"pv": "pv_power_avg_w", "load": "load_power_avg_w",
+                                               "buy": "import_price_eur_kwh", "sell": "export_price_eur_kwh"})
+        with TemporaryDirectory() as temp:
+            directory = Path(temp)
+            path = directory / "1.csv"
+            raw.to_csv(path, index=False)
+            incumbent = SimpleNamespace(status="limit_reached", suboptimal=True, mip_gap=.125,
+                                        plan=pd.DataFrame([{"flow": "idle", "charge_w": 0.,
+                                                            "discharge_w": 0.}]))
+            with patch("run_contest_strategy_replay.optimize_window", return_value=incumbent):
+                result = evaluate(path, directory, 1, 0, .02, .02, 2., "zero_flow")
+            trace = pd.read_csv(directory / "site_1_trace.csv")
+            candidate = trace.loc[trace.arm.eq("persistence")]
+            self.assertEqual(result["arms"]["persistence"]["fallback_steps"], 0)
+            self.assertTrue(candidate.accepted_incumbent.all())
+            self.assertTrue(candidate.solver_status.eq("limit_reached").all())
+            self.assertTrue(candidate.mip_gap.eq(.125).all())
+            self.assertTrue(candidate.command_mode.eq("zero_flow").all())
+            self.assertTrue(result["physical_audit"]["passed"])
+
+    def test_unverified_and_infeasible_plans_are_rejected(self):
+        for plan in (SimpleNamespace(status="limit_reached", suboptimal=False, mip_gap=.3),
+                     SimpleNamespace(status="infeasible", suboptimal=False),
+                     SimpleNamespace(status="limit_reached", suboptimal=True, mip_gap=.3)):
+            usable, incumbent = accepted_plan(plan)
+            self.assertEqual((usable, incumbent),
+                             (True, True) if plan.status == "limit_reached" and plan.suboptimal else
+                             (False, False))
+
+    def test_infeasible_replay_tick_explicitly_self_consumes(self):
+        raw = self.frame(840).rename(columns={"pv": "pv_power_avg_w", "load": "load_power_avg_w",
+                                               "buy": "import_price_eur_kwh", "sell": "export_price_eur_kwh"})
+        with TemporaryDirectory() as temp:
+            directory = Path(temp)
+            path = directory / "1.csv"
+            raw.to_csv(path, index=False)
+            with patch("run_contest_strategy_replay.optimize_window",
+                       return_value=SimpleNamespace(status="infeasible", suboptimal=False)):
+                report = evaluate(path, directory, 1, 0, .02, .02, 2., "zero_flow")
+            trace = pd.read_csv(directory / "site_1_trace.csv")
+            candidate = trace.loc[trace.arm.eq("persistence")]
+            self.assertEqual(report["arms"]["persistence"]["fallback_steps"], 168)
+            self.assertTrue(candidate.command_mode.eq("self_consumption").all())
+            self.assertTrue(candidate.solver_status.eq("infeasible").all())
+            self.assertFalse(candidate.accepted_incumbent.any())
+            self.assertTrue(report["physical_audit"]["passed"])
 
     def test_window_shrinks_and_estimate_does_not_use_unpublished_prices(self):
         raw = self.frame()
