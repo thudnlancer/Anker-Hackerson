@@ -139,6 +139,7 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
     if evidence_sink is not None:
         # Evidence is a sidecar: exporting must not change the chosen action.
         # No callback is called for blocked, failed, or unrepresentable solves.
+        export_stage = "record"
         try:
             from .explainability_evidence import build_explainability_record
             record = build_explainability_record(
@@ -147,10 +148,16 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
                 import_price=lookup.import_price.to_numpy(), export_price=lookup.export_price.to_numpy(),
                 result=result, mapping=mapping, forecast_mode=forecast_mode,
                 capacity_kwh=capacity, max_power_w=max_power, soc_min=soc_min, soc_max=soc_max)
+            export_stage = "sink"
             evidence_sink(record)
         except Exception as exc:
-            # Error text can contain caller data; expose only the exception type.
+            # Error text can contain caller data; never expose arbitrary text.
             candidate["explainability_export"] = {"status": "failed", "error_type": type(exc).__name__}
+            # Export validation codes are fixed strings defined by our own
+            # exporter. Do not copy arbitrary sink error text into evidence.
+            from .explainability_evidence import EvidenceExportError
+            if export_stage == "record" and isinstance(exc, EvidenceExportError):
+                candidate["explainability_export"]["failure_code"] = exc.code
     return candidate
 
 

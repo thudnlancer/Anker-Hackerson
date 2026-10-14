@@ -15,6 +15,10 @@ class SourceUnavailable(RuntimeError):
         self.category, self.http_status = category, status
 
 
+class _WeatherAuthenticationFailed(SourceUnavailable):
+    """One completed weather batch failed authentication; no worker refreshes."""
+
+
 def snapshot_with_states(snapshot, stations, states, captured):
     """Use the newly read HA observations with previously fetched forecasts.
 
@@ -115,6 +119,21 @@ class LiveSource:
         return HAClient(self.cfg['ha_base'], self.tokens['ha'], timeout=self.timeout)
 
     def capture(self):
+        # Complete a weather batch before any reauthentication. A token can
+        # expire after a successful price read; retry that read-only capture
+        # once using entirely new price, HA and weather responses.
+        for attempt in range(2):
+            try:
+                return self._capture_once()
+            except _WeatherAuthenticationFailed as exc:
+                if (exc.http_status == 401 and attempt == 0
+                        and self.refreshes['sim'] < self.max_auth_refreshes):
+                    self.refreshes['sim'] += 1
+                    self._login('sim')
+                    continue
+                raise SourceUnavailable(exc.category, exc.http_status) from None
+
+    def _capture_once(self):
         prices = self._get('sim', '/api/price')
         # Forecast requests use separate sessions and immutable token copies.
         token = self.tokens['sim']
@@ -126,21 +145,30 @@ class LiveSource:
                         headers={'Authorization': 'Bearer ' + token}, params={'site': int(site)},
                         timeout=self.timeout, allow_redirects=False)
                     if response.status_code in (401, 403):
-                        raise SourceUnavailable('sim_authentication_failed', response.status_code)
+                        raise _WeatherAuthenticationFailed('sim_authentication_failed', response.status_code)
                     response.raise_for_status()
                     return response.json()
             except SourceUnavailable:
                 raise
             except Exception as exc:
                 return {'unavailable': type(exc).__name__}
-        futures = {}
+        futures, auth_failures = {}, []
+        forecasts = {site: {} for site in self.cfg['stations']}
         with ThreadPoolExecutor(max_workers=6) as pool:
             for site in self.cfg['stations']:
                 for day in ('today', 'tomorrow'):
                     futures[site, day] = pool.submit(weather, site, day)
             states, captured = self.states()
-            forecasts = {site: {day: futures[site, day].result() for day in ('today', 'tomorrow')}
-                         for site in self.cfg['stations']}
+            for (site, day), future in futures.items():
+                try:
+                    forecasts[site][day] = future.result()
+                except _WeatherAuthenticationFailed as exc:
+                    auth_failures.append(exc)
+        if auth_failures:
+            # A permission denial wins even when another response is a 401.
+            # Inspect the complete batch so iteration order cannot hide a 403.
+            status = 403 if any(exc.http_status == 403 for exc in auth_failures) else 401
+            raise _WeatherAuthenticationFailed('sim_authentication_failed', status) from None
         entities = {x['entity_id']: x for x in states}
         stations = {}
         for site, spec in self.cfg['stations'].items():

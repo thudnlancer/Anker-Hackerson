@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -275,6 +276,102 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(self.collector(evaluate=late).collect_once()["state"], "degraded")
         self.assertEqual(self.records, [])
 
+    def test_upstream_solver_outcomes_keep_timeout_and_infeasible_distinct_without_decisions(self):
+        from energy_lab.shadow import evaluate_snapshot
+        self.data["prices"] = {name: {"points": [
+            {"time": f"{date}T{hour:02d}:00:00Z", "import_price": .2, "export_price": .1}
+            for hour in range(24)]} for name, date in
+            (("today", "2031-01-01"), ("tomorrow", "2031-01-02"))}
+        cases = (("limit_reached", "timeout", "solver_timeout", "SolverTimeLimit"),
+                 ("timeout", "timeout", "solver_timeout", "SolverTimeLimit"),
+                 ("infeasible", "infeasible", "solver_infeasible", "SolverInfeasible"),
+                 ("solver_error", "failed", "solver_failed", "SolverFailure"),
+                 ("unbounded", "failed", "solver_failed", "SolverFailure"))
+        sink = Mock()
+        for upstream, normalized, reason, error in cases:
+            with self.subTest(upstream=upstream), patch("energy_lab.shadow.optimize_window",
+                return_value=SimpleNamespace(status=upstream, message="PRIVATE-SOLVER-MESSAGE")) as solve:
+                collector = self.collector(evaluate=evaluate_snapshot, record_sink=sink)
+                status = collector.collect_once()
+                self.assertEqual(solve.call_count, 3)
+                self.assertEqual(status["state"], "degraded")
+                self.assertEqual(status["last_error"], error)
+                for site in status["sites"].values():
+                    self.assertEqual(site["solver_status"], normalized)
+                    self.assertEqual(site["reason"], reason)
+                    self.assertEqual(site["error_type"], error)
+                self.assertEqual(collector.checkpoint.pending("unit-stream"), [])
+                with collector.checkpoint._connect() as db:
+                    self.assertEqual(db.execute("SELECT count(*) FROM stream_records").fetchone()[0], 0)
+                self.assertNotIn("PRIVATE-", json.dumps(status))
+        sink.assert_not_called()
+
+    def test_one_timeout_does_not_hide_another_station_success_or_infeasibility(self):
+        def evaluate(data, **kwargs):
+            site = next(iter(data["stations"]))
+            if site == "1":
+                return fake_evaluate(data, **kwargs)
+            return {"stations": {site: {"status": "limit_reached" if site == "2" else "infeasible",
+                "candidate": None, "message": "PRIVATE-UPSTREAM-BODY"}}}
+        collector = self.collector(evaluate=evaluate)
+        status = collector.collect_once()
+        self.assertEqual(status["sites"]["1"]["status"], "collected")
+        self.assertEqual(status["sites"]["2"]["solver_status"], "timeout")
+        self.assertEqual(status["sites"]["2"]["reason"], "solver_timeout")
+        self.assertEqual(status["sites"]["3"]["solver_status"], "infeasible")
+        self.assertEqual(status["sites"]["3"]["reason"], "solver_infeasible")
+        self.assertEqual([record["site_id"] for record in self.records], ["1"])
+        self.assertNotIn("PRIVATE-", json.dumps(status))
+
+    def test_candidate_export_failure_retains_only_known_failure_code(self):
+        for code in ("negative_solver_power", "solver_cost_mismatch", "PRIVATE-EXTERNAL-CODE"):
+            def evaluate(data, **kwargs):
+                return {"stations": {site: {"status": "candidate_only", "explainability_export": {
+                    "status": "failed", "failure_code": code, "error_type": "PRIVATE-ERROR-TYPE",
+                    "message": "PRIVATE-EXCEPTION-BODY"}} for site in data["stations"]}}
+            with self.subTest(code=code):
+                collector = self.collector(evaluate=evaluate)
+                status = collector.collect_once()
+                for site in status["sites"].values():
+                    self.assertEqual(site["solver_status"], "candidate_only")
+                    self.assertEqual(site["reason"], "evidence_unavailable")
+                    if code.startswith("PRIVATE-"):
+                        self.assertNotIn("failure_code", site)
+                        self.assertEqual(site["error_type"], "EvidenceExportFailure")
+                    else:
+                        self.assertEqual(site["failure_code"], code)
+                        self.assertEqual(site["error_type"], "EvidenceExportError")
+                self.assertEqual(self.records, [])
+                self.assertNotIn("PRIVATE-", json.dumps(status))
+
+    def test_export_failure_code_is_accepted_by_the_real_collection_status_store(self):
+        sys.path.insert(0, str(ROOT / "explainability-app" / "src"))
+        from energy_explain.store import Store
+        store = Store(Path(self.temp.name) / "failure-status.sqlite")
+        def evaluate(data, **kwargs):
+            return {"stations": {site: {"status": "candidate_only", "explainability_export": {
+                "status": "failed", "failure_code": "solver_cost_mismatch",
+                "error_type": "EvidenceExportError"}} for site in data["stations"]}}
+        collector = self.collector(evaluate=evaluate, status_sink=store.update_collection_status)
+        status = collector.collect_once()
+        self.assertEqual(status["state"], "degraded")
+        saved = store.collection_status("unit-stream", wall=self.now)
+        self.assertEqual(saved["sites"]["1"]["failure_code"], "solver_cost_mismatch")
+        self.assertEqual(saved["sites"]["1"]["error_type"], "EvidenceExportError")
+        self.assertEqual(store.decisions("unit-stream"), [])
+
+    def test_blocked_input_reason_is_fixed_or_whitelisted(self):
+        for reason in ("invalid_price_window", "PRIVATE-UPSTREAM-REASON", {"PRIVATE": "BODY"}):
+            def evaluate(data, **kwargs):
+                return {"stations": {site: {"status": "blocked", "reason": reason,
+                    "error_type": "PRIVATE-ERROR-TYPE"} for site in data["stations"]}}
+            with self.subTest(reason=reason):
+                status = self.collector(evaluate=evaluate).collect_once()
+                for site in status["sites"].values():
+                    self.assertEqual(site["solver_status"], "blocked")
+                    self.assertEqual(site["reason"], "invalid_price_window" if reason == "invalid_price_window" else "solver_blocked")
+                    self.assertEqual(site["error_type"], "SolverInputRejected")
+                self.assertNotIn("PRIVATE-", json.dumps(status))
     def test_default_capture_caches_ha_token_only_in_memory_and_never_mutates_caller_config(self):
         cfg = config(); original = deepcopy(cfg)
         with patch("energy_lab.explainability_stream.exchange_ha_token", return_value="PRIVATE-CACHED-TOKEN") as exchange, \

@@ -13,7 +13,7 @@ import math
 from types import MappingProxyType
 from typing import Annotated, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_serializer, model_validator
 
 from .schemas import ExecutionEvent, Identifier
 
@@ -92,6 +92,26 @@ class SubmissionReceipt(_FrozenEvidence):
         return self
 
 
+SOURCE_FIELDS = frozenset({"pv_kw", "load_kw", "charge_kw", "discharge_kw", "grid_import_kw",
+                          "grid_export_kw", "device_time", "mode", "flow", "setpoint_kw"})
+POWER_FIELDS = ("pv_kw", "load_kw", "charge_kw", "discharge_kw", "grid_import_kw", "grid_export_kw")
+
+
+class TelemetrySourceReport(_FrozenEvidence):
+    """One HA entity's real source clock; reading cached state cannot refresh it."""
+
+    field: Literal["pv_kw", "load_kw", "charge_kw", "discharge_kw", "grid_import_kw",
+                   "grid_export_kw", "device_time", "mode", "flow", "setpoint_kw"]
+    entity_id: Annotated[str, Field(min_length=1, max_length=250)]
+    source_timestamp: datetime
+    timestamp_kind: Literal["last_reported", "last_updated"]
+
+    @field_validator("source_timestamp")
+    @classmethod
+    def aware(cls, value):
+        return _aware(value)
+
+
 class TelemetryReadback(_FrozenEvidence):
     run_id: Identifier
     site_id: Identifier
@@ -99,7 +119,7 @@ class TelemetryReadback(_FrozenEvidence):
     instruction_id: Identifier
     observation_id: Identifier
     observed_at: datetime  # Wall clock: when the observation was captured.
-    updated_at: datetime  # Wall clock: update time of the coherent HA telemetry.
+    updated_at: datetime  # Earliest power source time; never the HTTP capture time.
     device_time: datetime
     mode: Annotated[str, Field(min_length=1, max_length=120)]
     flow: Annotated[str, Field(min_length=1, max_length=120)]
@@ -110,22 +130,65 @@ class TelemetryReadback(_FrozenEvidence):
     discharge_kw: NonNegative
     grid_import_kw: NonNegative
     grid_export_kw: NonNegative
+    source_coherence: Literal["declared_coherent", "ha_report_cohort", "ha_asynchronous_state"] = "declared_coherent"
+    source_reports: tuple[TelemetrySourceReport, ...] = ()
+    source_coherence_seconds: Annotated[float, Field(ge=0, lt=5)] = 1.0
+    source_coherence_reason: Literal["mixed_source_tick", "source_coherence_requires_device_clock_bracket"] | None = None
 
     @field_validator("observed_at", "updated_at", "device_time")
     @classmethod
     def aware(cls, value):
         return _aware(value)
 
+    @model_serializer(mode="wrap")
+    def preserve_legacy_contract(self, handler):
+        data = handler(self)
+        if self.source_coherence == "declared_coherent":
+            # The previous contract did not contain HA provenance fields. Keep
+            # its canonical payload and SHA unchanged for durable reimports.
+            for name in ("source_coherence", "source_reports", "source_coherence_seconds", "source_coherence_reason"):
+                data.pop(name, None)
+        return data
+
+    @model_validator(mode="after")
+    def source_evidence_consistent(self):
+        if self.source_coherence == "declared_coherent":
+            if self.source_reports or self.source_coherence_reason is not None:
+                raise ValueError("HA source reports require an explicit HA coherence classification")
+            return self
+        reports = {report.field: report for report in self.source_reports}
+        if len(reports) != len(self.source_reports) or set(reports) != SOURCE_FIELDS:
+            raise ValueError("HA observations require one source report for each of the ten fields")
+        if len({report.entity_id for report in self.source_reports}) != len(self.source_reports):
+            raise ValueError("HA source entity identities must be unique")
+        if self.updated_at != min(reports[field].source_timestamp for field in POWER_FIELDS):
+            raise ValueError("updated_at must preserve the earliest real power source timestamp")
+        if self.source_coherence == "ha_asynchronous_state":
+            if self.source_coherence_reason is None:
+                raise ValueError("asynchronous HA state requires its source limitation")
+        else:
+            if self.source_coherence_reason is not None:
+                raise ValueError("a coherent HA report cannot have a source limitation")
+            stamps = [reports[field].source_timestamp for field in (*POWER_FIELDS, "device_time")]
+            if (max(stamps) - min(stamps)).total_seconds() > self.source_coherence_seconds:
+                raise ValueError("coherent HA reports cannot contain mixed source ticks")
+        return self
+
 
 class ReadbackResult(_FrozenEvidence):
     status: Literal["verified", "pending", "mismatch", "unsupported"]
     reasons: tuple[str, ...] = ()
-    evidence_scope: Literal["post_submission_telemetry_match"] = "post_submission_telemetry_match"
+    evidence_scope: Literal["post_submission_telemetry_match", "asynchronous_ha_state"] = "post_submission_telemetry_match"
     checked_at: datetime
     max_age_seconds: NonNegative = 15
     tolerance_kw: NonNegative = 0.1
     receipt_sha256: Fingerprint | None = None
     readback_sha256: Fingerprint | None = None
+    control_attribute_match: bool | None = None
+    target_measurement_match: bool | None = None
+    fresh_target_measurement: bool = False
+    partial_evidence_scope: Literal["none", "fresh_target_measurement_only"] = "none"
+    unverified_source_fields: tuple[str, ...] = ()
 
     @field_validator("checked_at")
     @classmethod
@@ -155,18 +218,51 @@ def verify_readback(receipt: SubmissionReceipt | None, telemetry: TelemetryReadb
                     tolerance_kw: float = 0.1) -> ReadbackResult:
     """Check association, both clocks, control state and measured power balance.
 
-    ``updated_at`` must represent a coherent observation of all supplied entities;
-    the external observer must not relabel cached or mixed-tick measurements as a
-    newly updated snapshot. This verifier makes no network requests or writes.
+    HA observations retain per-field source clocks. Asynchronous states can show
+    a fresh target measurement but remain pending: mixed-tick powers are neither
+    balanced nor used to confirm an instruction. The legacy external contract
+    requires ``updated_at`` to represent a coherent observation of every supplied
+    power entity. This verifier makes no network requests or writes.
     """
     now = _aware(now)
     for name, value in (("max_age_seconds", max_age_seconds), ("tolerance_kw", tolerance_kw)):
         if isinstance(value, bool) or not math.isfinite(value) or value < 0:
             raise ValueError(f"{name} must be finite and nonnegative")
+    source_diagnostics = {}
+    if telemetry is not None:
+        source_diagnostics["control_attribute_match"] = (bool(telemetry.mode == receipt.mode
+            and telemetry.flow == receipt.flow
+            and _within(abs(telemetry.setpoint_kw - receipt.target_kw), SETPOINT_TOLERANCE_KW))
+            if receipt is not None and _identity(receipt) == _identity(telemetry) else None)
+        if telemetry.source_reports and receipt is not None:
+            reports = {report.field: report for report in telemetry.source_reports}
+            source_diagnostics["unverified_source_fields"] = tuple(sorted(field for field, report in reports.items()
+                if report.source_timestamp <= receipt.completed_wall_time
+                or (now - report.source_timestamp).total_seconds() > max_age_seconds
+                or report.source_timestamp > telemetry.observed_at))
+            target_field = "grid_export_kw" if receipt.flow == "discharge" else "charge_kw"
+            target_time, clock_time = (reports[field].source_timestamp for field in (target_field, "device_time"))
+            required_wall_times = (receipt.issued_wall_time, receipt.completed_wall_time,
+                                   target_time, clock_time, telemetry.observed_at)
+            fresh = (_identity(receipt) == _identity(telemetry)
+                and telemetry.device_time > receipt.issued_device_time
+                and target_time > receipt.completed_wall_time and clock_time > receipt.completed_wall_time
+                and max(target_time, clock_time) <= telemetry.observed_at
+                and all((value - now).total_seconds() <= FUTURE_WALL_TOLERANCE_SECONDS for value in required_wall_times)
+                and all((now - value).total_seconds() <= max_age_seconds
+                        for value in (target_time, clock_time, telemetry.observed_at)))
+            source_diagnostics["fresh_target_measurement"] = fresh
+            if fresh:
+                source_diagnostics["target_measurement_match"] = _within(
+                    abs(getattr(telemetry, target_field) - receipt.target_kw), tolerance_kw)
+                source_diagnostics["partial_evidence_scope"] = "fresh_target_measurement_only"
     def result(status, *reasons):
         return ReadbackResult(status=status, reasons=reasons, checked_at=now,
+            evidence_scope="asynchronous_ha_state" if telemetry is not None
+                and telemetry.source_coherence == "ha_asynchronous_state" else "post_submission_telemetry_match",
             max_age_seconds=max_age_seconds, tolerance_kw=tolerance_kw,
-            receipt_sha256=_fingerprint(receipt), readback_sha256=_fingerprint(telemetry))
+            receipt_sha256=_fingerprint(receipt), readback_sha256=_fingerprint(telemetry),
+            **source_diagnostics)
     if receipt is None:
         return result("unsupported", "missing_submission")
     if telemetry is None:
@@ -179,6 +275,10 @@ def verify_readback(receipt: SubmissionReceipt | None, telemetry: TelemetryReadb
         return result("pending", "clock_unverified")
     if telemetry.observed_at < telemetry.updated_at:
         return result("pending", "clock_unverified")
+    if any(report.source_timestamp > telemetry.observed_at
+           or (report.source_timestamp - now).total_seconds() > FUTURE_WALL_TOLERANCE_SECONDS
+           for report in telemetry.source_reports):
+        return result("pending", "clock_unverified")
     pending = []
     if telemetry.device_time <= receipt.issued_device_time:
         pending.append("awaiting_device_tick")
@@ -186,6 +286,10 @@ def verify_readback(receipt: SubmissionReceipt | None, telemetry: TelemetryReadb
         pending.append("awaiting_fresh_readback")
     if any((now - value).total_seconds() > max_age_seconds for value in (telemetry.updated_at, telemetry.observed_at)):
         pending.append("stale_readback")
+    if telemetry.source_coherence == "ha_asynchronous_state":
+        # A successful HTTP poll cannot turn an old zero into a new measurement.
+        # Retain the partial source evidence, but never infer same-frame balance.
+        pending.append("source_coherence_unverified")
     if pending:
         return result("pending", *pending)
 

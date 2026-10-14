@@ -73,6 +73,7 @@ def test_matching_ha_state_without_submission_never_confirms():
     assert result.status == "unsupported"
     assert result.reasons == ("missing_submission",)
     assert result.receipt_sha256 is None
+    assert result.control_attribute_match is None
     waiting = verify_readback(SubmissionReceipt(**receipt_dict()), None, now=NOW)
     assert waiting.status == "pending"
     assert waiting.reasons == ("awaiting_readback",)
@@ -269,3 +270,101 @@ def test_observation_identity_stays_stable_to_allow_append_conflict_detection():
 def test_invalid_verifier_parameters_cannot_relax_checks(parameter, value):
     with pytest.raises(ValueError):
         check(**{parameter: value})
+
+
+def asynchronous_readback_dict():
+    values = readback_dict()
+    fields = ("pv_kw", "load_kw", "charge_kw", "discharge_kw", "grid_import_kw",
+              "grid_export_kw", "device_time", "mode", "flow", "setpoint_kw")
+    values.update(source_coherence="ha_asynchronous_state", source_coherence_reason="mixed_source_tick",
+        updated_at=WALL, source_reports=[dict(field=field, entity_id="sensor.test_" + field,
+        source_timestamp=WALL if field == "grid_export_kw" else WALL + timedelta(seconds=2),
+        timestamp_kind="last_reported") for field in fields])
+    return values
+
+
+def test_ha_provenance_requires_complete_unique_source_reports_and_real_earliest_time():
+    values = asynchronous_readback_dict()
+    telemetry = TelemetryReadback(**values)
+    assert isinstance(telemetry.source_reports, tuple)
+    assert TelemetryReadback.model_validate_json(telemetry.model_dump_json()) == telemetry
+    changed = {**values, "updated_at": NOW}
+    with pytest.raises(ValidationError, match="earliest real power source"):
+        TelemetryReadback(**changed)
+    for reports in (values["source_reports"][:-1], values["source_reports"] + values["source_reports"][:1]):
+        with pytest.raises(ValidationError, match="one source report"):
+            TelemetryReadback(**{**values, "source_reports": reports})
+    duplicate_entities = [dict(report, entity_id="sensor.duplicate") for report in values["source_reports"]]
+    with pytest.raises(ValidationError, match="unique"):
+        TelemetryReadback(**{**values, "source_reports": duplicate_entities})
+    with pytest.raises(ValidationError, match="explicit HA coherence"):
+        TelemetryReadback(**{**values, "source_coherence": "declared_coherent"})
+    with pytest.raises(ValidationError, match="requires its source limitation"):
+        TelemetryReadback(**{**values, "source_coherence_reason": None})
+
+
+def test_asynchronous_reports_cannot_be_relabelled_as_coherent():
+    values = asynchronous_readback_dict()
+    with pytest.raises(ValidationError, match="mixed source ticks"):
+        TelemetryReadback(**{**values, "source_coherence": "ha_report_cohort", "source_coherence_reason": None})
+
+
+def test_future_source_field_is_unverified_even_when_earliest_source_time_is_old():
+    values = asynchronous_readback_dict()
+    values["source_reports"][2]["source_timestamp"] = NOW + timedelta(seconds=10)
+    result = verify_readback(SubmissionReceipt(**receipt_dict()), TelemetryReadback(**values), now=NOW)
+    assert result.status == "pending" and result.reasons == ("clock_unverified",)
+    assert result.fresh_target_measurement is False
+    assert result.target_measurement_match is None
+
+
+def test_source_timestamp_timezone_and_frozen_metadata_are_enforced():
+    values = asynchronous_readback_dict()
+    values["source_reports"][0]["source_timestamp"] = WALL.replace(tzinfo=None)
+    with pytest.raises(ValidationError, match="explicit timezone"):
+        TelemetryReadback(**values)
+    telemetry = TelemetryReadback(**asynchronous_readback_dict())
+    with pytest.raises(ValidationError):
+        telemetry.source_reports[0].source_timestamp = NOW
+
+
+def test_legacy_readback_payload_and_sha_remain_identical_after_source_extension():
+    import hashlib
+    import json
+
+    old_payload = readback_dict()
+    for field in ("observed_at", "updated_at", "device_time"):
+        old_payload[field] = old_payload[field].isoformat().replace("+00:00", "Z")
+    for field in ("setpoint_kw", "pv_kw", "load_kw", "charge_kw", "discharge_kw", "grid_import_kw", "grid_export_kw"):
+        old_payload[field] = float(old_payload[field])
+    restored = TelemetryReadback.model_validate(old_payload)
+    assert restored.source_coherence == "declared_coherent"
+    assert restored.model_dump(mode="json") == old_payload
+    expected_sha = hashlib.sha256(json.dumps(old_payload, sort_keys=True, ensure_ascii=False,
+        allow_nan=False, separators=(",", ":")).encode()).hexdigest()
+    result = verify_readback(SubmissionReceipt(**receipt_dict()), restored, now=NOW)
+    assert result.readback_sha256 == expected_sha
+
+
+def test_reimport_of_previous_release_readback_is_idempotent_without_rewriting_result(tmp_path):
+    import json
+
+    from energy_explain.store import Store
+    from tests.helpers import make_decision
+
+    store = Store(tmp_path / "legacy.sqlite")
+    key = store.add_decision(make_decision(run_id="live-run", decision_id="tick-123", source_kind="external"))["id"]
+    old_payload = TelemetryReadback(**readback_dict()).model_dump(mode="json")
+    # Emulate the previous release's stored result, which has no new diagnostics.
+    old_result = dict(status="pending", reasons=["awaiting_readback"], checked_at=NOW.isoformat(),
+                      evidence_scope="post_submission_telemetry_match", max_age_seconds=15, tolerance_kw=.1,
+                      receipt_sha256=None, readback_sha256="a" * 64)
+    payload_json, result_json = json.dumps(old_payload), json.dumps(old_result)
+    with store.connect(write=True) as db:
+        db.execute("INSERT INTO readback_observations VALUES (?,?,?,?,?)",
+                   (key, old_payload["observation_id"], payload_json, result_json, NOW.isoformat()))
+    response = Store(store.path).add_readback(key, TelemetryReadback.model_validate(old_payload))
+    assert response == {"created": False, "verification": old_result}
+    with store.connect() as db:
+        stored = db.execute("SELECT payload,result FROM readback_observations WHERE decision_key=?", (key,)).fetchone()
+    assert stored["payload"] == payload_json and stored["result"] == result_json

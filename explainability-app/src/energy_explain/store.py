@@ -257,10 +257,10 @@ class Store:
             run = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if not run:
                 raise NotFound("run not found")
-            if run["source_kind"] == "demo" and event.source_kind == "official":
-                raise ValueError("demo runs cannot be labelled as official settlement")
-            if run["source_kind"] == "external" and event.source_kind != "official":
-                raise ValueError("external runs require official-source settlement records")
+            if run["source_kind"] == "demo" and event.source_kind != "demo":
+                raise ValueError("demo runs cannot be labelled as external settlement")
+            if run["source_kind"] == "external" and event.source_kind not in {"official", "simulator_mock"}:
+                raise ValueError("external runs require an official or simulator-mock settlement source")
             existing = db.execute("SELECT payload FROM settlements WHERE run_id=? AND event_id=?", (run_id, event.event_id)).fetchone()
             if existing:
                 if json.loads(existing["payload"]) != event.model_dump(mode="json"):
@@ -357,6 +357,23 @@ class Store:
         collection = self.collection_status(run_id, wall)
         with self.connect() as db:
             keys = db.execute("SELECT id,site_id FROM decisions WHERE run_id=? ORDER BY device_time DESC,created_at DESC,id", (run_id,)).fetchall()
+            submitted = db.execute("""SELECT d.id,d.site_id,r.payload,r.received_at
+                FROM submission_receipts r JOIN decisions d ON d.id=r.decision_key
+                WHERE d.run_id=? ORDER BY r.received_at DESC,d.id""", (run_id,)).fetchall()
+        # The newest shadow candidate must not hide a prior, actually submitted
+        # control decision. This is explicitly historical, never a live setpoint.
+        last_submissions = {}
+        for row in submitted:
+            if row["site_id"] in last_submissions:
+                continue
+            receipt = json.loads(row["payload"])
+            last_submissions[row["site_id"]] = {
+                "decision_key":row["id"], "instruction_id":receipt["instruction_id"],
+                "submitted_at":receipt["completed_wall_time"], "device_time":receipt["issued_device_time"],
+                "action":{"kind":receipt["flow"],"power_kw":receipt["target_kw"],
+                          "control_semantics":"battery_charge" if receipt["flow"] == "charge" else "grid_export_target"},
+                "execution_status":self.execution_status(row["id"]),
+            }
         seen, stations = set(), []
         from .facts import explain
         for row in keys:
@@ -371,7 +388,8 @@ class Store:
                 | {"execution_status": execution_status, "reason_summary": explain(d,execution_status)["summary"],
                    "observed_at":s["observed_at"], "created_at":d["created_at"],
                    "record_freshness":record_freshness(s["observed_at"], collection, wall),
-                   "sources":s["sources"],"provenance":d.get("provenance")})
+                   "sources":s["sources"],"provenance":d.get("provenance"),
+                   "last_submission":last_submissions.get(d["site_id"])})
         return {"run_id":run_id,"runs":runs,"stations": sorted(stations,key=lambda x:x["site_id"]),
                 "server_time":wall.isoformat(), "collection":collection,
                 "settlement":self.get_settlement(run_id) if run_id else None}

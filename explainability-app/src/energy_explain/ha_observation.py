@@ -1,11 +1,11 @@
 """Convert HA entity observations into evidence without making network requests.
 
 The capture wall clock is only ``observed_at``. Source update time comes from
-HA, never from the caller's clock. A state response is usable only when the six
-power sensors and device clock belong to one source report cohort. Older HA
-versions without ``last_reported`` additionally require unchanged device-clock
-observations bracketing the state request; old unchanged powers are not inferred
-to have been refreshed merely because that request completed.
+HA, never from the caller's clock. Same-cohort reports may support confirmation.
+Asynchronous HA states retain each real source timestamp as pending evidence;
+an old unchanged zero is not inferred to have refreshed merely because a request
+completed. Older HA versions without ``last_reported`` additionally need unchanged
+device-clock observations bracketing a request before a coherent classification.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import math
 import re
 from zoneinfo import ZoneInfo
 
-from .execution import SubmissionReceipt, TelemetryReadback
+from .execution import SubmissionReceipt, TelemetryReadback, TelemetrySourceReport
 
 
 _POWER_NAMES = {
@@ -113,8 +113,9 @@ def build_telemetry_readback(
     device_clock_after: Mapping | None = None,
     device_timezone: str | tzinfo | None = None,
     source_coherence_seconds: float = 1.0,
+    allow_asynchronous: bool = True,
 ) -> TelemetryReadback | ObservationUnavailable:
-    """Build a source-coherent readback, not an execution confirmation.
+    """Build source-attributed readback evidence, not an execution confirmation.
 
     ``suffix`` may be the canonical HA prefix or its short device suffix.
     Brackets are raw HA ``device_time`` entities read before/after ``/api/states``;
@@ -124,8 +125,10 @@ def build_telemetry_readback(
     five-second poll period; callers cannot broaden it to a complete poll period.
 
     Genuine but mismatching modes, flows and powers remain in the observation for
-    ``execution.verify_readback`` to assess. This function neither sets clocks to
-    the submission time nor claims that HA acknowledges an instruction ID.
+    ``execution.verify_readback`` to assess. By default a mixed source cohort is
+    retained as ``ha_asynchronous_state`` and can never produce confirmation.
+    Set ``allow_asynchronous=False`` to retain the former strict rejection mode.
+    This function never sets clocks to submission time or claims a hardware ACK.
     """
     if (isinstance(source_coherence_seconds, bool)
             or not isinstance(source_coherence_seconds, (int, float))
@@ -134,6 +137,8 @@ def build_telemetry_readback(
         raise ValueError("source coherence must be finite and shorter than the five-second HA poll")
     if not isinstance(receipt, SubmissionReceipt):
         raise TypeError("receipt must be a saved SubmissionReceipt")
+    if type(allow_asynchronous) is not bool:
+        raise TypeError("allow_asynchronous must be a boolean")
     try:
         try:
             capture = _timestamp(captured_wall_time)
@@ -178,11 +183,14 @@ def build_telemetry_readback(
             if bracket_times[1] < bracket_times[0]:
                 raise _Unavailable("device_clock_source_regression")
         cohort = [times[key] for key in (*_POWER_NAMES, "device_time")]
+        coherence_reason = None
         if any(not reported for _, reported in cohort) and not bracketed:
-            raise _Unavailable("source_coherence_requires_device_clock_bracket")
+            coherence_reason = "source_coherence_requires_device_clock_bracket"
         source_stamps = [stamp for stamp, _ in cohort]
-        if (max(source_stamps) - min(source_stamps)).total_seconds() > source_coherence_seconds:
-            raise _Unavailable("mixed_source_tick")
+        if coherence_reason is None and (max(source_stamps) - min(source_stamps)).total_seconds() > source_coherence_seconds:
+            coherence_reason = "mixed_source_tick"
+        if coherence_reason is not None and not allow_asynchronous:
+            raise _Unavailable(coherence_reason)
         mode, flow = selected["mode"].get("state"), selected["flow"].get("state")
         if mode not in ("third_party_control", "self_consumption"):
             raise _Unavailable("invalid_operating_mode", names["mode"])
@@ -192,7 +200,13 @@ def build_telemetry_readback(
         data = dict(run_id=receipt.run_id, site_id=receipt.site_id,
                     decision_id=receipt.decision_id, instruction_id=receipt.instruction_id,
                     observed_at=capture, updated_at=min(times[key][0] for key in _POWER_NAMES),
-                    device_time=tick, mode=mode, flow=flow, **values)
+                    device_time=tick, mode=mode, flow=flow, **values,
+                    source_coherence="ha_report_cohort" if coherence_reason is None else "ha_asynchronous_state",
+                    source_coherence_reason=coherence_reason,
+                    source_coherence_seconds=source_coherence_seconds,
+                    source_reports=[TelemetrySourceReport(field=key, entity_id=names[key],
+                        source_timestamp=stamp, timestamp_kind="last_reported" if reported else "last_updated")
+                        .model_dump(mode="json") for key, (stamp, reported) in times.items()])
         encoded = json.dumps(data, sort_keys=True, default=lambda value: value.isoformat(),
                              ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         data["observation_id"] = "ha-" + hashlib.sha256(encoded.encode()).hexdigest()[:40]

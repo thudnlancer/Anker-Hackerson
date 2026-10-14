@@ -2,7 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
-from threading import Event, Lock, Thread
+from threading import Event, Lock, Thread, current_thread, main_thread
 from unittest.mock import Mock
 
 import pytest
@@ -379,6 +379,150 @@ def test_refresh_replaces_actual_ha_values_while_preserving_original_forecasts_a
     refreshed["stations"]["1"]["state"]["soc"] = "MUTATED"
     assert original == saved_original
     assert observations == saved_observations
+
+
+def weather_capture_client(monkeypatch, weather_status, *, max_auth_refreshes=4):
+    """Every response is offline; counters distinguish new captures from stamps."""
+    lock = Lock()
+    seen = dict(prices=0, ha_reads=0, weather=[], logins=[])
+
+    class OfflineSession:
+        trust_env = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+        def close(self):
+            pass
+
+        def post(self, url, **kwargs):
+            assert current_thread() is main_thread(), "worker attempted authentication"
+            assert url == CFG["sim_base"] + "/api/auth/login"
+            assert kwargs["allow_redirects"] is False
+            with lock:
+                seen["logins"].append(url)
+            return response(payload={"token": "replacement-in-memory-token"})
+
+        def get(self, url, **kwargs):
+            assert kwargs["allow_redirects"] is False
+            if url == CFG["sim_base"] + "/api/price":
+                with lock:
+                    seen["prices"] += 1
+                    batch = seen["prices"]
+                return response(payload={"capture_batch": batch})
+            if url == CFG["ha_base"] + "/api/states":
+                with lock:
+                    seen["ha_reads"] += 1
+                    read = seen["ha_reads"]
+                rows = [{"entity_id": f"sensor.unit_{site}_{field}",
+                         "state": str(40 + read) if field == "soc" else str(read),
+                         "last_changed": f"2031-01-01T00:00:{read:02d}Z"}
+                        for site in range(1, 4)
+                        for field in ("soc", "solar_power", "home_load", "device_time")]
+                return response(payload=rows)
+            assert url in (CFG["sim_base"] + "/api/weather/today",
+                           CFG["sim_base"] + "/api/weather/tomorrow")
+            with lock:
+                batch = seen["prices"]
+                site = kwargs["params"]["site"]
+                day = url.rsplit("/", 1)[-1]
+                seen["weather"].append((batch, site, day))
+            return response(weather_status(batch, site, day), payload={"capture_batch": batch})
+
+    monkeypatch.setattr(live_source.requests, "Session", OfflineSession)
+    source = LiveSource(CFG, max_auth_refreshes=max_auth_refreshes)
+    source.tokens = {"ha": "initial-ha-in-memory-token", "sim": "initial-sim-in-memory-token"}
+    return source, seen
+
+
+def test_weather_401_refreshes_once_in_main_thread_and_captures_all_new_inputs(monkeypatch, capsys):
+    source, seen = weather_capture_client(monkeypatch,
+        lambda batch, site, day: 401 if batch == 1 and site == 1 and day == "today" else 200)
+    snapshot, states = source.capture()
+    assert seen["prices"] == seen["ha_reads"] == 2
+    assert len(seen["weather"]) == 12
+    assert len(seen["logins"]) == 1
+    assert source.refreshes == {"ha": 0, "sim": 1}
+    assert snapshot["prices"] == {"capture_batch": 2}
+    for station in snapshot["stations"].values():
+        assert station["state"]["soc"] == "42"
+        assert station["state"]["soc_last_changed"] == "2031-01-01T00:00:02Z"
+        assert station["received_at"] == snapshot["received_at"]
+        assert all(value == {"capture_batch": 2} for value in station["weather"].values())
+    assert states[0]["state"] == "42"
+    assert "in-memory" not in json.dumps(snapshot)
+    assert "PASSWORD" not in json.dumps(snapshot)
+    assert capsys.readouterr() == ("", "")
+
+
+def test_weather_any_403_wins_over_401_and_does_not_refresh(monkeypatch):
+    source, seen = weather_capture_client(monkeypatch,
+        lambda batch, site, day: (401 if (site, day) == (1, "today")
+                                 else 403 if (site, day) == (3, "tomorrow") else 200))
+    with pytest.raises(SourceUnavailable) as caught:
+        source.capture()
+    assert caught.value.category == "sim_authentication_failed"
+    assert caught.value.http_status == 403
+    assert seen["prices"] == seen["ha_reads"] == 1
+    assert len(seen["weather"]) == 6
+    assert seen["logins"] == []
+    assert source.refreshes == {"ha": 0, "sim": 0}
+
+
+def test_second_weather_401_is_terminal_even_with_refresh_budget_remaining(monkeypatch):
+    source, seen = weather_capture_client(monkeypatch, lambda *args: 401)
+    with pytest.raises(SourceUnavailable) as caught:
+        source.capture()
+    assert caught.value.category == "sim_authentication_failed"
+    assert caught.value.http_status == 401
+    assert seen["prices"] == seen["ha_reads"] == 2
+    assert len(seen["weather"]) == 12
+    assert len(seen["logins"]) == 1
+    assert source.refreshes["sim"] == 1
+
+
+@pytest.mark.parametrize("budget,used", [(0, 0), (4, 4)])
+def test_weather_401_cannot_refresh_without_remaining_lifetime_budget(monkeypatch, budget, used):
+    source, seen = weather_capture_client(monkeypatch, lambda *args: 401,
+                                         max_auth_refreshes=budget)
+    source.refreshes["sim"] = used
+    with pytest.raises(SourceUnavailable) as caught:
+        source.capture()
+    assert caught.value.http_status == 401
+    assert seen["prices"] == seen["ha_reads"] == 1
+    assert len(seen["weather"]) == 6
+    assert seen["logins"] == []
+    assert source.refreshes["sim"] == used
+
+
+def test_weather_refresh_budget_four_is_shared_across_all_capture_calls(monkeypatch):
+    source, seen = weather_capture_client(monkeypatch,
+        lambda batch, site, day: 401 if batch % 2 else 200)
+    for _ in range(4):
+        source.capture()
+    with pytest.raises(SourceUnavailable) as caught:
+        source.capture()
+    assert caught.value.http_status == 401
+    assert seen["prices"] == seen["ha_reads"] == 9
+    assert len(seen["weather"]) == 54
+    assert len(seen["logins"]) == 4
+    assert source.refreshes["sim"] == 4
+
+
+def test_price_retry_failure_is_not_retried_again_as_a_weather_batch(session):
+    source = LiveSource(CFG, max_auth_refreshes=4)
+    source.tokens["sim"] = "initial-in-memory-token"
+    session.post.return_value = response(payload={"token": "replacement-in-memory-token"})
+    session.get.side_effect = [response(401), response(401)]
+    with pytest.raises(SourceUnavailable) as caught:
+        source.capture()
+    assert caught.value.http_status == 401
+    assert session.get.call_count == 2
+    assert session.post.call_count == 1
+    assert source.refreshes["sim"] == 1
 
 
 def test_missing_fresh_sensor_never_reuses_old_value_with_a_new_timestamp():

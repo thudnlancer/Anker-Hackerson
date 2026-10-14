@@ -29,6 +29,18 @@ from .shadow import _infer_api_timezone, daily_points, evaluate_snapshot, valida
 _ID = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 _REASONS = {"stale_snapshot", "stale_device_clock", "invalid_device_clock", "invalid_device_observation",
             "invalid_price_window", "invalid_power_forecast", "optimizer_to_command_contract_mismatch"}
+_SOLVER_STATES = {"candidate_only": "candidate_only", "infeasible": "infeasible",
+                  "limit_reached": "timeout", "timeout": "timeout", "solver_error": "failed",
+                  "unbounded": "failed", "failed": "failed", "blocked": "blocked"}
+_SOLVER_ERRORS = {"timeout": ("solver_timeout", "SolverTimeLimit"),
+                  "infeasible": ("solver_infeasible", "SolverInfeasible"),
+                  "failed": ("solver_failed", "SolverFailure")}
+_EXPORT_FAILURE_CODES = {"invalid_numeric_value", "nonfinite_numeric_value", "negative_input_value",
+    "negative_solver_power", "invalid_timestamp", "timestamp_timezone_missing", "invalid_identifier",
+    "candidate_not_exportable", "optimizer_source_hash_mismatch", "invalid_input_kind",
+    "incomplete_input_horizon", "model_step_mismatch", "first_observation_mismatch",
+    "invalid_battery_parameters", "incomplete_solver_horizon", "solver_timestamp_mismatch",
+    "solver_cost_mismatch", "unsupported_command_mapping"}
 _RECORD_KEYS = {"schema_version", "run_id", "site_id", "decision_id", "source_kind", "model_version",
                 "policy_version", "solver_status", "snapshot", "action", "cost", "replay_context", "provenance"}
 _SNAPSHOT_KEYS = {"device_time", "observed_at", "soc_percent", "pv_kw", "load_kw", "capacity_kwh",
@@ -155,6 +167,9 @@ class StreamCheckpoint:
                 CREATE TABLE IF NOT EXISTS stream_conflicts (
                     run_id TEXT NOT NULL, site_id TEXT NOT NULL, device_tick TEXT NOT NULL,
                     fingerprint TEXT NOT NULL, PRIMARY KEY(run_id,site_id,device_tick,fingerprint));
+                CREATE TABLE IF NOT EXISTS stream_recoveries (
+                    run_id TEXT PRIMARY KEY, recovery_id TEXT NOT NULL UNIQUE,
+                    payload TEXT NOT NULL, created_at TEXT NOT NULL);
             """)
 
     def _connect(self):
@@ -191,6 +206,72 @@ class StreamCheckpoint:
                     db.execute("INSERT INTO stream_clocks VALUES(?,?,?) ON CONFLICT(run_id,site_id) DO UPDATE SET tick=excluded.tick", (run_id, site, tick))
         if regressed:
             raise ClockRegression("use a new run_id after device clock reset")
+
+    def recover_opening_alignment(self, run_id, *, window_start, window_end,
+                                  current_ticks, source_ref):
+        """Audit and clear one opening-only, unstaged, out-of-window clock poison.
+
+        The caller must independently establish the same mock window and fresh
+        three-site source ticks. This method performs no network operation and
+        never relaxes a recorded decision's clock. The UTC window is [start,end).
+        Only invalid clocks are deleted; the next normal capture must observe
+        their new ticks. Existing records, hashes, cycles and errors are retained.
+        """
+        if not isinstance(run_id, str) or not _ID.fullmatch(run_id):
+            raise ValueError("invalid recovery run identity")
+        start, end = pd.Timestamp(_utc(window_start)), pd.Timestamp(_utc(window_end))
+        if start >= end:
+            raise ValueError("recovery window must be increasing")
+        if (not isinstance(current_ticks, dict) or len(current_ticks) != 3
+                or any(not isinstance(site, str) or not _ID.fullmatch(site)
+                       for site in current_ticks)):
+            raise ValueError("recovery requires three explicit site ticks")
+        ticks = {site: _utc(value) for site, value in current_ticks.items()}
+        if any(not start <= pd.Timestamp(tick) < end for tick in ticks.values()):
+            raise ValueError("current recovery ticks must be inside the selected window")
+        if (not isinstance(source_ref, str) or not source_ref.strip() or len(source_ref) > 500
+                or any(ord(char) < 32 for char in source_ref)):
+            raise ValueError("recovery requires a nonsecret evidence reference")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            run = db.execute("SELECT * FROM stream_runs WHERE run_id=?", (run_id,)).fetchone()
+            if run is None:
+                raise ValueError("recovery run does not exist")
+            if db.execute("SELECT 1 FROM stream_recoveries WHERE run_id=?", (run_id,)).fetchone():
+                raise ValueError("opening alignment recovery was already used")
+            if run["blocked_reason"] != "clock_regression" or not 0 <= run["cycle"] <= 2:
+                raise ValueError("recovery requires an opening clock regression within two cycles")
+            rows = db.execute("SELECT site_id,tick FROM stream_clocks WHERE run_id=?", (run_id,)).fetchall()
+            old_ticks = {row["site_id"]: _utc(row["tick"]) for row in rows}
+            if set(old_ticks) != set(ticks):
+                raise ValueError("recovery site ticks must match the saved three-site clocks")
+            invalid = {site: tick for site, tick in old_ticks.items()
+                       if not start <= pd.Timestamp(tick) < end}
+            if not invalid:
+                raise ValueError("recovery has no out-of-window opening clocks")
+            for site, old in old_ticks.items():
+                if site not in invalid and pd.Timestamp(ticks[site]) < pd.Timestamp(old):
+                    raise ValueError("recovery cannot rewind an in-window clock")
+            for site in invalid:
+                if db.execute("SELECT 1 FROM stream_records WHERE run_id=? AND site_id=? LIMIT 1",
+                              (run_id, site)).fetchone():
+                    raise ValueError("recovery cannot delete a clock with any saved evidence")
+            now = _utc(_utcnow())
+            audit = {"recovery_id": uuid.uuid4().hex, "run_id": run_id,
+                     "kind": "opening_alignment", "created_at": now,
+                     "window_start": start.isoformat(), "window_end": end.isoformat(),
+                     "cycle": run["cycle"], "source_ref": source_ref,
+                     "old_ticks": old_ticks, "current_ticks": ticks,
+                     "new_ticks": {site: tick for site, tick in old_ticks.items() if site not in invalid},
+                     "removed_sites": sorted(invalid),
+                     "previous_blocked_reason": run["blocked_reason"],
+                     "previous_last_error": run["last_error"]}
+            db.execute("INSERT INTO stream_recoveries VALUES(?,?,?,?)", (run_id, audit["recovery_id"],
+                       json.dumps(audit, sort_keys=True, separators=(",", ":"), allow_nan=False), now))
+            for site in invalid:
+                db.execute("DELETE FROM stream_clocks WHERE run_id=? AND site_id=?", (run_id, site))
+            db.execute("UPDATE stream_runs SET blocked_reason=NULL WHERE run_id=?", (run_id,))
+        return audit
 
     def stage(self, record):
         record, payload = _checked_record(record)
@@ -480,13 +561,30 @@ class ReadOnlyStream:
                     evidence_identity={"run_id": self.run_id, "input_kind": self.input_kind})["stations"][site]
                 if self.terminal:
                     return self.last_status
-                solver_state = result.get("status")
-                sites[site]["solver_status"] = solver_state if solver_state in {"candidate_only", "infeasible", "timeout", "failed", "blocked"} else "failed"
+                upstream_state = result.get("status")
+                solver_state = _SOLVER_STATES.get(upstream_state, "failed") if isinstance(upstream_state, str) else "failed"
+                sites[site]["solver_status"] = solver_state
                 if outcome.get("status") in {"delivered", "duplicate"} and solver_state == "candidate_only":
                     sites[site]["status"] = "collected"
+                elif solver_state in _SOLVER_ERRORS:
+                    reason, error_type = _SOLVER_ERRORS[solver_state]
+                    sites[site].update(status="blocked", reason=reason, error_type=error_type)
+                elif solver_state == "blocked":
+                    reason = result.get("reason")
+                    sites[site].update(status="blocked", reason=reason if isinstance(reason, str) and reason in _REASONS else "solver_blocked",
+                                       error_type="SolverInputRejected")
                 else:
+                    export = result.get("explainability_export")
+                    export = export if isinstance(export, dict) else {}
+                    code = export.get("failure_code")
+                    if isinstance(code, str) and code in _EXPORT_FAILURE_CODES:
+                        sites[site]["failure_code"] = code
+                    # Export failures have only trusted local codes. Arbitrary
+                    # upstream messages and error_type text must never persist.
+                    error = "EvidenceExportError" if "failure_code" in sites[site] else (
+                        "EvidenceExportFailure" if export.get("status") == "failed" else "EvidenceUnavailable")
                     sites[site].update(status="blocked", reason="evidence_conflict" if outcome.get("status") == "conflict" else "evidence_unavailable",
-                                      error_type=outcome.get("error_type") or result.get("explainability_export", {}).get("error_type"))
+                                      error_type=outcome.get("error_type") or error)
             except Exception as exc:
                 if self.terminal:
                     return self.last_status

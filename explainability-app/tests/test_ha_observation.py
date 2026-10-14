@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from energy_explain.execution import SubmissionReceipt, TelemetryReadback, verify_readback
+from energy_explain.execution import SubmissionReceipt, TelemetryReadback, build_execution_event, verify_readback
 from energy_explain.ha_observation import ObservationUnavailable, build_telemetry_readback
 
 
@@ -82,12 +82,17 @@ def test_fallback_last_updated_requires_brackets_and_fresh_cohort_for_every_powe
     for item in items:
         if "last_reported" in item:
             item["last_updated"] = item.pop("last_reported")
-    assert convert(items).reason == "source_coherence_requires_device_clock_bracket"
+    asynchronous = convert(items)
+    assert asynchronous.source_coherence_reason == "source_coherence_requires_device_clock_bracket"
+    assert verify_readback(receipt(), asynchronous, now=CAPTURE).status == "pending"
+    assert convert(items, allow_asynchronous=False).reason == "source_coherence_requires_device_clock_bracket"
     observation = convert(items, device_clock_before=bracket(items), device_clock_after=bracket(items))
     assert isinstance(observation, TelemetryReadback)
     assert verify_readback(receipt(), observation, now=CAPTURE).status == "verified"
     items[0]["last_updated"] = WALL.isoformat()
-    assert convert(items, device_clock_before=bracket(items), device_clock_after=bracket(items)).reason == "mixed_source_tick"
+    asynchronous = convert(items, device_clock_before=bracket(items), device_clock_after=bracket(items))
+    assert asynchronous.source_coherence_reason == "mixed_source_tick"
+    assert verify_readback(receipt(), asynchronous, now=CAPTURE).status == "pending"
 
 
 @pytest.mark.parametrize("position", ["before", "after"])
@@ -173,7 +178,12 @@ def test_future_report_timestamp_is_explicitly_unavailable():
 def test_mixed_power_reports_cannot_be_balanced_into_a_confirmation():
     items = entities()
     items[1]["last_reported"] = WALL.isoformat()
-    assert convert(items).reason == "mixed_source_tick"
+    observation = convert(items)
+    result = verify_readback(receipt(), observation, now=CAPTURE)
+    assert observation.source_coherence == "ha_asynchronous_state"
+    assert observation.source_coherence_reason == "mixed_source_tick"
+    assert result.status == "pending" and "source_coherence_unverified" in result.reasons
+    assert convert(items, allow_asynchronous=False).reason == "mixed_source_tick"
 
 
 def test_ended_contest_report_pattern_keeps_old_constant_values_unavailable():
@@ -191,7 +201,10 @@ def test_ended_contest_report_pattern_keeps_old_constant_values_unavailable():
     result = build_telemetry_readback(items, suffix=SUFFIX, receipt=receipt(),
         captured_wall_time=datetime(2026, 10, 14, 7, 18, 10, tzinfo=timezone.utc),
         device_clock_before=bracket(items), device_clock_after=bracket(items))
-    assert result == ObservationUnavailable("mixed_source_tick")
+    assert isinstance(result, TelemetryReadback)
+    assert result.source_coherence_reason == "mixed_source_tick"
+    assert result.updated_at == datetime(2026, 10, 14, 5, 33, 57, 313930, tzinfo=timezone.utc)
+    assert verify_readback(receipt(), result, now=result.observed_at).status == "pending"
 
 
 def test_source_cohort_with_old_device_tick_remains_pending_in_verifier():
@@ -256,3 +269,112 @@ def test_naive_capture_time_does_not_become_source_time():
 def test_coherence_window_cannot_span_a_full_poll_period(window):
     with pytest.raises(ValueError):
         convert(source_coherence_seconds=window)
+
+
+def test_mixed_ha_sources_keep_partial_new_measurement_and_all_real_source_clocks():
+    items = entities()
+    items[5]["last_reported"] = (WALL - timedelta(minutes=30)).isoformat()  # Cached export zero.
+    observation = convert(items)
+    assert isinstance(observation, TelemetryReadback)
+    assert observation.updated_at == WALL - timedelta(minutes=30)
+    assert observation.source_coherence == "ha_asynchronous_state"
+    reports = {report.field: report for report in observation.source_reports}
+    assert len(reports) == 10
+    assert reports["grid_export_kw"].source_timestamp == observation.updated_at
+    assert reports["grid_export_kw"].timestamp_kind == "last_reported"
+    assert reports["charge_kw"].source_timestamp == WALL + timedelta(seconds=2, milliseconds=40)
+    result = verify_readback(receipt(), observation, now=CAPTURE)
+    assert result.status == "pending"
+    assert result.evidence_scope == "asynchronous_ha_state"
+    assert set(result.reasons) == {"awaiting_fresh_readback", "stale_readback", "source_coherence_unverified"}
+    assert result.control_attribute_match is True  # Values only, not proof those controls refreshed.
+    assert result.target_measurement_match is True
+    assert result.fresh_target_measurement is True
+    assert result.partial_evidence_scope == "fresh_target_measurement_only"
+    assert set(result.unverified_source_fields) == {"grid_export_kw", "mode", "flow", "setpoint_kw"}
+    with pytest.raises(ValueError, match="only a verified"):
+        build_execution_event(receipt(), observation, result)
+
+
+@pytest.mark.parametrize("field", ["battery_charging_power", "device_time"])
+def test_new_http_poll_does_not_refresh_old_target_or_clock(field):
+    items = entities()
+    item = next(item for item in items if item["entity_id"].endswith("_" + field))
+    item["last_reported"] = WALL.isoformat()
+    observation = convert(items)
+    result = verify_readback(receipt(), observation, now=CAPTURE)
+    assert result.status == "pending"
+    assert result.fresh_target_measurement is False
+    assert result.target_measurement_match is None
+    assert result.partial_evidence_scope == "none"
+
+
+def test_stale_device_tick_does_not_prove_target_response_even_with_new_report_time():
+    items = entities()
+    items[6]["state"] = DEVICE.isoformat()
+    items[5]["last_reported"] = WALL.isoformat()
+    result = verify_readback(receipt(), convert(items), now=CAPTURE)
+    assert "awaiting_device_tick" in result.reasons
+    assert result.fresh_target_measurement is False
+
+
+def test_fresh_but_mismatching_target_is_partial_negative_evidence_without_mixed_frame_balance():
+    items = entities()
+    items[2]["state"] = "1700"
+    items[5]["last_reported"] = WALL.isoformat()
+    result = verify_readback(receipt(), convert(items), now=CAPTURE)
+    assert result.status == "pending"
+    assert result.fresh_target_measurement is True
+    assert result.target_measurement_match is False
+    assert "power_balance_mismatch" not in result.reasons
+
+
+def test_target_measurement_freshness_does_not_depend_on_cached_control_values():
+    items = entities()
+    items[7]["state"] = "self_consumption"
+    items[5]["last_reported"] = WALL.isoformat()
+    result = verify_readback(receipt(), convert(items), now=CAPTURE)
+    assert result.status == "pending"
+    assert result.control_attribute_match is False
+    assert result.target_measurement_match is True
+    assert result.partial_evidence_scope == "fresh_target_measurement_only"
+
+
+def test_recapturing_an_asynchronous_matching_target_after_age_limit_cannot_keep_it_fresh():
+    items = entities()
+    items[5]["last_reported"] = WALL.isoformat()
+    observation = build_telemetry_readback(items, suffix=SUFFIX, receipt=receipt(),
+        captured_wall_time=CAPTURE + timedelta(seconds=20))
+    result = verify_readback(receipt(), observation, now=observation.observed_at)
+    assert result.status == "pending"
+    assert result.fresh_target_measurement is False
+    assert result.target_measurement_match is None
+    assert "charge_kw" in result.unverified_source_fields
+
+
+def test_zero_target_with_old_zero_measurement_is_not_partial_new_evidence():
+    command = receipt().model_copy(update={"target_kw": 0})
+    items = entities()
+    items[2]["state"] = "0"
+    items[2]["last_reported"] = WALL.isoformat()
+    items[9]["state"] = "0"
+    observation = build_telemetry_readback(items, suffix=SUFFIX, receipt=command, captured_wall_time=CAPTURE)
+    result = verify_readback(command, observation, now=CAPTURE)
+    assert result.status == "pending" and result.control_attribute_match is True
+    assert result.target_measurement_match is None and result.fresh_target_measurement is False
+
+
+def test_partial_power_evidence_cannot_be_reassigned_to_another_instruction():
+    items = entities()
+    items[5]["last_reported"] = WALL.isoformat()
+    observation = convert(items)
+    other = receipt().model_copy(update={"instruction_id": "other"})
+    result = verify_readback(other, observation, now=CAPTURE)
+    assert result.status == "mismatch" and result.reasons == ("identity_mismatch",)
+    assert result.fresh_target_measurement is False and result.target_measurement_match is None
+
+
+@pytest.mark.parametrize("value", [1, None, "true"])
+def test_asynchronous_opt_in_does_not_accept_truthy_non_boolean_values(value):
+    with pytest.raises(TypeError, match="boolean"):
+        convert(allow_asynchronous=value)

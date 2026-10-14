@@ -1,6 +1,7 @@
 """Bounded MILP/HA bridge. Defaults to candidate-only; never starts a contest."""
 from datetime import datetime, timezone
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -19,6 +20,45 @@ from energy_explain.ha_observation import ObservationUnavailable, build_telemetr
 from energy_explain.live_control import ControlJournal, MILPController, aware, bind_contest, contest_matches
 from energy_explain.live_source import LiveSource, SourceUnavailable, snapshot_with_states
 from energy_explain.store import Store
+
+
+def simulator_supplement(dashboard, site, receipt, *, started_at, captured_at):
+    """Audit the response's physical values without inventing source freshness.
+
+    The upstream currently provides an indexed telemetry object, not a stable
+    site/frame identity or report wall clock. These checks cannot confirm HA.
+    """
+    rows = dashboard.get('sites')
+    index = int(site) - 1
+    if not isinstance(rows, list) or not 0 <= index < len(rows):
+        return {'status':'unavailable','reason':'missing_indexed_telemetry'}
+    telemetry = rows[index].get('telemetry', {})
+    power_fields = ('pv_power','load_power','battery_charging_power','battery_discharging_power',
+                    'grid_import_power','grid_export_power')
+    try:
+        powers = {key:float(telemetry[key]) for key in power_fields}
+        if any(not math.isfinite(value) or value < 0 for value in powers.values()):
+            raise ValueError
+    except (KeyError,TypeError,ValueError):
+        return {'status':'unavailable','reason':'invalid_telemetry_powers'}
+    balance = powers['pv_power'] + powers['battery_discharging_power'] + powers['grid_import_power'] \
+        - powers['load_power'] - powers['battery_charging_power'] - powers['grid_export_power']
+    measured = powers['grid_export_power' if receipt.flow=='discharge' else 'battery_charging_power']
+    safe = powers | {key:telemetry.get(key) for key in
+                    ('sim_time','operating_mode_name','battery_power_setpoint','soc','capacity_kwh')}
+    return {'status':'supplement_only','source':'simulator_dashboard',
+        'source_freshness':'not_provided','frame_identity':'not_provided',
+        'site_mapping':{'site_id':site,'server_array_index':index,'server_site_identity_verified':False},
+        'request_started_at':started_at,'captured_at':captured_at,
+        'contest':{key:dashboard.get('contest',{}).get(key) for key in ('track','start_at','end_at','date_range')},
+        'telemetry':safe,'response_telemetry_sha256':hashlib.sha256(json.dumps(safe,sort_keys=True).encode()).hexdigest(),
+        'checks':{'balance_difference_w':balance,'balance_matches':abs(balance)<=1.,
+            'battery_mutual_exclusion':min(powers['battery_charging_power'],powers['battery_discharging_power'])<=1.,
+            'grid_mutual_exclusion':min(powers['grid_import_power'],powers['grid_export_power'])<=1.,
+            'reported_mode_matches':telemetry.get('operating_mode_name')==receipt.mode,
+            'target_measurement_difference_w':measured-receipt.target_kw*1000,
+            'target_measurement_matches':abs(measured-receipt.target_kw*1000)<=100.},
+        'scope':'Response-value consistency only; no HA confirmation or hardware ACK.'}
 
 
 def main():
@@ -271,6 +311,8 @@ def main():
                 wanted.update((mode_id,flow_id,power_id))
                 submitted['last_observation'] = {'captured_at':captured.isoformat(), 'entities':[
                     {k:x.get(k) for k in ('entity_id','state','last_changed','last_updated','last_reported')}
+                    | {'attributes':{k:v for k,v in x.get('attributes',{}).items()
+                                     if k in ('unit_of_measurement','min','max','step','options')}}
                     for x in states if x['entity_id'] in wanted]}
                 observation = build_telemetry_readback(states, suffix=spec['suffix'], receipt=receipt,
                     captured_wall_time=captured, device_timezone=coordinate)
@@ -284,6 +326,13 @@ def main():
                 time.sleep(min(1, max(0, deadline-time.monotonic())))
             submitted['readback_checks'] = checks
             submitted['execution_status'] = store.execution_status(decision['id'])
+            started = datetime.now(timezone.utc).isoformat()
+            try:
+                response = source.dashboard()
+                submitted['simulator_observation'] = simulator_supplement(response,site,receipt,
+                    started_at=started,captured_at=datetime.now(timezone.utc).isoformat())
+            except SourceUnavailable as exc:
+                submitted['simulator_observation']={'status':'unavailable','reason':exc.category,'http_status':exc.http_status}
             if site in touched and restore(site):
                 touched.pop(site)
             else:

@@ -14,6 +14,12 @@ class CollectionSite(Contract):
     solver_status: Literal["candidate_only", "infeasible", "timeout", "failed", "blocked"] | None = None
     reason: Identifier | None = None
     error_type: Identifier | None = None
+    failure_code: Literal['candidate_not_exportable','first_observation_mismatch','incomplete_input_horizon',
+        'incomplete_solver_horizon','invalid_battery_parameters','invalid_identifier','invalid_input_kind',
+        'invalid_numeric_value','invalid_timestamp','model_step_mismatch','negative_input_value',
+        'negative_solver_power','nonfinite_numeric_value','optimizer_source_hash_mismatch',
+        'solver_cost_mismatch','solver_timestamp_mismatch','timestamp_timezone_missing',
+        'unsupported_command_mapping'] | None = None
 
 
 class CollectionStatus(Contract):

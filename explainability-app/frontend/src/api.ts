@@ -50,6 +50,12 @@ export interface ReadbackEvidence {
     status: 'verified' | 'pending' | 'mismatch' | 'unsupported';
     reasons?: string[] | null;
     checked_at?: string | null;
+    evidence_scope?: 'post_submission_telemetry_match' | 'asynchronous_ha_state';
+    control_attribute_match?: boolean | null;
+    target_measurement_match?: boolean | null;
+    fresh_target_measurement?: boolean;
+    partial_evidence_scope?: 'none' | 'fresh_target_measurement_only';
+    unverified_source_fields?: string[];
   };
   received_at?: string | null;
 }
@@ -63,6 +69,7 @@ export interface Provenance {
 export type RecordFreshness = 'fresh' | 'stale' | 'unknown' | 'clock_unverified';
 export interface CollectionStatus {
   state: 'running' | 'stopped' | 'degraded' | 'unknown';
+  reason?: string | null;
   last_success_at?: string | null;
   last_error_at?: string | null;
   last_error?: string | null;
@@ -80,6 +87,14 @@ export interface Station {
   observed_at?: string | null;
   created_at?: string | null;
   record_freshness?: RecordFreshness | null;
+  last_submission?: {
+    decision_key: string;
+    instruction_id: string;
+    submitted_at: string;
+    device_time: string;
+    action: Action;
+    execution_status: string;
+  } | null;
 }
 export interface Overview {
   run_id: string | null;

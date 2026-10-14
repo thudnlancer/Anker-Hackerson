@@ -26,6 +26,30 @@ _SPEC = importlib.util.spec_from_file_location(
 runner = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(runner)
 
+def test_simulator_supplement_keeps_response_scope_and_checks_physical_balance():
+    receipt=SimpleNamespace(flow='discharge',target_kw=5.,mode='third_party_control')
+    telemetry=dict(pv_power=299.,load_power=310.,battery_charging_power=0.,
+        battery_discharging_power=5000.,grid_import_power=0.,grid_export_power=4989.,
+        operating_mode_name='third_party_control',sim_time='2031-01-01 08:15:00',
+        battery_power_setpoint=5000.)
+    dashboard={'contest':{'track':'mock'},'sites':[{}, {'telemetry':telemetry}, {}]}
+    result=runner.simulator_supplement(dashboard,'2',receipt,started_at='request-start',captured_at='response-end')
+    assert result['status']=='supplement_only'
+    assert result['source_freshness']==result['frame_identity']=='not_provided'
+    assert result['site_mapping']['server_site_identity_verified'] is False
+    assert result['checks']['balance_difference_w']==0.
+    assert result['checks']['target_measurement_difference_w']==-11.
+    assert result['checks']['target_measurement_matches']
+    assert 'updated_at' not in result
+
+
+def test_invalid_simulator_power_is_unavailable_not_confirmed():
+    receipt=SimpleNamespace(flow='charge',target_kw=1.,mode='third_party_control')
+    dashboard={'sites':[{'telemetry':{'pv_power':float('nan')}}]}
+    result=runner.simulator_supplement(dashboard,'1',receipt,started_at='a',captured_at='b')
+    assert result=={'status':'unavailable','reason':'invalid_telemetry_powers'}
+
+
 WALL = datetime(2026, 10, 14, 8, 0, tzinfo=timezone.utc)
 DEVICE = datetime(2031, 1, 1, tzinfo=timezone.utc)
 STATIONS = {str(site): {"suffix": f"anker_solix_solarbank_max_ac_runner_{site}"}
