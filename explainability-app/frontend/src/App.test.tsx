@@ -185,4 +185,36 @@ describe('储能解释用户流程', () => {
     if (status === 'pending') expect(screen.queryByText('官方已结算')).not.toBeInTheDocument();
     if (source === 'demo') expect(screen.queryByText('官方已结算')).not.toBeInTheDocument();
   });
+  it('计划页提交异步任务并显示模型费用差', async () => {
+    window.location.hash = '#/plans';
+    const fetchMock = mockApi({
+      '/api/plans/feasibility': { id: 'plan-1', decision_id: 'evidence-1', status: 'queued', result: null, error: null },
+      '/api/plans/plan-1': { id: 'plan-1', decision_id: 'evidence-1', status: 'ready', error: null,
+        result: { status: 'feasible', target_soc_percent: 80, expected_completion_step: 2,
+          cost_delta_eur: 0.12, assumptions: ['保存快照模型估算。'] } },
+    });
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText('决策快照'), { target: { value: 'evidence-1' } });
+    await waitFor(() => expect(screen.getByLabelText('设备时间截止点')).not.toHaveValue(''));
+    fireEvent.click(screen.getByRole('button', { name: '检查计划可行性' }));
+    expect(await screen.findByText('€0.1200', {}, { timeout: 2500 })).toBeInTheDocument();
+    expect(screen.getByText('第 3 步')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => path === '/api/plans/feasibility')).toBe(true);
+  });
+  it('光伏页标注回放、估算分摊与弃光未测', async () => {
+    window.location.hash = '#/pv';
+    mockApi({ '/api/pv/1/daily': { site_id: '1', arm: 'zero_flow', days: [{
+      site_id: '1', device_date: '2031-01-01', arm: 'zero_flow', steps: 24,
+      allocation_method: 'estimate_pv_first_to_load_then_battery_then_grid', source_kind: 'replay_trace',
+      curtailment_status: 'not_measured', totals: { pv_generated_kwh: 3, direct_self_use_kwh: 1,
+        pv_to_battery_kwh: 1, pv_to_grid_kwh: 1, grid_export_kwh: 1.5, negative_export_loss_eur: 0.1 },
+      bottlenecks: { battery_full_steps: 2, charge_limit_steps: null, negative_price_export_steps: 1 },
+      caveat: '光伏去向为估算；未提供潜在出力，不能核算弃光。',
+    }] } });
+    render(<App />);
+    expect(await screen.findByText('2031-01-01')).toBeInTheDocument();
+    expect(screen.getByText('直接供负载（估算）')).toBeInTheDocument();
+    expect(screen.getByText('未提供功率上限')).toBeInTheDocument();
+    expect(screen.getByText(/不能核算弃光/)).toBeInTheDocument();
+  });
 });

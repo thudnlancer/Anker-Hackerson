@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .facts import explain
 from .providers import get_provider
-from .schemas import DecisionIn, ExecutionEvent, Intervention, Question, SettlementIn
+from .schemas import DecisionIn, ExecutionEvent, Intervention, PlanFeasibilityIn, PVAccountingIn, Question, SettlementIn
 from .store import Conflict, NotFound, Store
 
 
@@ -72,6 +72,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/counterfactuals/{job_id}",tags=["反事实"])
     def task(job_id: str): return store.get_job(job_id)
+
+    @app.post("/api/plans/feasibility",status_code=202,tags=["计划"])
+    def plan_feasibility(request: PlanFeasibilityIn):
+        return store.create_plan_job(request.decision_id,request.target_soc_percent,request.deadline.isoformat())
+
+    @app.get("/api/plans/{job_id}",tags=["计划"])
+    def plan_task(job_id: str): return store.get_plan_job(job_id)
+
+    @app.post("/api/pv/accounting",tags=["光伏"])
+    def import_pv_accounting(report: PVAccountingIn): return store.add_pv_daily(report)
+
+    @app.get("/api/pv/{site_id}/daily",tags=["光伏"])
+    def pv_daily(site_id: str, arm: str = "zero_flow"):
+        return {"site_id": site_id,"arm": arm,"days": store.pv_daily(site_id,arm)}
 
     @app.post("/api/questions",tags=["解释"])
     def ask(query: Question):

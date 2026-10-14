@@ -9,6 +9,7 @@ import math
 import time
 
 from .providers import ModelOutcome, run_comparison
+from .plans import check_feasibility
 from .store import Conflict, Store
 
 
@@ -19,6 +20,21 @@ def compute_child(sender, decision: dict, first_charge_kw: float):
         sender.send({"status":exc.status,"result":None,"error":str(exc)})
     except Exception as exc:
         sender.send({"status":"failed","result":None,"error":f"{type(exc).__name__}: {exc}"})
+    finally:
+        sender.close()
+
+
+def compute_plan_child(sender, decision: dict, request: dict):
+    try:
+        from datetime import datetime
+        result = check_feasibility(decision, request["target_soc_percent"],
+                                   datetime.fromisoformat(request["deadline"]))
+        status = "ready" if result["status"] == "feasible" else result["status"]
+        sender.send({"status": status, "result": result, "error": None})
+    except ModelOutcome as exc:
+        sender.send({"status": exc.status, "result": None, "error": str(exc)})
+    except Exception as exc:
+        sender.send({"status": "failed", "result": None, "error": f"{type(exc).__name__}: {exc}"})
     finally:
         sender.close()
 
@@ -81,6 +97,48 @@ def process_one(store: Store, timeout: float = 30, target=compute_child) -> dict
         stop_child(process)
 
 
+def process_one_plan(store: Store, timeout: float = 30, target=compute_plan_child) -> dict | None:
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout must be finite and positive")
+    job = store.claim_plan_job(lease_seconds=timeout+10)
+    if not job:
+        return None
+    ctx = mp.get_context("spawn")
+    receiver, sender = ctx.Pipe(duplex=False)
+    request = {"target_soc_percent": job["target_soc_percent"], "deadline": job["deadline"]}
+    process = ctx.Process(target=timed_child,args=(sender,store.get_decision(job["decision_id"]),request,timeout,target))
+    try:
+        process.start()
+        sender.close()
+        deadline = time.monotonic()+timeout
+        outcome = None
+        while time.monotonic() < deadline:
+            if receiver.poll(min(.1,max(0,deadline-time.monotonic()))):
+                try: outcome = receiver.recv()
+                except EOFError: pass
+                break
+            if not process.is_alive():
+                if receiver.poll(0):
+                    try: outcome = receiver.recv()
+                    except EOFError: pass
+                break
+        if outcome is None:
+            expired = time.monotonic() >= deadline or process.exitcode == 124
+            outcome = {"status":"timeout" if expired else "failed", "result":None,
+                       "error":"计划计算超过时间限制。" if expired else "计算进程退出且未返回结果。"}
+        process.join(timeout=.5)
+        stop_child(process)
+        return store.finish_plan_job(job["id"],attempt=job["attempts"],**outcome)
+    except Conflict:
+        return store.get_plan_job(job["id"])
+    except Exception as exc:
+        stop_child(process)
+        return store.finish_plan_job(job["id"],"failed",error=f"worker failure: {type(exc).__name__}: {exc}",attempt=job["attempts"])
+    finally:
+        sender.close(); receiver.close()
+        stop_child(process)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db",default="data/energy.sqlite")
@@ -94,6 +152,7 @@ def main(argv=None):
     try:
         while True:
             job = process_one(store,args.timeout)
+            if not job: job = process_one_plan(store,args.timeout)
             if job: print(f"{job['id']} {job['status']}",flush=True)
             if args.once: break
             if not job: time.sleep(args.poll)

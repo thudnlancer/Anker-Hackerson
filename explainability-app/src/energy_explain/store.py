@@ -5,12 +5,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import sqlite3
 import time
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from .schemas import DecisionIn, ExecutionEvent, Intervention, SettlementIn
+from .schemas import DecisionIn, ExecutionEvent, Intervention, PVAccountingIn, SettlementIn
 
 
 class Conflict(ValueError):
@@ -69,6 +70,17 @@ class Store:
                 result TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                 lease_until REAL, attempts INTEGER NOT NULL DEFAULT 0);
               CREATE INDEX IF NOT EXISTS queue_status ON jobs(status,created_at);
+              CREATE TABLE IF NOT EXISTS plan_jobs (
+                id TEXT PRIMARY KEY, decision_key TEXT NOT NULL REFERENCES decisions(id),
+                cache_key TEXT NOT NULL, target_soc_percent REAL NOT NULL,
+                deadline TEXT NOT NULL, status TEXT NOT NULL,
+                result TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                lease_until REAL, attempts INTEGER NOT NULL DEFAULT 0);
+              CREATE INDEX IF NOT EXISTS plan_queue_status ON plan_jobs(status,created_at);
+              CREATE TABLE IF NOT EXISTS pv_daily (
+                site_id TEXT NOT NULL, device_date TEXT NOT NULL, arm TEXT NOT NULL,
+                payload TEXT NOT NULL, payload_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(site_id,device_date,arm));
             """)
 
     @contextmanager
@@ -269,7 +281,7 @@ class Store:
             db.execute("UPDATE jobs SET status='queued',lease_until=NULL,updated_at=? WHERE status='running' AND lease_until < ? AND attempts < 2", (now(),t))
             db.execute("UPDATE jobs SET status='failed',error='worker lease expired after two attempts',lease_until=NULL,updated_at=? WHERE status='running' AND lease_until < ? AND attempts >= 2", (now(),t))
             # The independent worker has single global concurrency, including multiple CLI launches.
-            if db.execute("SELECT 1 FROM jobs WHERE status='running' LIMIT 1").fetchone():
+            if db.execute("SELECT 1 FROM jobs WHERE status='running' LIMIT 1").fetchone() or db.execute("SELECT 1 FROM plan_jobs WHERE status='running' LIMIT 1").fetchone():
                 return None
             row = db.execute("SELECT id FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1").fetchone()
             if not row:
@@ -290,3 +302,96 @@ class Store:
             db.execute("UPDATE jobs SET status=?,result=?,error=?,lease_until=NULL,updated_at=? WHERE id=?",
                 (status, canonical(result) if result is not None else None, error, now(),job_id))
         return self.get_job(job_id)
+
+    def create_plan_job(self, key: str, target_soc_percent: float, deadline: str) -> dict:
+        d = self.get_decision(key)
+        cache_key = digest({"kind": "plan_feasibility", "decision": key,
+                            "snapshot": d["snapshot_hash"], "model": d["model_version"],
+                            "target_soc_percent": target_soc_percent, "deadline": deadline})
+        with self.connect(write=True) as db:
+            cached = db.execute("SELECT id FROM plan_jobs WHERE cache_key=? AND status IN ('queued','running','ready','infeasible') ORDER BY created_at DESC LIMIT 1", (cache_key,)).fetchone()
+            if cached:
+                job_id = cached["id"]
+            else:
+                job_id, stamp = str(uuid4()), now()
+                db.execute("INSERT INTO plan_jobs (id,decision_key,cache_key,target_soc_percent,deadline,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (job_id,key,cache_key,target_soc_percent,deadline,"queued",stamp,stamp))
+        return self.get_plan_job(job_id)
+
+    def get_plan_job(self, job_id: str) -> dict:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM plan_jobs WHERE id=?", (job_id,)).fetchone()
+        if not row:
+            raise NotFound("plan task not found")
+        return {"id": row["id"], "decision_id": row["decision_key"],
+                "target_soc_percent": row["target_soc_percent"], "deadline": row["deadline"],
+                "status": row["status"], "result": json.loads(row["result"]) if row["result"] else None,
+                "error": row["error"], "created_at": row["created_at"],
+                "updated_at": row["updated_at"], "attempts": row["attempts"]}
+
+    def claim_plan_job(self, lease_seconds: float = 40) -> dict | None:
+        with self.connect(write=True) as db:
+            t = time.time()
+            db.execute("UPDATE plan_jobs SET status='queued',lease_until=NULL,updated_at=? WHERE status='running' AND lease_until < ? AND attempts < 2", (now(),t))
+            db.execute("UPDATE plan_jobs SET status='failed',error='worker lease expired after two attempts',lease_until=NULL,updated_at=? WHERE status='running' AND lease_until < ? AND attempts >= 2", (now(),t))
+            if db.execute("SELECT 1 FROM jobs WHERE status='running' LIMIT 1").fetchone() or db.execute("SELECT 1 FROM plan_jobs WHERE status='running' LIMIT 1").fetchone():
+                return None
+            row = db.execute("SELECT id FROM plan_jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1").fetchone()
+            if not row:
+                return None
+            db.execute("UPDATE plan_jobs SET status='running',lease_until=?,attempts=attempts+1,updated_at=? WHERE id=?", (t+lease_seconds,now(),row["id"]))
+        return self.get_plan_job(row["id"])
+
+    def finish_plan_job(self, job_id: str, status: str, result=None, error: str | None = None,
+                        attempt: int | None = None) -> dict:
+        if status not in {"ready","infeasible","timeout","unsupported","failed"}:
+            raise ValueError("invalid terminal plan status")
+        with self.connect(write=True) as db:
+            row = db.execute("SELECT status,attempts FROM plan_jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise NotFound("plan task not found")
+            if row["status"] != "running" or (attempt is not None and row["attempts"] != attempt):
+                raise Conflict("plan lease no longer belongs to this attempt")
+            db.execute("UPDATE plan_jobs SET status=?,result=?,error=?,lease_until=NULL,updated_at=? WHERE id=?",
+                (status, canonical(result) if result is not None else None,error,now(),job_id))
+        return self.get_plan_job(job_id)
+
+    def add_pv_daily(self, report: PVAccountingIn) -> dict:
+        data = report.model_dump(mode="json")
+        totals = data["totals"]
+        required = {"pv_generated_kwh", "direct_self_use_kwh", "pv_to_battery_kwh",
+                    "pv_to_grid_kwh", "grid_export_kwh", "negative_export_loss_eur"}
+        if set(totals) != required or any(not math.isfinite(x) or x < -1e-9 for x in totals.values()):
+            raise ValueError("invalid PV accounting totals")
+        if abs(totals["pv_generated_kwh"] - sum(totals[k] for k in
+            ("direct_self_use_kwh", "pv_to_battery_kwh", "pv_to_grid_kwh"))) > 1e-6:
+            raise ValueError("PV allocation does not conserve energy")
+        if totals["pv_to_grid_kwh"] > totals["grid_export_kwh"] + 1e-6:
+            raise ValueError("PV export exceeds total grid export")
+        if set(data["bottlenecks"]) != {"battery_full_steps", "charge_limit_steps", "negative_price_export_steps"}:
+            raise ValueError("invalid PV bottleneck fields")
+        if any(v is not None and (v < 0 or v > data["steps"]) for v in data["bottlenecks"].values()):
+            raise ValueError("invalid PV bottleneck count")
+        payload, checksum = canonical(data), digest(data)
+        with self.connect(write=True) as db:
+            old = db.execute("SELECT payload_hash FROM pv_daily WHERE site_id=? AND device_date=? AND arm=?",
+                             (data["site_id"],data["device_date"],data["arm"])).fetchone()
+            if old:
+                if old["payload_hash"] != checksum:
+                    raise Conflict("PV daily identity already exists with different content")
+                return {"created": False, "report": data}
+            db.execute("INSERT INTO pv_daily VALUES (?,?,?,?,?,?)",
+                (data["site_id"],data["device_date"],data["arm"],payload,checksum,now()))
+        return {"created": True, "report": data}
+
+    def pv_daily(self, site_id: str, arm: str = "zero_flow") -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute("SELECT payload,payload_hash FROM pv_daily WHERE site_id=? AND arm=? ORDER BY device_date",
+                              (site_id,arm)).fetchall()
+        reports = []
+        for row in rows:
+            data = json.loads(row["payload"])
+            if digest(data) != row["payload_hash"]:
+                raise Conflict("saved PV accounting integrity check failed")
+            reports.append(data)
+        return reports
