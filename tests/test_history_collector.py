@@ -75,6 +75,28 @@ class HistoryCollectorTests(unittest.TestCase):
         self.assertEqual(heartbeat["writes_performed"], 0)
         self.assertEqual(heartbeat["cache_bytes"], {"1": shard_size})
 
+    def test_explicit_epoch_is_in_cache_and_current_heartbeat(self):
+        point = {"timestamp": "2032-04-02T00:00:00Z", "condition": "clear",
+                 "temperature_c": 20, "cloud_cover_percent": 0, "solar_irradiance_wm2": 100}
+        snapshot = {"stations": {"1": {"received_at": "2026-10-10T06:00:00Z",
+            "state": {"soc": "50", "solar_power": "100", "home_load": "200",
+                      "device_time": "2032-04-02 00:15:00"},
+            "weather": {"today": {"points": [point]}}}}}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "config.json"
+            config.write_text(json.dumps({"local": {"device_timezone": "UTC"}}), encoding="utf-8")
+            with patch.object(sys, "argv", ["collector", "--config", str(config),
+                      "--cache-dir", str(root / "cache"), "--health-dir", str(root / "health"),
+                      "--epoch-id", "new-window", "--iterations", "1"]), \
+                    patch.object(collect_online_history, "fetch_snapshot", return_value=snapshot), \
+                    redirect_stdout(io.StringIO()):
+                collect_online_history.main()
+            row = json.loads((root / "cache/site_1.nodeA.jsonl").read_text(encoding="utf-8"))
+            heartbeat = json.loads((root / "health/heartbeat_nodeA.json").read_text(encoding="utf-8"))
+        self.assertEqual(row["epoch_id"], heartbeat["epoch_id"])
+        self.assertEqual(row["epoch_id"], "new-window")
+
     def test_same_device_tick_with_changed_payload_is_retained(self):
         point = {"timestamp": "2032-04-02T00:00:00Z", "condition": "clear",
                  "temperature_c": 20, "cloud_cover_percent": 0, "solar_irradiance_wm2": 0}
