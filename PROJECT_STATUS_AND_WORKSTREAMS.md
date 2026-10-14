@@ -2,12 +2,12 @@
 
 > 用途：此后各 worker 与集成负责人交流进度的唯一共享看板。本文档区分已验证事实、进行中工作和计划，不做时间估算；排序以里程碑门槛表示。
 > 关联文档：[预赛方案_更新版.md](../预赛方案_更新版.md)（产品方案）、[SYSTEM_ARCHITECTURE_GUIDELINE.md](SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[NEXT_STAGE_RESULTS.md](NEXT_STAGE_RESULTS.md)（实验证据）、[HOLD_SEMANTICS_DESIGN.md](HOLD_SEMANTICS_DESIGN.md)（语义对齐设计，Q1 已决策）。
-> 状态核验：2026-10-14；当前主工作区分支 `feat/explainability-integration`，HEAD 为 `c223894`。工作区包含多个未提交工作线改动，逐项状态以本节说明和 Git 状态为准。
+> 状态核验：2026-10-14；当前主工作区分支 `feat/explainability-integration`，HEAD 以 `git log -1` 为准。工作区包含多个未提交工作线改动，逐项状态以本节说明和 Git 状态为准。
 
 ## 0. 共享协作规则（所有 worker 必读）
 
 - 本文档是**进度与交接的共同入口**，不是把未提交文件视为已交付的依据。状态只能写成 `待开始`、`进行中`、`待集成`、`已验收`、`阻塞`；`已验收`须附测试/报告路径或提交号。口头“完成”不自动改变状态。
-- 开工前由集成负责人盘点并归属当前未提交改动，确保本文档已纳入 Git 跟踪，再为每个 worker 建独立分支/worktree。**当前尚未建立三个工作树，下面的 W1/W2/W3 是分工约定，不表示 worker 已启动。** 不允许在当前脏工作区上并发编辑，也不允许整枝合并旧 `feat/energy-floor`。
+- 多 worker 同时开工前由集成负责人盘点并归属当前未提交改动，确保本文档已纳入 Git 跟踪，再为每个 worker 建独立分支/worktree。**目前只有 W1 在当前工作树单独工作；W2/W3 尚未启动。其余 worker 启动前必须隔离工作树。** 不允许在当前脏工作区上并发编辑，也不允许整枝合并旧 `feat/energy-floor`。
 - 每个 worker 只修改自己的文件域；共享的 `src/energy_lab/rolling.py`、`src/energy_lab/config.py`、`src/energy_lab/online_contract.py`、`src/energy_lab/explainability_evidence.py` 和跨线样例配置由集成负责人协调。跨域需求先在本文档 §9“接口/阻塞记录”登记，由所有者或集成负责人处理。
 - 更新节奏：开始任务、完成可验收增量、发现阻塞或接口变化时，更新 §8 一行，并在 §9 追加一条记录；集成负责人验收后才修改 §2/§4 的总状态。不要让多 worker 在同一工作树同时编辑本文档；各分支可提出文档补丁，由集成负责人串行合并。
 - 每次交接至少包含：任务编号、分支/提交、变更文件、验证命令及结果、证据产物、已知限制、下一步/阻塞。所有对外收益数字只使用 A5/F2 冻结后的零流量口径；自用回退标记 `non-optimizer-attributed`。
@@ -29,16 +29,16 @@ Anker 黑客松充电储能赛道场景三："会解释自己的 AI"——基于
 | 比赛口径策略主线 | 20 站 × 2×168h：辐照度 PV + 当前负载最优（+14.612% / +6.441%），第三窗口可加但非门槛 |
 | SOP 控制语义 | 充放/购售互斥、SOC 全量程、第三方模式两条指令、约 1 秒间隔、下一 tick 生效 |
 | Hold 语义差异量化 | pair 实验：自用 idle vs 零流量 idle，persistence 臂 6.238% vs -2.115%，辐照度臂 11.167% vs 9.204% |
-| 回归测试 | 2026-10-14 当前主仓 `pytest tests -q`：230 passed；Explainability 应用后端：83 passed、49 subtests passed（1 个 Starlette/httpx 弃用警告） |
+| 回归测试 | 2026-10-14 W1 后当前主仓 `pytest tests -q`：231 passed；Explainability 应用后端：83 passed、49 subtests passed（1 个 Starlette/httpx 弃用警告） |
 | 只读采集链路 | 新缓存含 `solar_irradiance_wm2`；持续采集进程已停止，日志最后更新 2026-10-14 01:01:54；B4 心跳仅有一次历史记录，不代表当前健康 |
 | HA 物理校准（B3） | 两轮真实只读审计（夜 12×5s + 日光 18×10s，[报告](outputs/ha_physical_calibration_20261013/report_daylight.json)）：三站 PV/负载符号、充放互斥、电网进出口互斥零违例；三向功率平衡残差 ≤1W；日光轮 PV 激励峰值 1232/1150/720W；30/30 样本可用 |
 | 零流量硬件验证（B1/B2） | 三站真实 `charge=0` 受监管写入全部 verified（live_readback，[证据目录](outputs/zero_flow_verification)）：设定回显正确、电池 0/0W、电网被动结算（进口 150≈158W）、写入后下一 tick 回读、模式恢复回读确认无残留；`stations.{1,2,3}.zero_flow_verified=true` 已落配置；测试后三开关已收回 false |
 
 ### 2.2 已完成或进行中
 
-- 线 A：A1-A4 已提交（`fec9f35`、`ecac401`、`780fe08`、`d11bc87`）；A5 离线归因修改尚未提交，A6 仍需核对验收清单。
+- 线 A：A1-A4 已提交（`fec9f35`、`ecac401`、`780fe08`、`d11bc87`）；A5 离线回放现已补齐逐步归因字符串和跨站归因计数，仍需报告审计与基线对比；A6 继续核对验收清单。
 - 线 B：B0-B3 已完成（三站 `charge=0` 只读/受控验证证据已存档，测试后真实写入开关已恢复关闭）。B4 设计完成；本地分片采集、合并读取和监控改造在工作区未提交，watchdog 与故障演练尚未验收；远程机 Tailscale/双节点部署未完成。
-- 线 C：C1-C3 已提交（`31b85af`、`82325b3`、`c223894`）。C4 的 `solver_seconds` 配置映射与 2 秒默认值已在工作区，尚未提交及完成整套预算复验。
+- 线 C：C1-C3 已提交（`31b85af`、`82325b3`、`c223894`）。C4 的 `solver_seconds` 配置映射、2 秒默认值和样例已在工作区；W1 使用同一 72 个冻结病例复跑，结果 72/72 可输出且 0 物理违规；待完成配置 readiness 校验和预算证据登记。
 - 线 D：D2 批 1-20 分析已完成；batch 20 因 ConnectTimeout 仅 14/24 轮，缺口保留。另有 batch 21 完整 24 轮补采（零写入，继承 batch 20），尚未并入 20 批主分析。D3、D4 未完成。
 - 线 E：E1-E3 已在 `main` 的 `922bb48` 合并。E4-1 `energy_floor_kwh` 已从独立分支 `feat/energy-floor`（`f6ff5df`）按功能移植到当前工作基线，并通过 LP/MILP 与应用后端回归；E4-2（可行性检查/光伏分析页面和接口）、E5 未完成。独立 worktree 保留原分支，不合并其余差异。
 - 采集器：重启后采集日志推进至 2026-10-14 01:01:54 后停止；截至本次核验未发现运行进程。新缓存有三站数据和辐照度字段，但存在真实设备时间错位/缺口，必须按时间戳处理。
@@ -219,9 +219,9 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
-| W1 | 待开始 | A5/A6 口径收尾 | 待建立独立 worktree | A5 归因测试与报告 |
+| W1 | 进行中 | A5 报告审计与 C4 预算收尾 | `feat/explainability-integration`（当前工作树，单 worker 例外） | 全仓 232 passed；72 病例复验 72/72、0 违规；零流量 1 站 smoke 504 行审计通过 |
 | W2 | 待开始 | E4-2 API/前端设计 | 待建立独立 worktree | 可行性检查最小闭环 |
-| W3 | 待开始 | B4 本地采集冗余设计落地 | 待建立独立 worktree | watchdog 故障演练 |
+| W3 | 待集成 | B4.1-B4.4 本地采集冗余、合并视图与监控基线已完成；D1/D3 尚未开始 | `feat/w3-collector-reliability` @ `905a40f` | 主仓集成后运行全量回归；再做本地 watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
 
 ## 9. 进度交接记录
@@ -229,6 +229,10 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | 日期 | 角色 | 事项 | 结果/阻塞 | 证据 |
 |---|---|---|---|---|
 | 2026-10-14 | 集成负责人 | 建立并行分工基线 | W1/W2/W3 待启动；当前工作区存在跨线未提交改动，禁止直接并发编辑 | 本节 §0、§7、§8 |
+| 2026-10-14 | W1 | A5 初步落地 | trace 新增字符串归因标签；跨站归因计数对 legacy `null` 保持未知，不再求和崩溃；回放摘要显式记录 idle 核算臂，非官方分数仍明确否定 | `tests/test_contest_replay.py`；24 定向测试、231 全仓测试通过 |
+| 2026-10-14 | W1 | C4 预算复验 | 同一冻结快照/因果校准路径、每站 2 秒预算复跑；65 optimal + 7 verified suboptimal incumbent，72/72 输出；最大/平均 gap 0.755%/0.403%，72 计划物理审计 0 违规；不改 `mip_rel_gap=1e-9` | `outputs/w1_c4_verification_20261014_1/verification_report.json` |
+| 2026-10-14 | W3 | 完成 B4 本地基线与消费者接线 | 分片/heartbeat、merge 视图、监控状态机、watchdog 过滤与过期状态保护；未启动真实采集、未执行远程部署或 HA 写入 | `2eb92ef`、`905a40f`；W3 定向测试 33 passed |
+| 2026-10-14 | W1 | A5 产物 smoke 与 C4 配置门槛 | 1 站 × 168h × 3 臂零流量回放：504 行物理审计通过；optimizer-attributed 计数为辐照度臂 168、持久化臂 168、自用基线 0；`official_score_claim=false`。运行配置新增预算必须为正且短于轮询周期；全仓 232 passed | `outputs/w1_a5_zero_flow_smoke_20261014_1/`；`tests/test_config_solver_seconds.py` |
 
 ### 接口/阻塞记录
 
