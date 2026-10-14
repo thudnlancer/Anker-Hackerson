@@ -213,6 +213,33 @@ class Intervention(Contract):
     first_charge_kw: NonNegative
 
 
+class PlanFeasibilityIn(Contract):
+    decision_id: Identifier
+    target_soc_percent: Annotated[float, Field(gt=0, le=100)]
+    deadline: datetime
+
+    @model_validator(mode="after")
+    def deadline_is_aware(self):
+        if self.deadline.tzinfo is None or self.deadline.utcoffset() is None:
+            raise ValueError("deadline requires an explicit timezone")
+        self.deadline = self.deadline.astimezone(timezone.utc)
+        return self
+
+
+class PVAccountingIn(Contract):
+    site_id: Identifier
+    device_date: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+    arm: Annotated[str, Field(min_length=1, max_length=80)]
+    steps: Annotated[int, Field(gt=0, le=10000)]
+    step_hours: Annotated[float, Field(gt=0, le=24)]
+    allocation_method: Literal["estimate_pv_first_to_load_then_battery_then_grid"]
+    source_kind: Literal["replay_trace"]
+    curtailment_status: Literal["not_measured"]
+    totals: dict[str, float]
+    bottlenecks: dict[str, int | None]
+    caveat: Annotated[str, Field(min_length=1, max_length=1000)]
+
+
 class Question(Contract):
     decision_id: Annotated[str, Field(min_length=1, max_length=120)]
     question: Annotated[str, Field(min_length=1, max_length=500)]

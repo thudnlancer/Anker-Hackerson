@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { api, type Cost, type Decision, type Explanation, type Job, type Overview, type Provenance, type QuestionAnswer, type Scenario, type Settlement, type Station } from './api';
+import { api, type Cost, type Decision, type Explanation, type Job, type Overview, type PlanJob, type PVDaily, type Provenance, type QuestionAnswer, type Scenario, type Settlement, type Station } from './api';
 
-type View = { kind: 'overview' } | { kind: 'decision'; id: string } | { kind: 'comparison'; id: string };
+type View = { kind: 'overview' } | { kind: 'decision'; id: string } | { kind: 'comparison'; id: string } | { kind: 'plans' } | { kind: 'pv' };
 const actionNames: Record<string, string> = { charge: '充电', discharge: '放电', hold: '保持策略', self_consumption: '自用模式' };
 const statusNames: Record<string, string> = {
   candidate: '候选建议', candidate_only: '候选建议', submitted: '已提交', confirmed: '回读已确认', failed: '失败',
@@ -44,6 +44,8 @@ function currentView(): View {
   const segments = window.location.hash.replace(/^#\/?/, '').split('/');
   if (segments[0] === 'decisions' && segments[1]) return { kind: 'decision', id: decodeURIComponent(segments[1]) };
   if (segments[0] === 'comparisons' && segments[1]) return { kind: 'comparison', id: decodeURIComponent(segments[1]) };
+  if (segments[0] === 'plans') return { kind: 'plans' };
+  if (segments[0] === 'pv') return { kind: 'pv' };
   return { kind: 'overview' };
 }
 function navigate(path = '/') { window.location.hash = path; }
@@ -230,8 +232,101 @@ function ComparisonPage({ id }: { id: string }) {
     </>}
   </>;
 }
+function PlanPage() {
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [decisionId, setDecisionId] = useState('');
+  const [target, setTarget] = useState(80);
+  const [deadline, setDeadline] = useState('');
+  const [job, setJob] = useState<PlanJob | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.stations().then(setOverview).catch((e: Error) => setError(e.message)); }, []);
+  useEffect(() => {
+    if (!decisionId) { setDecision(null); setDeadline(''); return; }
+    let active = true;
+    api.decision(decisionId).then((next) => {
+      if (!active) return;
+      setDecision(next);
+      const nextDeadline = new Date(new Date(next.snapshot.device_time).getTime() + next.snapshot.step_hours * Math.min(4, next.snapshot.pv_forecast_kw.length) * 3600000);
+      const local = new Date(nextDeadline.getTime() - nextDeadline.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setDeadline(local);
+    }).catch((e: Error) => setError(e.message));
+    return () => { active = false; };
+  }, [decisionId]);
+  useEffect(() => {
+    if (!job || !['queued', 'running'].includes(job.status)) return;
+    const timer = setTimeout(() => api.planJob(job.id).then(setJob).catch((e: Error) => setError(e.message)), 900);
+    return () => clearTimeout(timer);
+  }, [job]);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); if (!decision || !deadline) return;
+    setBusy(true); setError(''); setJob(null);
+    try { setJob(await api.plan(decision.id, target, new Date(deadline).toISOString())); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <>
+    <PageTitle eyebrow="PLAN FEASIBILITY" title="计划可行性检查" description="使用已保存的决策快照评估目标电量与截止时间；不会读取新设备状态或下发控制。" />
+    {error && <ErrorBox message={error} />}
+    {!overview && !error && <Loading />}
+    {overview && <form className="panel plan-form" onSubmit={(e) => void submit(e)}>
+      <label>决策快照<select aria-label="决策快照" value={decisionId} onChange={(e) => { setDecisionId(e.target.value); setJob(null); }} required>
+        <option value="">选择站点决策</option>{overview.stations.map((station) => <option key={station.id} value={station.id}>{station.site_id} · {time(station.device_time, true)} UTC</option>)}
+      </select></label>
+      <label>目标电量 SOC (%)<input aria-label="目标电量 SOC (%)" type="number" min="1" max="100" step="1" value={target} onChange={(e) => setTarget(Number(e.target.value))} required /></label>
+      <label>设备时间截止点<input aria-label="设备时间截止点" type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} required /></label>
+      <button className="button primary" disabled={!decision || busy || !deadline}>{busy ? '提交中…' : '检查计划可行性'}</button>
+      {decision && <p className="scope-note">当前模型：{decision.model_version} · 预测步数：{decision.snapshot.pv_forecast_kw.length} · 步长：{decision.snapshot.step_hours} 小时</p>}
+    </form>}
+    {job && <section className="panel plan-result" aria-live="polite">
+      <div className="panel-heading"><h2>检查结果</h2><Badge value={job.status} /></div>
+      {['queued', 'running'].includes(job.status) && <div className="job-pending"><span className="spinner" /><p>{job.status === 'queued' ? '任务已入队，等待模型工作进程' : '正在检查截止电量约束'}</p></div>}
+      {!['queued', 'running'].includes(job.status) && !job.result && <p role="status">{job.error || '任务没有返回结果。'}</p>}
+      {job.result && <>
+        {job.result.message && <p className="scope-note">{job.result.message}</p>}
+        {job.result.status === 'feasible' && <div className="plan-metrics"><div><span>预计完成</span><strong>{job.result.expected_completion_step == null ? '已满足' : `第 ${job.result.expected_completion_step + 1} 步`}</strong></div><div><span>预计费用差</span><strong>{money(job.result.cost_delta_eur ?? 0, 4)}</strong></div><div><span>截止目标</span><strong>{job.result.target_soc_percent?.toFixed(0)}%</strong></div></div>}
+        {job.result.max_reachable_energy_kwh != null && <p>截止前最大可达电量估算：<strong>{job.result.max_reachable_energy_kwh.toFixed(2)} kWh</strong></p>}
+        {!!job.result.adjustments?.length && <><h3>可调整方案</h3><div className="table-scroll"><table><thead><tr><th>调整</th><th>目标/截止</th><th>模型费用差</th></tr></thead><tbody>{job.result.adjustments.map((item, i) => <tr key={i}><td>{item.kind === 'lower_target' ? '降低目标电量' : '延后截止'}</td><td>{item.target_soc_percent != null ? `${item.target_soc_percent}%` : time(item.deadline, true)}</td><td>{money(item.cost_delta_eur, 4)}</td></tr>)}</tbody></table></div></>}
+        {job.result.assumptions?.map((item, i) => <p className="scope-note" key={i}>{item}</p>)}
+      </>}
+    </section>}
+  </>;
+}
+function PVPage() {
+  const [siteId, setSiteId] = useState('1'); const [days, setDays] = useState<PVDaily[]>([]);
+  const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
+  async function load() {
+    setError('');
+    try { setDays((await api.pvDaily(siteId)).days); }
+    catch (e) { setError((e as Error).message); }
+  }
+  useEffect(() => { void load(); }, [siteId]);
+  async function importFile(file?: File) {
+    if (!file) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const reports = file.text ? (await file.text()).split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as PVDaily) : [];
+      for (const report of reports) await fetch('/api/pv/accounting', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(report) }).then(async (response) => { if (!response.ok) throw new Error((await response.json()).detail || `导入失败 (${response.status})`); });
+      setMessage(`已导入 ${reports.length} 条站点日核算记录。`); await load();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <>
+    <PageTitle eyebrow="PV ACCOUNTING" title="光伏消纳分析" description="按回放功率平衡估算光伏去向，并单独展示 trace 中记录的负价外送损失。" />
+    <div className="pv-toolbar"><label>站点<input aria-label="站点编号" value={siteId} onChange={(e) => setSiteId(e.target.value)} /></label><label className="button secondary">导入 JSONL<input aria-label="导入光伏 JSONL" type="file" accept=".jsonl,.ndjson,application/json" disabled={busy} onChange={(e) => void importFile(e.target.files?.[0])} /></label><button className="button secondary" onClick={() => void load()}>刷新</button></div>
+    {message && <p role="status">{message}</p>}{error && <ErrorBox message={error} retry={() => void load()} />}
+    {!error && days.length === 0 && <div className="empty-state"><Icon name="sun" size={32} /><h2>暂无光伏核算记录</h2><p>导入由回放 trace 生成的 JSONL 文件后查看站点日汇总。</p></div>}
+    <div className="pv-day-list">{days.map((day) => {
+      const total = day.totals.pv_generated_kwh || 0; const parts = [day.totals.direct_self_use_kwh, day.totals.pv_to_battery_kwh, day.totals.pv_to_grid_kwh];
+      const colors = ['#168b77', '#e3a934', '#5687a1']; const titles = ['直接供负载（估算）', '进入电池（估算）', '光伏外送（估算）'];
+      return <article className="pv-day" key={`${day.site_id}-${day.device_date}-${day.arm}`}><div className="pv-day-heading"><h2>{day.device_date}</h2><span className="source-badge">回放 trace</span><Badge value={day.arm} /></div><div className="pv-total"><strong>{total.toFixed(2)} kWh</strong><span>trace 光伏发电量</span></div><div className="pv-stack" role="img" aria-label={`光伏去向估算：${titles.map((t, i) => `${t} ${parts[i].toFixed(2)} 千瓦时`).join('，')}`}>{parts.map((part, i) => <span key={titles[i]} style={{ width: `${total > 0 ? part / total * 100 : 0}%`, background: colors[i] }} />)}</div><div className="pv-legend">{parts.map((part, i) => <div key={titles[i]}><i style={{ background: colors[i] }} /><span>{titles[i]}<strong>{part.toFixed(2)} kWh</strong></span></div>)}</div><div className="plan-metrics"><div><span>电网外送（trace）</span><strong>{day.totals.grid_export_kwh.toFixed(2)} kWh</strong></div><div><span>负价外送损失（trace）</span><strong>{money(day.totals.negative_export_loss_eur, 4)}</strong></div><div><span>电池已满时段</span><strong>{day.bottlenecks.battery_full_steps}</strong></div><div><span>充电功率瓶颈</span><strong>{day.bottlenecks.charge_limit_steps == null ? '未提供功率上限' : day.bottlenecks.charge_limit_steps}</strong></div><div><span>负价外送时段</span><strong>{day.bottlenecks.negative_price_export_steps}</strong></div></div><p className="scope-note">{day.caveat}</p></article>;
+    })}</div>
+  </>;
+}
 export default function App() {
   const [view, setView] = useState<View>(currentView); const [selectedRun, setSelectedRun] = useState('');
   useEffect(() => { const listener = () => { setView(currentView()); window.scrollTo?.(0, 0); }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []);
-  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : '替代方案'}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : <ComparisonPage id={view.id} key={view.id} />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
+  const currentName = view.kind === 'overview' ? '站点总览' : view.kind === 'decision' ? '决策依据' : view.kind === 'comparison' ? '替代方案' : view.kind === 'plans' ? '计划可行性' : '光伏分析';
+  return <div className="app-shell"><a className="skip-link" href="#main" onClick={(event) => { event.preventDefault(); document.getElementById('main')?.focus(); }}>跳转到内容</a><aside className="sidebar"><a className="brand" href="#/"><span className="brand-mark"><Icon name="bolt" size={25} /></span><span>电到为止<small>ENERGY EXPLAINABILITY</small></span></a><span className="nav-caption">工作空间</span><nav aria-label="主导航"><a href="#/" className={view.kind === 'overview' ? 'active' : ''}><Icon name="grid" />站点总览</a><span className={view.kind === 'decision' ? 'active current-nav' : 'current-nav'}><Icon name="shield" />决策依据</span><span className={view.kind === 'comparison' ? 'active current-nav' : 'current-nav'}><Icon name="compare" />替代方案</span><a href="#/plans" className={view.kind === 'plans' ? 'active' : ''}><Icon name="check" />计划检查</a><a href="#/pv" className={view.kind === 'pv' ? 'active' : ''}><Icon name="sun" />光伏分析</a></nav><div className="sidebar-foot"><span className="live-dot" /><strong>独立解释框架</strong><p>事实留档 · 模型比较<br />执行追踪</p><span className="version">LOCAL / v0.1</span></div></aside><div className="app-body"><header className="topbar"><span className="breadcrumb">家庭储能<span>/</span>{currentName}</span><div><span className="topbar-note">决策透明，安心用电</span><span className="topbar-pill"><span className="live-dot" />本地解释台</span></div></header><main id="main" tabIndex={-1}>{view.kind === 'overview' ? <OverviewPage selectedRun={selectedRun} selectRun={setSelectedRun} /> : view.kind === 'decision' ? <DecisionPage id={view.id} key={view.id} /> : view.kind === 'comparison' ? <ComparisonPage id={view.id} key={view.id} /> : view.kind === 'plans' ? <PlanPage /> : <PVPage />}<footer className="page-footer"><span>电到为止 · 储能决策解释台</span><span>证据可追溯，假设可检查</span></footer></main></div></div>;
 }

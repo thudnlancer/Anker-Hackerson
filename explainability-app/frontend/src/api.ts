@@ -91,6 +91,25 @@ export interface QuestionAnswer {
   intent: 'why' | 'compare_no_charge' | 'power_limit' | 'unsupported';
   answer: string; evidence_refs: string[]; job: Job | null;
 }
+export interface PlanResult {
+  status: 'feasible' | 'infeasible' | 'unsupported' | 'timeout' | 'failed';
+  decision_id: string; message?: string; target_soc_percent?: number;
+  deadline?: string; deadline_step?: number; max_reachable_energy_kwh?: number;
+  target_energy_kwh?: number; expected_completion_step?: number | null;
+  baseline_cost_eur?: number; planned_cost_eur?: number; cost_delta_eur?: number;
+  adjustments?: { kind: string; target_soc_percent?: number; deadline?: string;
+    status: string; cost_delta_eur: number }[];
+  assumptions?: string[]; attribution?: string;
+}
+export interface PlanJob {
+  id: string; decision_id: string; target_soc_percent: number; deadline: string;
+  status: JobStatus; result: PlanResult | null; error: string | null;
+}
+export interface PVDaily {
+  site_id: string; device_date: string; arm: string; steps: number;
+  allocation_method: string; source_kind: string; curtailment_status: string;
+  totals: Record<string, number>; bottlenecks: Record<string, number | null>; caveat: string;
+}
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? undefined : {
@@ -114,4 +133,9 @@ export const api = {
   compare: (id: string, power: number) => request<Job>(`/api/decisions/${encodeURIComponent(id)}/counterfactuals`, { first_charge_kw: power }),
   job: (id: string) => request<Job>(`/api/counterfactuals/${encodeURIComponent(id)}`),
   question: (id: string, question: string) => request<QuestionAnswer>('/api/questions', { decision_id: id, question }),
+  plan: (id: string, targetSoc: number, deadline: string) => request<PlanJob>('/api/plans/feasibility', {
+    decision_id: id, target_soc_percent: targetSoc, deadline,
+  }),
+  planJob: (id: string) => request<PlanJob>(`/api/plans/${encodeURIComponent(id)}`),
+  pvDaily: (siteId: string) => request<{ site_id: string; arm: string; days: PVDaily[] }>(`/api/pv/${encodeURIComponent(siteId)}/daily`),
 };

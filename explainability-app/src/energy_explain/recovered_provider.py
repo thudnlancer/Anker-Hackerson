@@ -59,7 +59,8 @@ class RecoveredMilpProvider:
             return key is not None and abs(a["power_kw"]-first[key])<=TOL
         return False
 
-    def solve(self, snapshot: dict, command_contract: str, *, first_step=None, first_charge_kw=None) -> dict:
+    def solve(self, snapshot: dict, command_contract: str, *, first_step=None, first_charge_kw=None,
+              energy_floor_kwh=None) -> dict:
         self.verify_source()
         optimize_window = self.optimizer()
         import pandas as pd
@@ -71,12 +72,14 @@ class RecoveredMilpProvider:
             raise ModelOutcome("unsupported", "缺少完整且等长的模型输入序列。")
         times = pd.Series(pd.date_range(s["device_time"],periods=n,freq=pd.Timedelta(hours=dt)))
         started = time.perf_counter()
+        floor_kwargs = {"energy_floor_kwh": energy_floor_kwh} if energy_floor_kwh is not None else {}
         result = optimize_window(times,np.array(s["pv_forecast_kw"])*1000,np.array(s["load_forecast_kw"])*1000,
             np.array(s["import_eur_kwh"]),np.array(s["export_eur_kwh"]),s["soc_percent"],
             capacity_kwh=cap,max_power_w=s["max_charge_kw"]*1000,charge_efficiency=s["charge_efficiency"],
             terminal_price=s["terminal_eur_kwh"],degradation_cost_eur_kwh=s["degradation_eur_kwh"],
             soc_min=s["soc_min_percent"],soc_max=s["soc_max_percent"],step_hours=dt,solver="milp",
-            time_limit_seconds=10,command_contract=command_contract,first_step=first_step,first_charge_kw=first_charge_kw)
+            time_limit_seconds=10,command_contract=command_contract,first_step=first_step,
+            first_charge_kw=first_charge_kw,**floor_kwargs)
         ms = (time.perf_counter()-started)*1000
         if result.status != "optimal":
             status = {"limit_reached":"timeout","infeasible":"infeasible"}.get(result.status,"failed")
@@ -101,6 +104,9 @@ class RecoveredMilpProvider:
         if first_step:
             checks.extend(abs(values[0]-first_step[key])<=TOL for key,values in
                 (("charge_kw",charge),("discharge_kw",discharge),("grid_import_kw",gi),("grid_export_kw",go)))
+        if energy_floor_kwh is not None:
+            checks.extend(energy[i] + TOL >= floor for i, floor in enumerate(energy_floor_kwh)
+                          if floor is not None)
         if not all(checks): raise ModelOutcome("failed", "重放计划未通过独立物理、边界或干预校验。")
         purchase, revenue = float(gi@np.array(s["import_eur_kwh"])*dt),float(go@np.array(s["export_eur_kwh"])*dt)
         wear, terminal = float(np.sum(charge+discharge)*s["degradation_eur_kwh"]*dt),float(energy[-1]*s["terminal_eur_kwh"])

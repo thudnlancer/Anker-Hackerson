@@ -180,7 +180,7 @@ class SharedProviderTests(unittest.TestCase):
                 cwd=PROJECT, env=child_environment(), capture_output=True, text=True, timeout=40)
             self.assertEqual(runner.returncode, 0, runner.stderr)
             evidence = output / "explainability-decisions.jsonl"
-            rows = [DecisionIn.model_validate_json(line) for line in evidence.read_text().splitlines()]
+            rows = [DecisionIn.model_validate_json(line) for line in evidence.read_text(encoding="utf-8").splitlines()]
             self.assertEqual(len(rows), 1)
             db = directory / "imported.sqlite"
             args = [sys.executable, "-m", "energy_explain", "import-records", "--file", str(evidence), "--db", str(db)]
