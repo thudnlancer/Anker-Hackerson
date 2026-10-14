@@ -9,15 +9,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .facts import explain
+from .offline_replay import OfflineReplay
 from .providers import get_provider
 from .schemas import DecisionIn, ExecutionEvent, Intervention, PlanFeasibilityIn, PVAccountingIn, Question, SettlementIn
 from .store import Conflict, NotFound, Store
 
 
-def create_app(db_path: str | Path | None = None) -> FastAPI:
+def create_app(db_path: str | Path | None = None, *, offline_trace_path: str | Path | None = None,
+               offline_trace_sha256: str | None = None) -> FastAPI:
     app = FastAPI(title="储能可解释性框架",version="0.1.0",description="输入证据、执行事件与结算由外部模块导入；独立工作进程负责反事实。")
     store = Store(db_path or os.environ.get("ENERGY_EXPLAIN_DB","data/energy.sqlite"))
     app.state.store = store
+    trace_path = offline_trace_path or os.environ.get("ENERGY_EXPLAIN_OFFLINE_TRACE")
+    trace_hash = offline_trace_sha256 or os.environ.get("ENERGY_EXPLAIN_OFFLINE_TRACE_SHA256")
+    app.state.offline_replay = OfflineReplay(trace_path, trace_hash or "") if trace_path else None
 
     @app.exception_handler(NotFound)
     async def missing(request: Request, exc: NotFound):
@@ -37,6 +42,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/health",tags=["运行"])
     def health(): return {"status":"ok","worker":"independent","schema_version":1}
+
+    @app.get("/api/offline-replay",tags=["离线回测"])
+    def offline_replay_summary():
+        if app.state.offline_replay is None:
+            return JSONResponse(status_code=404, content={"detail":"offline replay is not configured"})
+        return app.state.offline_replay.summary()
+
+    @app.get("/api/offline-replay/steps/{index}",tags=["离线回测"])
+    def offline_replay_step(index: int, arm: str = "irradiance"):
+        if app.state.offline_replay is None:
+            return JSONResponse(status_code=404, content={"detail":"offline replay is not configured"})
+        try:
+            return app.state.offline_replay.detail(arm, index)
+        except KeyError:
+            return JSONResponse(status_code=404, content={"detail":"offline replay step not found"})
 
     @app.post("/api/decisions",tags=["接入"])
     def import_decision(record: DecisionIn):

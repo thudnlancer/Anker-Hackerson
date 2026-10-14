@@ -110,6 +110,8 @@ export interface PVDaily {
   allocation_method: string; source_kind: string; curtailment_status: string;
   totals: Record<string, number>; bottlenecks: Record<string, number | null>; caveat: string;
 }
+export interface OfflineReplaySummary { site_id: string; arms: string[]; hours_per_arm: number; time_basis: string; start_local_hour: string; end_local_hour: string; source_sha256: string; source_kind: string; official_score_claim: boolean; negative_price_rows: number; weather_source: string; scope: string }
+export interface OfflineReplayStep { record: Record<string, string | number | boolean>; facts: { text: string; evidence_refs: string[] }[]; source_sha256: string; source_kind: string; time_basis: string; capabilities: { counterfactual: boolean; plan_feasibility: boolean }; execution_status: string; settlement: null; scope: string }
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? undefined : {
@@ -138,4 +140,6 @@ export const api = {
   }),
   planJob: (id: string) => request<PlanJob>(`/api/plans/${encodeURIComponent(id)}`),
   pvDaily: (siteId: string, arm = 'zero_flow') => request<{ site_id: string; arm: string; days: PVDaily[] }>(`/api/pv/${encodeURIComponent(siteId)}/daily?arm=${encodeURIComponent(arm)}`),
+  offlineReplay: () => request<OfflineReplaySummary>('/api/offline-replay'),
+  offlineReplayStep: (index: number, arm = 'irradiance') => request<OfflineReplayStep>(`/api/offline-replay/steps/${index}?arm=${encodeURIComponent(arm)}`),
 };

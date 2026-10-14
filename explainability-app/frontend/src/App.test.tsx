@@ -72,6 +72,25 @@ beforeEach(() => {
 });
 
 describe('储能解释用户流程', () => {
+  it('W1 单站只读回测明确本地小时和非在线证据边界', async () => {
+    window.location.hash = '#/replay';
+    const fetchMock = mockApi({
+      '/api/offline-replay': { site_id: '1', arms: ['self_consumption', 'persistence', 'irradiance'], hours_per_arm: 168,
+        time_basis: 'dataset_local_hour', start_local_hour: '2026-09-14 14:00:00', end_local_hour: '2026-09-21 13:00:00',
+        source_sha256: 'a'.repeat(64), source_kind: 'offline_strategy_replay', official_score_claim: false, negative_price_rows: 0,
+        weather_source: 'future_observed_shortwave_proxy_not_archived_API_forecast', scope: 'offline' },
+      '/api/offline-replay/steps/0?arm=irradiance': { record: { local_hour: '2026-09-14 14:00:00', solver_status: 'optimal' },
+        facts: [{ text: '计划、指令和物理流分开', evidence_refs: ['trace:site_1_trace.csv#/irradiance/0/flow'] }],
+        source_sha256: 'a'.repeat(64), source_kind: 'offline_strategy_replay', time_basis: 'dataset_local_hour',
+        capabilities: { counterfactual: false, plan_feasibility: false }, execution_status: 'not_observed', settlement: null,
+        scope: '不是在线决策或官方结算' },
+    });
+    render(<App />);
+    expect(await screen.findByText('计划、指令和物理流分开')).toBeInTheDocument();
+    expect(screen.getByText(/没有设备时区，不能用于在线 deadline/)).toBeInTheDocument();
+    expect(screen.getByText(/不是现场设备或官方结算/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([path]) => path === '/api/offline-replay/steps/0?arm=irradiance')).toBe(true);
+  });
   it('呈现人工来源、候选建议与正确场次，刷新保持选择', async () => {
     const fetchMock = mockApi(); render(<App />);
     expect(await screen.findByRole('heading', { name: '低价充电站' })).toBeInTheDocument();

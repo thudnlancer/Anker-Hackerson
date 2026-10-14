@@ -44,4 +44,39 @@ Get-FileHash explainability-app/artifacts/e5-real-replay/*,explainability-app/ar
 
 ## 尚未签核的范围
 
+## W1 单站回测接入（后续增量）
+
+增量代码未改变 E5 结论：将 W1 `site_1_trace.csv` 作为独立、只读的 `offline-replay` 资源接入现有解释应用。它不会写入决策/执行/结算表，不进入站点总览的在线决策列表；页面入口为 `/#/replay`，API 为 `/api/offline-replay` 和 `/api/offline-replay/steps/{index}?arm=...`。字段映射、源哈希和复现命令见 [W1 单站接入说明](w1-offline-replay-integration.md)。
+
+真实源文件哈希：`c0a7ff9479f2f8faffc6791cd4c0670f38107beba22599fcfd2c4a5479e99fbf`。三臂各 168 行，原始时间 `2026-09-14 14:00:00` 到 `2026-09-21 13:00:00`，只标记 `dataset_local_hour`；不补设备时区。窗口 `sell < 0` 样本为 0，不能据此声称负电价能力。W1 的 `zero_flow` 只作离线模式语义，非硬件验证。
+
+本轮增量预验：W1 映射 focused tests `13 passed`（应用自身 `.venv`）；带根项目依赖的实验环境应用回归 `97 passed + 49 subtests`；前端 `16 passed`、build 通过；配置真实 trace 的 API/浏览器一站 smoke `passed=true`、无 page error。应用独立 `.venv` 全套跨仓测试有 1 项因缺少根项目 `joblib` 失败（96 passed），该依赖不在解释应用锁文件；不能将其误报成接入逻辑失败。
+
+## 冻结提交与隔离集成复验
+
+代码冻结提交：`257bf132cfaab3a3cafd0f12081c58eb98e5af24`（8 个文件）。前置离线核算代码选择性集成提交：`8362854`（5 个实现/测试文件，来源 `5b5922d`，排除旧 README/共享状态）。隔离 worktree `D:\Anker黑客松\w2-e5-integration-check` 从主基线 `040257d` 开始，先接入本轮代码为 `64b9641`，再接入前置代码为 `8362854`。工作树干净；没有修改主仓其他 worker 的源码。
+
+集成侧可安全在新的独立路径复现，不要在脏主工作树直接 cherry-pick：
+
+```powershell
+git worktree add --detach 'D:\Anker黑客松\w2-e5-review' 040257d
+git -C 'D:\Anker黑客松\w2-e5-review' cherry-pick 8362854 257bf13
+Set-Location 'D:\Anker黑客松\w2-e5-review\explainability-app\frontend'
+npm ci
+```
+
+然后按讲稿依次运行应用测试、前端测试/构建、导入、准备、API/worker、浏览器和五类验收。真实复跑结果：应用 **96 passed + 49 subtests**（含主分支额外集成测试），前端 **15 passed**，build 通过；三站各 8 个本地日期；五类验收通过；浏览器 **7 passed / errors=[]**，API/worker 已停止。测试唯一 warning 为 Starlette TestClient/httpx 弃用提示，不影响结果。
+
+复验产物位于隔离树 `explainability-app/artifacts/`，均忽略且未跟踪：
+
+| 复验产物 | SHA-256 |
+|---|---|
+| `e5-real-replay/demo-verified.sqlite` | `76bb18f1637373935cdfb546d0b5414cfc7fc3aa85f831d0d948347486216c90` |
+| `e5-real-replay/import-report.json` | `f0e98cd7ad5abb1e90a16d7213588571a5f9004fa5e40cfda3d7044aeb70c401` |
+| `e5-real-replay/pv-accounting.jsonl` | `3f79b4e8e5c62e930ff063f5b34dd2f5506a485ebfc349cf7d11d3e2c40636fe` |
+| `e5-floor-recheck/acceptance.json` | `b8d528c94a6e2ee8e1d185ebec21892200bf752261138d3236f33f4262eac096` |
+| `browser/result.json` | `47a6c3a26df97a82e0d54ed8d623dfcbba252b87dba57a5a7a14d8321e9d0184` |
+
+## 负责人签核
+
 E5 待集成。集成负责人实际复跑应用测试、前端测试/构建、MILP 五类验收和演示脚本后，再给出验收结论。练习站离线核算不能证明现场控制、官方结算、弃光测量、负电价应对或完整决策回放；原始本地小时不能转换成在线 deadline。
