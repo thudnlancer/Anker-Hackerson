@@ -220,7 +220,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
 | W1 | 待开始 | A5/A6 口径收尾 | 待建立独立 worktree | A5 归因测试与报告 |
-| W2 | 待集成 | E4-1 已接入；真实优化器五类截止约束验收通过；三站历史 replay 已导入独立 E5 核算库 | `feat/w2-e4-product` @ `5b5922d` | 集成负责人核对交付；演示需标注练习站离线回放和估算边界 |
+| W2 | 待集成 | E5 实现已冻结；三站讲稿、界面证据边界与隔离集成复验完成 | 代码 `257bf13`；前置选择性集成 `8362854` | 负责人接入主分支并签核；不得提前改为已验收 |
 | W3 | 待开始 | B4 本地采集冗余设计落地 | 待建立独立 worktree | watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
 
@@ -233,6 +233,8 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | 2026-10-14 | W2 | 完成 E4-2/E4-4 第一版 | 持久计划任务队列、基准重放对账、截止 SOC 约束接口、明确状态、调整建议；实现 trace 日核算导入/查询、JSONL CLI 与两页 UI。真实共享优化器调用待 E4-1 进入基线；暂无三站正式 trace 导入 | 本分支新加 94 后端测试、14 前端测试通过；build 通过 |
 
 ### 接口/阻塞记录
+
+2026-10-14 W2 冻结交接：代码 `257bf13`，主基线 `040257d` 的隔离集成树已实际复跑应用 96 passed + 49 subtests、前端 15 passed/build、五类真实 MILP 验收和浏览器 7 组检查（errors=[]）。前置离线核算代码单独选择性集成为 `8362854`，未覆盖主仓其他 worker 改动。E5 待集成签核，不是已验收；详见 [冻结交接](explainability-app/docs/w2-freeze-handoff.md) 与 [演示讲稿](explainability-app/docs/e5-demo-runbook.md)。数据库和运行报告未跟踪，交付脚本/命令及哈希，不提交二进制。PV 历史核算与人工 E1–E3 示例严格分离，不称完整决策回放。
 
 2026-10-14 W2 接续：E4-1 集成提交 `82ba72c` 已接入为 `07140ea`，模型锁定 `shared-milp-603de45c-cf1`。真实优化器五类验收通过；3 站各 168 小时 replay 已生成并导入 24 site-days。产物为 `explainability-app/artifacts/e4-floor-acceptance/acceptance.json` 与 `explainability-app/artifacts/e5-real-replay/import-report.json`。应用回归 95 passed + 49 subtests；floor/桥接定向回归 11 passed + 6 subtests。细节见 [W2 E4/E5 接续核验](explainability-app/docs/w2-e4-e5-preflight.md)。
 
