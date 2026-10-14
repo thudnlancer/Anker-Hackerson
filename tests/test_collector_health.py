@@ -3,7 +3,12 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from energy_lab.collector_health import NodeHealth, classify_cluster, evaluate_node
+from collector_monitor import run_round
+import json
+from datetime import datetime, timezone
+import tempfile
 
 
 class EvaluateNodeTests(unittest.TestCase):
@@ -66,6 +71,39 @@ class ClassifyClusterTests(unittest.TestCase):
     def test_all_clear_and_empty(self):
         self.assertEqual(classify_cluster({"nodeA": 0}), "all_clear")
         self.assertEqual(classify_cluster({}), "no_nodes")
+
+
+class MonitorRoundTests(unittest.TestCase):
+    def test_round_records_transition_and_never_reports_writes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "heartbeat_nodeA.json").write_text(json.dumps({
+                "node_id": "nodeA", "pid": 12, "cycle": 4,
+                "last_cycle_at": "2026-10-14T00:00:00+00:00",
+                "consecutive_errors": 0, "cache_bytes": {"1": 20},
+            }), encoding="utf-8")
+            states = {}
+            report = run_round(root, ["nodeA"], states, stale_after=15,
+                               dead_after=60, recovering_rounds=3,
+                               now=datetime(2026, 10, 14, 0, 2, tzinfo=timezone.utc))
+        self.assertEqual(report["nodes"]["nodeA"]["state"], "DEAD")
+        self.assertEqual(report["transitions"][0]["reason"],
+                         "heartbeat_age_exceeds_dead_after")
+        self.assertEqual(report["ha_writes_performed"], 0)
+
+    def test_all_nodes_errors_are_upstream_and_do_not_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for node in ("nodeA", "nodeB"):
+                (root / f"heartbeat_{node}.json").write_text(json.dumps({
+                    "last_cycle_at": "2026-10-14T00:00:00+00:00",
+                    "consecutive_errors": 2,
+                }), encoding="utf-8")
+            report = run_round(root, ["nodeA", "nodeB"], {}, stale_after=15,
+                               dead_after=60, recovering_rounds=3,
+                               now=datetime(2026, 10, 14, 0, 0, 1, tzinfo=timezone.utc))
+        self.assertEqual(report["cluster"], "cluster_upstream_suspected")
+        self.assertTrue(any(item["type"] == "cluster" for item in report["transitions"]))
 
 
 if __name__ == "__main__":

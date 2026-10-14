@@ -13,7 +13,7 @@ import joblib
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-from energy_lab.online_contract import OnlineContractError, hourly_observation_history, load_observation_history
+from energy_lab.online_contract import OnlineContractError, hourly_observation_history, merge_observation_history
 from energy_lab.online_inference import predict_online_power
 from run_online_inference_dry_run import tail_is_contiguous
 
@@ -39,7 +39,8 @@ def drop_hours(history: pd.DataFrame, stamps: set) -> pd.DataFrame:
 
 def evaluate(cache_dir: Path, site: str, models, *, keep_stamps, minimum_hours,
              max_missing_ratio, max_gap_hours, max_stale_hours) -> dict:
-    history = load_observation_history(cache_dir / f"site_{site}.jsonl")
+    merged = merge_observation_history(cache_dir)
+    history = merged[merged.site == str(site)].reset_index(drop=True) if not merged.empty else merged
     tail = history["time"].max()
     trimmed = drop_hours(history, keep_stamps) if keep_stamps is not None else history
     try:
@@ -87,7 +88,8 @@ def main() -> None:
               "weather_provenance": "synthetic_replay_of_observed_weather",
               "scoreable_result": False, "cases": {}}
     for site in sites:
-        history = load_observation_history(args.cache_dir / f"site_{site}.jsonl")
+        merged = merge_observation_history(args.cache_dir)
+        history = merged[merged.site == str(site)].reset_index(drop=True) if not merged.empty else merged
         hourly_index = pd.date_range(history["time"].max() - pd.Timedelta(hours=72), periods=73, freq="h")
         cases = {"clean_history": None,
                  "two_isolated_missing_hours": {hourly_index[-8], hourly_index[-40]},

@@ -321,7 +321,13 @@ def merge_observation_history(path: Path) -> pd.DataFrame:
     if not Path(path).is_dir():
         return load_observation_history(Path(path))
     frames = []
-    for order, shard in enumerate(sorted(Path(path).glob("site_*.jsonl"))):
+    # Remote shards are copied into a dedicated child directory; do not glob
+    # recursively through unrelated artifacts or temporary files.
+    shards = sorted(Path(path).glob("site_*.jsonl"))
+    remote_ingest = Path(path) / "remote_ingest"
+    if remote_ingest.is_dir():
+        shards += sorted(remote_ingest.glob("site_*.jsonl"))
+    for order, shard in enumerate(shards):
         frame = load_observation_history(shard)
         if frame.empty:
             continue

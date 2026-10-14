@@ -20,20 +20,28 @@ param(
     [string]$NodeId = "nodeA",
     [int]$DeadAfterSeconds = 60,
     [int]$CrashLoopWindowSeconds = 300,
-    [int]$CrashLoopMaxRestarts = 3
+    [int]$CrashLoopMaxRestarts = 3,
+    [string]$OfflineFixture = ""
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$fixture = $null
+if ($OfflineFixture) {
+    $fixture = Get-Content -Raw -Encoding UTF8 -LiteralPath $OfflineFixture | ConvertFrom-Json
+    $root = Split-Path -Parent (Resolve-Path -LiteralPath $OfflineFixture)
+}
 $healthDir = Join-Path $root "outputs/collector_health"
 $logsDir = Join-Path $root "logs"
-$statePath = Join-Path $healthDir "watchdog_state.json"
+$statePath = Join-Path $healthDir "watchdog_state_$NodeId.json"
 $disabledPath = Join-Path $healthDir "$NodeId.disabled"
 New-Item -ItemType Directory -Force -Path $healthDir, $logsDir | Out-Null
 
 function Write-Action($action, $detail) {
     $line = @{ ts = (Get-Date).ToUniversalTime().ToString("o"); node = $NodeId; action = $action; detail = $detail }
     Write-Output ($line | ConvertTo-Json -Compress)
+    ($line | ConvertTo-Json -Compress) | Add-Content -LiteralPath (Join-Path $healthDir "watchdog.jsonl") -Encoding utf8
 }
 
 if (Test-Path -LiteralPath $disabledPath) {
@@ -43,30 +51,38 @@ if (Test-Path -LiteralPath $disabledPath) {
 
 $state = @{ restarts = @(); backoff_until = $null; backoff_stage = 0 }
 if (Test-Path -LiteralPath $statePath) {
-    try { $state = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json } catch { }
+    try { $state = Get-Content -Raw -Encoding UTF8 -LiteralPath $statePath | ConvertFrom-Json } catch { }
     if (-not $state.restarts) { $state | Add-Member -NotePropertyName restarts -NotePropertyValue @() -Force }
     if (-not $state.PSObject.Properties["backoff_stage"]) { $state | Add-Member -NotePropertyName backoff_stage -NotePropertyValue 0 -Force }
     if (-not $state.PSObject.Properties["backoff_until"]) { $state | Add-Member -NotePropertyName backoff_until -NotePropertyValue $null -Force }
 }
 
 $now = Get-Date
+if ($fixture) { $now = [datetime]$fixture.now }
 if ($state.backoff_until -and ([datetime]$state.backoff_until) -gt $now) {
     Write-Action "backoff_skip" ("until " + ([datetime]$state.backoff_until).ToUniversalTime().ToString("o"))
     exit 0
 }
 
 function Get-CollectorProcesses {
+    if ($fixture) {
+        if ($fixture.process_exists) { [pscustomobject]@{ ProcessId = -1 } }
+        return
+    }
     Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match "collect_online_history" }
+        Where-Object { $_.CommandLine -and $_.CommandLine -match "collect_online_history" -and
+            $_.CommandLine -match ("--node-id\s+" + [regex]::Escape($NodeId)) }
 }
 
 function Start-Collector {
+    if ($fixture) { Write-Action "started" "offline simulated process; no network or process launch"; return }
     $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
     $outLog = Join-Path $logsDir "collector_$stamp.out.log"
     $errLog = Join-Path $logsDir "collector_$stamp.err.log"
     $py = (Get-Command python -ErrorAction Stop).Source
     Start-Process -FilePath $py -WorkingDirectory $root -WindowStyle Hidden `
-        -ArgumentList @("collect_online_history.py", "--config", "local_online_config.json", "--iterations", "0", "--node-id", $NodeId) `
+        -ArgumentList @("collect_online_history.py", "--config", "local_online_config.json", "--iterations", "0", "--node-id", $NodeId,
+                        "--health-dir", $healthDir) `
         -RedirectStandardOutput $outLog -RedirectStandardError $errLog
     Write-Action "started" "logs: $outLog"
 }
@@ -82,15 +98,19 @@ if ($processes.Count -eq 0) {
     $dead = $false
     if (Test-Path -LiteralPath $monitorStatus) {
         try {
-            $status = Get-Content -Raw -LiteralPath $monitorStatus | ConvertFrom-Json
-            if ($status.nodes.$NodeId.state -eq "DEAD") { $dead = $true; $reason = "monitor_state_DEAD" }
+            $status = Get-Content -Raw -Encoding UTF8 -LiteralPath $monitorStatus | ConvertFrom-Json
+            $monitorAge = ($now - [datetime]$status.checked_at).TotalSeconds
+            if ($monitorAge -ge 0 -and $monitorAge -le $DeadAfterSeconds -and
+                $status.nodes.$NodeId.state -eq "DEAD") {
+                $dead = $true; $reason = "monitor_state_DEAD"
+            }
         } catch { }
     }
     if (-not $dead) {
         $heartbeatPath = Join-Path $healthDir "heartbeat_$NodeId.json"
         if (Test-Path -LiteralPath $heartbeatPath) {
             try {
-                $heartbeat = Get-Content -Raw -LiteralPath $heartbeatPath | ConvertFrom-Json
+                $heartbeat = Get-Content -Raw -Encoding UTF8 -LiteralPath $heartbeatPath | ConvertFrom-Json
                 $age = ($now - [datetime]$heartbeat.last_cycle_at).TotalSeconds
                 if ($age -gt $DeadAfterSeconds) { $dead = $true; $reason = "heartbeat_age_" + [int]$age + "s" }
             } catch { }
@@ -127,7 +147,7 @@ if ($recent.Count -ge $CrashLoopMaxRestarts) {
 
 foreach ($proc in $processes) {
     Write-Action "stopping" ("pid " + $proc.ProcessId + " (" + $reason + ")")
-    Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    if (-not $fixture) { Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 Start-Collector
 $state.restarts = @($recent + $now.ToUniversalTime().ToString("o"))

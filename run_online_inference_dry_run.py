@@ -13,7 +13,7 @@ import joblib
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-from energy_lab.online_contract import (hourly_observation_history, load_observation_history,
+from energy_lab.online_contract import (hourly_observation_history, merge_observation_history,
                                         OnlineContractError, infer_payload_timezone)
 from energy_lab.online_inference import predict_online_power
 
@@ -92,8 +92,9 @@ def main() -> None:
     report = {"mode": "online_inference_dry_run", "writes_performed": 0,
               "control_actions_generated": False, "sites": {}}
     args.output.mkdir(parents=True, exist_ok=True)
+    merged = merge_observation_history(args.cache_dir)
     for site in sorted(payload["stations"], key=str):
-        history = load_observation_history(args.cache_dir / f"site_{site}.jsonl")
+        history = merged[merged.site == str(site)].reset_index(drop=True) if not merged.empty else merged
         device_time = payload["stations"][site]["state"].get("device_time")
         try:
             # The collector may advance while this snapshot is being fetched.

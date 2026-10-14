@@ -49,6 +49,18 @@ class MergeObservationHistoryTests(unittest.TestCase):
             frame = merge_observation_history(root)
         self.assertEqual(len(frame), 2)
 
+    def test_merge_includes_remote_ingest_shards(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            remote = root / "remote_ingest"
+            append_observation(root, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                  "2026-10-10T06:00:00+00:00", soc=40), node_id="nodeA")
+            append_observation(remote, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                    "2026-10-10T06:00:05+00:00", soc=41), node_id="nodeB")
+            frame = merge_observation_history(root)
+        self.assertEqual(len(frame), 1)
+        self.assertEqual(float(frame.iloc[0]["soc"]), 41)
+
     def test_merge_accepts_single_file_and_empty_dir(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
