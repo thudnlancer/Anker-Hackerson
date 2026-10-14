@@ -58,7 +58,8 @@ def main() -> None:
     # dependencies. Shared collector/calibration work in the same worktree is
     # intentionally outside this submission and must not alter this hash set.
     source_files = [ROOT / name for name in (
-        "run_contest_strategy_replay.py", "prepare_f2_command.py", "run_live.py", "build_f1_manifest.py",
+        "run_contest_strategy_replay.py", "prepare_f2_command.py", "validate_f2_output.py",
+        "run_live.py", "build_f1_manifest.py",
         "src/energy_lab/backtest.py", "src/energy_lab/contest_replay.py",
         "src/energy_lab/execute.py", "src/energy_lab/interface_contract.py",
         "src/energy_lab/model.py", "src/energy_lab/rolling.py",
@@ -85,6 +86,7 @@ def main() -> None:
                  ROOT / "tests/test_contest_replay.py",
                  ROOT / "tests/test_rolling_milp.py",
                  ROOT / "tests/test_prepare_f2_command.py",
+                 ROOT / "tests/test_validate_f2_output.py",
                  *(ROOT / directory / filename
                    for directory in replay_dirs.values()
                    for filename in ("manifest.json", "summary.json"))]

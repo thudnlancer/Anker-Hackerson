@@ -139,7 +139,8 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
                 records.append({"site": path.stem, "time": current.time, "arm": arm,
                                 "solver_status": status, "nonoptimal_solves": nonoptimal,
                                 "accepted_incumbent": accepted_incumbent, "mip_gap": mip_gap,
-                                "fallback": fallback, "gate_accepted": gate_accepted,
+                                "fallback": fallback, "fallback_reason": status if fallback else None,
+                                "gate_accepted": gate_accepted,
                                 "gate_worst_gain_eur": margin,
                                 "horizon_hours": len(published), "terminal_estimate": terminal,
                                 "calibration_samples": (paths["calibration"] or {}).get("samples", 0),
@@ -192,6 +193,8 @@ def main():
     parser.add_argument("--terminal-price-mode", choices=("a5_eval_start_mean", "current_visible_mean", "zero"),
                         default="a5_eval_start_mean",
                         help="diagnostic terminal inventory valuation rule; current_visible_mean is causal")
+    parser.add_argument("--f1-manifest-sha256", default=None,
+                        help="signed F1 manifest hash binding this replay; required for formal F2")
     args = parser.parse_args()
     if min(args.max_sites, args.workers) < 1 or args.offset < 0:
         parser.error("positive sites/workers and nonnegative offset required")
@@ -209,6 +212,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     sources = [Path(__file__), *Path("src/energy_lab").glob("*.py")]
     manifest = {"parameters": vars(args), "data_sha256": {str(p): digest(p) for p in paths},
+                "f1_manifest_sha256": args.f1_manifest_sha256,
                 "source_sha256": {str(p): digest(p) for p in sources},
                 "no_model_training": True, "initial_soc": 50., "hours": 168,
                 "weather_source": "future_observed_shortwave_proxy_not_archived_API_forecast"}
@@ -227,6 +231,7 @@ def main():
                               "scores": {k: v["saving_settled_percent_estimate"] for k, v in report["arms"].items()}}), flush=True)
     reports.sort(key=lambda r: int(r["site"]))
     summary = {"mode": "offline_contest_formula_estimate", "writes_performed": 0,
+               "f1_manifest_sha256": args.f1_manifest_sha256,
                "successful_plan_idle_mode": args.hold_mode,
                "terminal_price_mode": args.terminal_price_mode,
                "accounting_arm": "zero_flow" if args.hold_mode == "zero_flow" else "self_use_diagnostic",

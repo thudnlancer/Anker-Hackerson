@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 
 
-def command_from_manifest(manifest: dict, *, data: Path, output: Path, workers: int) -> list[str]:
+def command_from_manifest(manifest: dict, *, data: Path, output: Path, workers: int,
+                          manifest_sha256: str | None = None) -> list[str]:
     signature = manifest["signature"]
     if not (manifest.get("f2_authorized") is True
             and signature.get("f2_authorization") is True
@@ -27,6 +28,7 @@ def command_from_manifest(manifest: dict, *, data: Path, output: Path, workers: 
         raise ValueError("online PV scope changed; review F1")
     return ["python", "run_contest_strategy_replay.py", "--data", str(data),
             "--output", str(output), "--stage", "4", "--max-sites", "100",
+            "--f1-manifest-sha256", manifest_sha256 or "<signed-manifest-sha256>",
             "--workers", str(workers), "--wear", str(p["degradation_cost_eur_per_kwh"]),
             "--solver-time-limit", str(p["solver_seconds"]),
             "--hold-mode", p["successful_plan_idle"],
@@ -51,7 +53,8 @@ def main() -> None:
     if args.workers < 1:
         parser.error("workers must be positive")
     command = command_from_manifest(json.loads(raw), data=args.data,
-                                    output=args.output, workers=args.workers)
+                                    output=args.output, workers=args.workers,
+                                    manifest_sha256=args.expected_sha256.lower())
     print(json.dumps({"manifest_sha256": args.expected_sha256.lower(),
                       "command_argv": command, "started": False}, ensure_ascii=False, indent=2))
 
