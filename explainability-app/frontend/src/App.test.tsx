@@ -203,7 +203,7 @@ describe('储能解释用户流程', () => {
   });
   it('光伏页标注回放、估算分摊与弃光未测', async () => {
     window.location.hash = '#/pv';
-    mockApi({ '/api/pv/1/daily': { site_id: '1', arm: 'zero_flow', days: [{
+    const fetchMock = mockApi({ '/api/pv/1/daily?arm=zero_flow': { site_id: '1', arm: 'zero_flow', days: [{
       site_id: '1', device_date: '2031-01-01', arm: 'zero_flow', steps: 24,
       allocation_method: 'estimate_pv_first_to_load_then_battery_then_grid', source_kind: 'replay_trace',
       curtailment_status: 'not_measured', totals: { pv_generated_kwh: 3, direct_self_use_kwh: 1,
@@ -216,5 +216,27 @@ describe('储能解释用户流程', () => {
     expect(screen.getByText('直接供负载（估算）')).toBeInTheDocument();
     expect(screen.getByText('未提供功率上限')).toBeInTheDocument();
     expect(screen.getByText(/不能核算弃光/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('回放口径'), { target: { value: 'irradiance' } });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => path === '/api/pv/1/daily?arm=irradiance')).toBe(true));
+  });
+  it('历史练习臂显著标注五项证据边界', async () => {
+    window.location.hash = '#/pv';
+    mockApi({ '/api/pv/1/daily?arm=irradiance': { site_id: '1', arm: 'irradiance', days: [{
+      site_id: '1', device_date: '2026-09-14', arm: 'irradiance', steps: 10,
+      allocation_method: 'estimate_pv_first_to_load_then_battery_then_grid', source_kind: 'replay_trace',
+      curtailment_status: 'not_measured', totals: { pv_generated_kwh: 3, direct_self_use_kwh: 1,
+        pv_to_battery_kwh: 1, pv_to_grid_kwh: 1, grid_export_kwh: 1, negative_export_loss_eur: 0 },
+      bottlenecks: { battery_full_steps: 0, charge_limit_steps: 0, negative_price_export_steps: 0 },
+      caveat: '时间口径为 dataset_local_hour。',
+    }] } });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('回放口径'), { target: { value: 'irradiance' } });
+    const boundary = await screen.findByLabelText('三站历史回放证据边界');
+    expect(boundary).toHaveTextContent('不是比赛现场三台设备');
+    expect(boundary).toHaveTextContent('未来实测短波辐照度代理');
+    expect(boundary).toHaveTextContent('not_measured');
+    expect(boundary).toHaveTextContent('没有负价样本');
+    expect(boundary).toHaveTextContent('不得用于在线 deadline 或跨时区比较');
+    expect(boundary).toHaveTextContent('不是一条完整决策回放');
   });
 });

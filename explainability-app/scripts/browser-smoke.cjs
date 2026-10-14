@@ -52,6 +52,20 @@ const path = require('node:path');
     await page.getByText('当前使用降级方案',{exact:true}).waitFor();
     assert.match(await page.locator('.fact-list').innerText(),/48 小时/);
     checks.push('stale history and explicit fallback assumptions');
+    await page.getByRole('link',{name:'光伏分析',exact:true}).click();
+    await page.getByLabel('回放口径').selectOption('irradiance');
+    for (const site of ['1','2','3']) {
+      await page.getByLabel('站点编号').fill(site);
+      await page.getByText('2026-09-14',{exact:true}).waitFor();
+      const boundary = page.getByLabel('三站历史回放证据边界');
+      await boundary.getByText('不是比赛现场三台设备').waitFor();
+      await boundary.getByText('未来实测短波辐照度代理').waitFor();
+      await boundary.getByText('not_measured').waitFor();
+      await boundary.getByText('没有负价样本').waitFor();
+      await boundary.getByText('不得用于在线 deadline 或跨时区比较').waitFor();
+      assert.ok(await page.locator('.pv-day').count() > 0);
+    }
+    checks.push('three-site irradiance replay with visible evidence boundaries');
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('link',{name:'站点总览',exact:true}).click();
     await page.getByRole('heading',{name:'site-01',exact:true}).waitFor();
