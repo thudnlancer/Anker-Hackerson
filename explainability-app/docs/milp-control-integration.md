@@ -1,8 +1,8 @@
 # 有限 MILP 下发、回读与恢复接入
 
-`run_milp_live.py` 将同次真实共享 MILP 求解的候选接到 HA 服务，再把实际服务回执与遥测回读追加到解释库。本入口按站点顺序各尝试一次，结束后恢复本入口触碰的站点为自发自用；它是三站有限验收入口，尚不是整场持续控制器。默认只生成候选，不下发 HA 服务，不启动或复位比赛。
+`run_milp_live.py` 将同次真实共享 MILP 求解的候选接到 HA 服务，再把实际服务回执与遥测回读追加到解释库。本入口按站点顺序各尝试一次，每站回读后立即恢复自发自用，再处理下一站；它是三站有限验收入口，尚不是整场持续控制器。默认只生成候选，不下发 HA 服务，不启动或复位比赛。
 
-本次用户选择“三站有限下发与回读，验证后恢复自发自用”。现场预检看到上一场已经 `ended`，尚未真正下发；不能据此称三站现场控制验收通过。此前完整模拟保留的 MILP 记录属于 shadow 候选，实际模拟成绩不能归功于这些候选。后续验收必须记录实际下发、回读及恢复结果，任一环节缺证据就保留未确认状态。
+首版现场验收目标是“三站有限下发与回读，验证后恢复自发自用”。此前 shadow 候选没有参与设备控制，实际模拟成绩不能归功于这些候选。现场验收必须记录实际下发、回读及恢复结果，任一环节缺证据就保留未确认状态。本文件记录接口与操作契约；现场 run、连接地址、原始观测和最终结果仅保留在本机 Git 忽略的输出目录，不预先声称现场验收成功。
 
 ## 先确定运行范围
 
@@ -26,7 +26,19 @@ source ../explainability-app/.venv/bin/activate
 export PYTHONPATH=src:explainability-app/src
 ```
 
-使用已有私有 `local_online_config.json`，或仅在该文件尚不存在时以 [配置模板](../../milp_live_config.example.json) 创建它，再在本机填入授权连接值。模板仅包含占位符，不能直接连接服务。HA 可使用 token 或既有登录账户；使用登录方式时将 `ha_token` 设为 `null`，填写用户名与密码。不要把真实值加入示例、报告或 Git，也不要覆盖已有私有配置。
+使用已有私有 `local_online_config.json`，或仅在该文件尚不存在时以 [配置模板](../../milp_live_config.example.json) 创建它，再在本机填入授权连接值。模板仅包含占位符，不能直接连接服务。HA 可使用 token 或既有登录账户；使用登录方式时 `ha_token` 保持占位符或设为 `null`，填写用户名与密码。不要把真实值加入示例、报告或 Git，也不要覆盖已有私有配置。
+
+凭据也可由本机凭据工具或启动器注入**当前进程环境**，避免写进配置或命令历史。CLI 只用以下变量补充空值、`null` 或占位符字段；已有实际配置值优先，环境变量不会覆盖它。连接地址、站点映射及权限 flags 仍来自私有 JSON。
+
+| 进程环境变量 | 补充的配置字段 |
+| --- | --- |
+| `ANKER_HA_TOKEN` | `ha_token` |
+| `ANKER_HA_USERNAME` | `ha_username` |
+| `ANKER_HA_PASSWORD` | `ha_password` |
+| `ANKER_SIM_USERNAME` | `sim_username` |
+| `ANKER_SIM_PASSWORD` | `sim_password` |
+
+环境注入仅适用于本入口，不表示其他既有 CLI 也读取这些变量。无需把环境导出到日志或提交 `.env` 文件；生成的运行报告不保存这些变量。
 
 模板中的三个站点 suffix 要对应 HA 实体前缀，且互不重复。base URL 只填服务地址，禁止用户信息、查询参数及 fragment，不使用 `http://user:password@host/`。运行配置仍支持既有容量等字段，但本控制器实际复用共享 MILP 的模型参数；修改配置数字不能代替模型校准或单位检查。
 
@@ -62,14 +74,27 @@ API、runner 与 worker 必须使用**同一个解释数据库**。控制 journa
 只读预检通过、现场运行范围满足条件后，本次授权的有限 mock 验收使用：
 
 ```bash
-python run_milp_live.py --config local_online_config.json --db explainability-app/data/milp-control.sqlite --journal explainability-app/data/milp-control-journal.sqlite --run-id milp-control-mock-001 --live --scope mock --readback-seconds 12 --solver-seconds 1 --output outputs/milp-control/mock-001
+python run_milp_live.py --config local_online_config.json --db explainability-app/data/milp-control.sqlite --journal explainability-app/data/milp-control-journal.sqlite --run-id milp-control-mock-001 --live --scope mock --expected-contest-start "${SELECTED_MOCK_START:?Set the selected mock start_at first}" --readback-seconds 12 --solver-seconds 1 --output outputs/milp-control/mock-001
 ```
 
-如果明确选择自由运行验收，使用新的 run/output，并把 scope 改为 `free-run`；仍必须先读到 simulator `mode=idle`。上面的命令不会启动比赛，也不会等待一场新比赛自动开始。`--device-timezone` 只在已确认设备时钟坐标时填写；无法由价格时间戳推断时区且没有显式坐标时停止，不把本机时区当设备时区。
+`SELECTED_MOCK_START` 须事先设为只读预检所确认的目标 mock `start_at` 原始字符串；该参数逐字匹配所选择的活动窗口，避免误操作另一场 mock。场次 `start_at` 是模拟器计划的开赛时间，**不是 runner 进程启动时间**。它不启动或切换比赛，不把准备窗口变成 running；未提供该可选参数时仍会绑定启动时读到的当前完整活动窗口。请勿在参数中填写本机时间或旧场 start_at。
+
+部分环境只有进入第三方模式后才异步启用 flow/number 实体。若预检确定需要这个兼容路径，在**上述同一条有限验收命令**末尾追加 `--prepare-controls`；这是一项额外的模式准备写入，默认不开启，不需要时省略。不要把基础命令与兼容命令作为两次连续验收执行。
+
+```bash
+# 仅在需要异步实体激活时，选择这一条；与上面的默认命令二选一。
+python run_milp_live.py --config local_online_config.json --db explainability-app/data/milp-control.sqlite --journal explainability-app/data/milp-control-journal.sqlite --run-id milp-control-mock-001 --live --scope mock --expected-contest-start "${SELECTED_MOCK_START:?Set the selected mock start_at first}" --readback-seconds 12 --solver-seconds 1 --output outputs/milp-control/mock-001 --prepare-controls
+```
+
+如果明确选择自由运行验收，使用新的 run/output，保持原 journal，并把 scope 改为 `free-run`、去掉 mock 的 expected-start 参数；仍必须先读到 simulator `mode=idle`。上面的命令不会启动比赛，也不会等待一场新比赛自动开始。`--device-timezone` 只在已确认设备时钟坐标时填写；无法由价格时间戳推断时区且没有显式坐标时停止，不把本机时区当设备时区。
 
 ## 同次求解如何变成实际命令
 
-每站下发前重新抓取快照并求解，共享模型仍是 96 个 15 分钟步。当前 PV/load 来自实际观测，未来输入保留 `assumption` / fallback 标记；没有加载预测 pickle。候选动作、输入、模型版本与成本在首次保存时即固定，HA 回执及回读作为追加证据关联 `run_id/site_id/decision_id/instruction_id`。
+开启 `--prepare-controls` 后，每站抓完价格/天气，先核对原模式为自发自用及比赛绑定，在独立 `control_preparations` 中持久保存准备意图，然后仅切换为 `third_party_control`。默认最多等 8 秒，确认模式与实际 flow 状态可用、number 设定值为有限数；实体未就绪就停止并恢复。此时还没有新候选，**准备记录不算 MILP submission、accepted 回执或执行确认**，也不能用它关联一个后来生成的 decision 来冒充先前已提交策略。
+
+实体就绪后再读取真正的新 device tick 观测并求解。正式提交仍是生成该 decision **之后**的三项服务：mode、flow、power 全部进入同一正式 receipt；先前的准备 mode 不替代其中任何一项。每站最后恢复自发自用，把恢复结果追加到准备记录，关闭该准备影响。总 `writes_performed` 可能包含额外准备服务及恢复服务，不等于“三项正式服务”或 confirmed 条数。准备阶段故障或崩溃也可能已经改变设备模式，需保留其 journal 意图并按异常恢复流程核对。
+
+live 模式每站先抓取完整价格与天气，等待这些较慢请求完成后，再读取并对齐新设备 tick：默认最多等待 8 秒，设备时钟实体更新时间须在捕获墙钟前 0.8 秒内；无法对齐时停止。随后使用刚收到的 HA entities **替换** SOC、PV、负载及设备时间，采集墙钟取这次真实响应的时间，再求解；不是只给旧观测重新盖时间戳。价格与天气保留先前 payload，原快照不被修改。共享模型仍是 96 个 15 分钟步，不复用第一站快照替其他两站发指令。当前 PV/load 来自实际观测，未来输入保留 `assumption` / fallback 标记；没有加载预测 pickle。候选动作、输入、模型版本与成本在首次保存时即固定，HA 回执及回读作为追加证据关联 `run_id/site_id/decision_id/instruction_id`。
 
 | 模型动作 | HA 操作与目标语义 | 当前边界 |
 | --- | --- | --- |
@@ -83,9 +108,11 @@ MILP 的 kW 目标换算成 W 后必须符合 HA number 实体的单位、min/ma
 
 ## 回执、回读和前端状态
 
-HA 三项服务全部成功才生成 `sender_status=accepted` 的结构化回执，保存 receipt 与 submitted 事件；部分成功、超时或未知 HTTP 结果不会变成 accepted。HTTP 成功只表示服务接受请求。随后读取晚于提交的设备 tick，并检查模式、flow、设定值、四路功率、守恒及互斥。
+HA 三项服务全部成功才生成 `sender_status=accepted` 的结构化回执，保存 receipt 与 submitted 事件；部分成功、超时或未知 HTTP 结果不会变成 accepted。HTTP 成功只表示服务接受请求。随后在每站默认 **12 秒**的回读窗口内读取晚于提交的设备 tick，并检查模式、flow、设定值、四路功率、守恒及互斥。`--readback-seconds` 允许大于 0 且不超过 60 秒，`--solver-seconds` 默认 1 秒、允许大于 0 且不超过 5 秒。
 
 一致遥测还要求可靠的采集 tick、设备时钟坐标、各实体墙钟更新时间，以及能将这些读数归到同次更新的 coherence 证据。缺少一致性依据时回读为 unavailable/pending；不能把一次 `/api/states` 中不同更新时间的缓存实体拼成 confirmed。实际校验细节见[连续接入文档](continuous-readonly-integration.md#外部-sender-如何提交执行证据)。
+
+模式准备只解决控制实体异步可用，不补足遥测来源一致性。恒定零功率等长期不变的实体，其旧 `last_updated` 不能因数值仍为零或本次重新读取就视为新上报；没有可靠 `last_reported` / source cohort 或所需设备时钟 bracket 时仍可能保持 unavailable。开启准备选项不保证这类环境能得到 confirmed，也不会放宽回读门限。
 
 | 状态 | 可以说明什么 |
 | --- | --- |
@@ -97,11 +124,15 @@ HA 三项服务全部成功才生成 `sender_status=accepted` 的结构化回执
 
 `confirmed` 不是硬件 ACK，HA 没有原样回显本地 instruction ID。恢复自发自用记录也独立于原命令回读；恢复成功不能代替原候选执行确认。前端仍分别展示求解、预测、执行和结算状态。有限 runner 不发布连续采集心跳，采集状态未知不等于没有候选或回执；执行证据以固定决策详情为准。
 
+live 模式只有三站全部 `confirmed` 且恢复检查全部成功时退出码为 0；任一站 pending、blocked、读取失败或恢复失败均退出 1。退出 1 后查看 `summary.json` 的逐站状态、回读原因和 cleanup，不能把“不完整验收”概括成模型不可行。候选模式三站都生成且未发送时单独标记 `candidate_capture_completed` 并退出 0，不算现场控制通过。
+
 ## journal、单实例和异常恢复
 
-控制器先在 SQLite journal 保存 claimed 意图，再发网络请求。相同 run/site/decision 不重发；站点存在 claimed、accepted、awaiting_readback、unknown 或 partial_failure 时，新命令也被阻止。按 HA 资源地址派生的进程锁避免本机两个控制器同时接管，注册信息要求继续使用原 journal。锁为本机 Unix `fcntl`，不是跨机器分布式锁；未协调的其他进程或远端规则 sender 仍需在现场验收前停用。
+控制器先在 SQLite journal 保存 claimed 意图，再发网络请求。相同 run/site/decision 不重发；站点存在 claimed、accepted、awaiting_readback、unknown 或 partial_failure 时，新命令也被阻止。历史 mode-preparation 尚未核验恢复时，同样拒绝新的 live 启动，不自动重复准备写入。当前工作区使用统一控制锁目录，按 HA `host:port`（规范化大小写及默认端口）派生资源锁，避免两个 journal 路径各自取得锁后控制同一主机。锁为本机 POSIX `fcntl`，当前有限控制入口支持 **Linux/macOS**；Windows 需使用 **WSL**，不能直接在原生 Windows Python 中运行此入口。这不是跨机器分布式锁；未协调的其他进程或远端规则 sender 仍需在现场验收前停用。
 
-正常完成、可捕获异常或 Ctrl+C 后，入口只对本进程实际尝试过服务的站点执行恢复，读取模式核对是否回到 `self_consumption`，并保存 cleanup。没有触碰的站点不复位。mock 场次改变且当前站点仍需恢复时会停止写入，以免影响新场控制器。报告中的 `cleanup.restored=false` 必须继续处理，不能仅因进程结束就宣称已恢复。
+锁的注册信息同时保留原 journal 绝对路径。原 journal 含任何命令历史后，即使已经 restored，也必须继续使用**同一个 journal 路径**，保留去重历史；有未解决副作用、旧文件丢失或换成空 journal 时拒绝接管。新的 run 或输出目录不会解除这项约束。不要复制成另一个路径、删除注册文件或选择新的锁目录来绕过去重与 pending 检查。
+
+每站回读完成或窗口到期后立即恢复自发自用，确认恢复再处理下一站。部分服务失败但已经触碰站点时也先恢复；**恢复失败立即停止整个有限验收，不继续下发下一站**。正常完成、可捕获异常或 Ctrl+C 的清理仅涉及本进程实际尝试过服务的站点，读取模式核对是否回到 `self_consumption`，并保存 cleanup。恢复写入本身也不自动重试。没有触碰的站点不复位。mock 场次改变且当前站点仍需恢复时会停止写入，以免影响新场控制器。报告中的 `cleanup.restored=false` 必须继续处理，不能仅因进程结束就宣称已恢复。
 
 强制杀进程、断电或崩溃可能在“服务已生效、证据尚未入库”之间留下 pending。此时重启**不会自动盲重发，也没有自动恢复此前 pending 的 CLI**。保留原 journal、解释库和报告，先只读核对相关站点现状、当前场次与旧命令是否仍影响设备；在明确恢复授权内只恢复原 journal 所记录的相关站点，并把真实回读与恢复结果补记。未完成核对前不要删除 journal、换空 journal 或手动把状态改成 verified/restored 来继续发送。
 
@@ -115,7 +146,9 @@ HA 三项服务全部成功才生成 `sender_status=accepted` 的结构化回执
 
 HA 的 `received_at` 在状态读取完成时立即固定，随后等待天气完成不会刷新该时间。慢天气导致候选过期时按真实观测时间阻止控制。
 
-私有配置、运行 SQLite、控制锁、日志和 outputs 均保留在 Git 忽略路径。API 默认只绑定本机 `127.0.0.1`；生产远端 sender 认证、跨机器控制锁、长期控制调度、真实预测校准及官方独立验签尚不属于本轮有限验收。
+`--output` 目录还保存逐站 `snapshot-{site}.json` 业务输入，用于求解失败或证据导出失败后的离线诊断；这是实际业务快照，不能当公开示例上传。凭据、token、请求头与认证响应永不保存到这些快照或运行报告。
+
+私有配置、运行 SQLite、控制锁、日志、业务快照和 outputs 均保留在 Git 忽略路径。API 默认只绑定本机 `127.0.0.1`；生产远端 sender 认证、跨机器控制锁、长期控制调度、真实预测校准及官方独立验签尚不属于本轮有限验收。
 
 ## 离线验证与验收记录
 
@@ -126,6 +159,6 @@ cd explainability-app
 PYTHONPATH=src:../src ../../explainability-app/.venv/bin/python -m pytest -q tests/test_live_source.py tests/test_live_control.py tests/test_ha_observation.py
 ```
 
-[source 测试](../tests/test_live_source.py)覆盖 401 单次刷新及失败终止、403 禁止刷新、错误与认证材料不输出、URL 用户信息及 endpoint 拒绝、token 仅内存、慢天气不改变 HA 观测墙钟。[控制测试](../tests/test_live_control.py)与[回读测试](../tests/test_ha_observation.py)验证默认不写、精度拒绝、意图幂等、部分写入、崩溃 pending 和遥测一致性边界。
+[source 测试](../tests/test_live_source.py)覆盖 401 单次刷新及失败终止、403 禁止刷新、错误与认证材料不输出、URL 用户信息及 endpoint 拒绝、token 仅内存、慢天气不改变 HA 观测墙钟，以及对齐 tick 后以实际新实体替换观测而不改变原价格、天气与输入；缺失新传感器不回填旧值。[控制测试](../tests/test_live_control.py)与[回读测试](../tests/test_ha_observation.py)验证默认不写、精度拒绝、意图幂等、部分写入、崩溃 pending 和遥测一致性边界。
 
-现场报告需要逐站列出候选 ID、实际 instruction、服务数量与接受状态、回读结果及原因、恢复后的模式；保留输出目录与 journal。三站有一次有效下发、提交后遥测一致、恢复核对均成功后，才能称三站有限验收通过。本轮截至预检仅确定 ended 阻止写入，尚无这份现场通过证据。
+现场报告需要逐站列出候选 ID、实际 instruction、服务数量与接受状态、回读结果及原因、恢复后的模式；保留本机忽略路径下的输出目录与 journal。三站有一次有效下发、提交后遥测一致、恢复核对均成功后，才能称三站有限验收通过。tracked 文档不发布现场 run、原始设备资料、连接地址或成绩；实际结果以本机最终报告为准。

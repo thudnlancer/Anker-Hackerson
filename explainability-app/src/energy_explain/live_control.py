@@ -79,6 +79,8 @@ class ControlJournal:
                         try:
                             unresolved = previous.execute("SELECT count(*) FROM control_attempts WHERE state IN ('claimed','accepted','awaiting_readback','unknown','partial_failure')").fetchone()[0]
                             prior_attempts = previous.execute('SELECT count(*) FROM control_attempts').fetchone()[0]
+                            if previous.execute("SELECT 1 FROM sqlite_master WHERE name='control_preparations'").fetchone():
+                                prior_attempts += previous.execute('SELECT count(*) FROM control_preparations').fetchone()[0]
                         finally:
                             previous.close()
                         if unresolved:

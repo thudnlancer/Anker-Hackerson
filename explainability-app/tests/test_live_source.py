@@ -1,4 +1,5 @@
 """Offline authentication/source boundaries; no HA or simulator is contacted."""
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from threading import Event, Lock, Thread
@@ -8,7 +9,7 @@ import pytest
 import requests
 
 from energy_explain import live_source
-from energy_explain.live_source import LiveSource, SourceUnavailable
+from energy_explain.live_source import LiveSource, SourceUnavailable, snapshot_with_states
 
 
 CFG = {
@@ -331,3 +332,77 @@ def test_invalid_ha_entity_payload_is_unavailable(session, rows):
     session.get.return_value = response(payload=rows)
     with pytest.raises(SourceUnavailable, match="invalid_ha_entity_list"):
         source_client.states()
+
+
+def test_refresh_replaces_actual_ha_values_while_preserving_original_forecasts_and_inputs():
+    old_capture = "2031-01-01T00:00:00+00:00"
+    new_capture = datetime(2031, 1, 1, 0, 0, 7, tzinfo=timezone.utc)
+    prices = {"today": {"date": "2031-01-01", "points": [{"import_price": .25}]}}
+    original = {
+        "received_at": old_capture,
+        "prices": prices,
+        "stations": {site: {
+            "received_at": old_capture,
+            "state": {"soc": "OLD_SOC", "solar_power": "OLD_PV", "home_load": "OLD_LOAD",
+                      "device_time": "2031-01-01T00:00:00+00:00"},
+            "weather": {"today": {"source": "original_forecast", "values": [100, 200],
+                                   "fetched_at": old_capture}}}
+            for site in CFG["stations"]},
+    }
+    saved_original = deepcopy(original)
+    observations = []
+    expected = {}
+    for site, spec in CFG["stations"].items():
+        expected[site] = {"soc": str(50 + int(site)), "solar_power": str(600 + int(site)),
+                          "home_load": str(900 + int(site)), "device_time": "2031-01-01T00:15:00Z"}
+        observations.extend({"entity_id": f"sensor.{spec['suffix']}_{field}", "state": value,
+                             "last_changed": "2031-01-01T00:00:06.900000Z"}
+                            for field, value in expected[site].items())
+    saved_observations = deepcopy(observations)
+
+    refreshed = snapshot_with_states(original, CFG["stations"], observations, new_capture)
+
+    assert refreshed["received_at"] == new_capture.isoformat()
+    assert refreshed["prices"] == original["prices"]
+    for site in CFG["stations"]:
+        row = refreshed["stations"][site]
+        assert row["received_at"] == new_capture.isoformat()
+        assert row["weather"] == original["stations"][site]["weather"]
+        for field, value in expected[site].items():
+            assert row["state"][field] == value
+            assert row["state"][field + "_last_changed"] == "2031-01-01T00:00:06.900000Z"
+    assert original == saved_original
+    assert observations == saved_observations
+    # A later caller mutating the result must not alter cached source payloads.
+    refreshed["prices"]["today"]["points"][0]["import_price"] = 99
+    refreshed["stations"]["1"]["weather"]["today"]["values"].append(999)
+    refreshed["stations"]["1"]["state"]["soc"] = "MUTATED"
+    assert original == saved_original
+    assert observations == saved_observations
+
+
+def test_missing_fresh_sensor_never_reuses_old_value_with_a_new_timestamp():
+    captured = datetime(2031, 1, 1, 0, 0, 7, tzinfo=timezone.utc)
+    original = {"received_at": "2031-01-01T00:00:00Z", "prices": {"unchanged": True},
+                "stations": {"1": {"received_at": "2031-01-01T00:00:00Z",
+                                    "state": {"soc": "90", "solar_power": "5000",
+                                              "home_load": "2000", "device_time": "OLD_TICK"},
+                                    "weather": {"tomorrow": {"values": [5, 6]}}}}}
+    saved_original = deepcopy(original)
+    observed = [{"entity_id": "sensor.unit_1_soc", "state": "60", "last_changed": captured.isoformat()},
+                {"entity_id": "sensor.unit_1_device_time", "state": "2031-01-01T00:15:00Z",
+                 "last_changed": captured.isoformat()},
+                {"entity_id": "sensor.unrelated_solar_power", "state": "9999"}]
+
+    refreshed = snapshot_with_states(original, {"1": CFG["stations"]["1"]}, observed, captured)
+
+    assert refreshed["stations"]["1"]["state"] == {
+        "soc": "60", "soc_last_changed": captured.isoformat(),
+        "solar_power": None, "solar_power_last_changed": None,
+        "home_load": None, "home_load_last_changed": None,
+        "device_time": "2031-01-01T00:15:00Z", "device_time_last_changed": captured.isoformat(),
+    }
+    assert refreshed["stations"]["1"]["received_at"] == captured.isoformat()
+    assert refreshed["prices"] == original["prices"]
+    assert refreshed["stations"]["1"]["weather"] == original["stations"]["1"]["weather"]
+    assert original == saved_original

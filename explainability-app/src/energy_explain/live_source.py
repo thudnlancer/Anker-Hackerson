@@ -15,6 +15,26 @@ class SourceUnavailable(RuntimeError):
         self.category, self.http_status = category, status
 
 
+def snapshot_with_states(snapshot, stations, states, captured):
+    """Use the newly read HA observations with previously fetched forecasts.
+
+    The old observation is replaced by an actual new /api/states response; it is
+    never merely restamped. Weather/price contents remain their original values.
+    """
+    result = deepcopy(snapshot)
+    entities = {x['entity_id']:x for x in states}
+    for site, spec in stations.items():
+        state = {}
+        for key in ('soc','solar_power','home_load','device_time'):
+            entity = entities.get(f"sensor.{spec['suffix']}_{key}",{})
+            state[key] = entity.get('state')
+            state[key+'_last_changed'] = entity.get('last_changed')
+        result['stations'][site]['state'] = state
+        result['stations'][site]['received_at'] = captured.isoformat()
+    result['received_at'] = captured.isoformat()
+    return result
+
+
 class LiveSource:
     def __init__(self, cfg, *, timeout=10, max_auth_refreshes=1):
         require_runtime_fields(cfg, write_enabled=False)

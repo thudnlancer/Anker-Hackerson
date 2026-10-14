@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -16,7 +17,7 @@ from energy_lab.interface_contract import state_is_fresh
 from energy_explain.execution import SubmissionReceipt
 from energy_explain.ha_observation import ObservationUnavailable, build_telemetry_readback, _device_tick
 from energy_explain.live_control import ControlJournal, MILPController, aware, bind_contest, contest_matches
-from energy_explain.live_source import LiveSource, SourceUnavailable
+from energy_explain.live_source import LiveSource, SourceUnavailable, snapshot_with_states
 from energy_explain.store import Store
 
 
@@ -29,6 +30,7 @@ def main():
     parser.add_argument('--live', action='store_true', help='explicitly permit bounded HA submission')
     parser.add_argument('--scope', choices=('mock', 'free-run'), default='mock')
     parser.add_argument('--expected-contest-start', help='bind the explicitly selected mock window')
+    parser.add_argument('--prepare-controls', action='store_true', help='bounded mode preparation before solving; still restored per site')
     parser.add_argument('--readback-seconds', type=float, default=12)
     parser.add_argument('--solver-seconds', type=float, default=1)
     parser.add_argument('--device-timezone', help='explicit device clock coordinate if absent from price API')
@@ -72,6 +74,8 @@ def main():
                 current_contest = source.dashboard()['contest']
                 if args.scope == 'mock' and any(current_contest.get(k)!=v for k,v in binding.items()):
                     raise ValueError('contest changed before restoration; new controller may own the device')
+                if args.scope == 'free-run' and current_contest.get('mode')!='idle':
+                    raise ValueError('a new contest started before free-run restoration')
                 item['client'].token = source.tokens['ha']
                 report['writes_performed'] += 1
                 item['restoration_attempted'] = True
@@ -89,16 +93,34 @@ def main():
                         outcome = {'submission':json.loads(row['outcome']) if row['outcome'] else None,'restoration':cleanup}
                         db.execute("UPDATE control_attempts SET state='restored',outcome=? WHERE instruction_id=?",
                                    (json.dumps(outcome,ensure_ascii=False),row['instruction_id']))
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE name='control_preparations'").fetchone():
+                        preps=db.execute('SELECT started_at,payload FROM control_preparations WHERE run_id=? AND site_id=?',
+                                         (args.run_id,site)).fetchall()
+                        for prep in preps:
+                            payload=json.loads(prep['payload']);payload['restoration']=cleanup
+                            db.execute('UPDATE control_preparations SET payload=? WHERE started_at=?',
+                                       (json.dumps(payload),prep['started_at']))
             return cleanup['restored']
         except Exception as exc:
             report['cleanup'][site] = {'restored':False,'error_type':type(exc).__name__}
             return False
+
+    def close_before_skip(site):
+        if site in touched:
+            if restore(site):touched.pop(site)
+            else:raise RuntimeError('station restoration did not complete before proceeding')
 
     lock = journal.exclusive()
     locked = False
     try:
         lock.__enter__()
         locked = True
+        if args.live:
+            with journal.connect() as db:
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='control_preparations'").fetchone():
+                    if any(not json.loads(row[0]).get('restoration',{}).get('restored')
+                           for row in db.execute('SELECT payload FROM control_preparations')):
+                        raise RuntimeError('an earlier mode preparation requires explicit recovery inspection')
         dashboard = source.dashboard()
         contest = dashboard['contest']
         binding = bind_contest(contest, scope=args.scope) if args.live else {'candidate_capture_contest': contest}
@@ -110,17 +132,61 @@ def main():
         # Each site gets a fresh snapshot immediately before its own solve.
         # A bounded test does not reuse the first site's inputs three times.
         for site, spec in sorted(cfg['stations'].items()):
+            snapshot, original_states = source.capture()
+            prepared = False
+            if args.live and args.prepare_controls:
+                mode_id = f"select.{spec['suffix']}_operating_mode_device_runs_by_command_in_third_party_controlled"
+                flow_id = f"select.{spec['suffix']}_grid_flow"
+                power_id = f"number.{spec['suffix']}_power_control"
+                initial = {x['entity_id']:x for x in original_states}
+                if initial.get(mode_id,{}).get('state')!='self_consumption':
+                    report['sites'][site]={'status':'blocked_existing_controller'}
+                    continue
+                if not contest_matches(source.dashboard()['contest'],binding,scope=args.scope):
+                    raise ValueError('selected contest changed before preparation')
+                client = source.ha_client()
+                touched[site]={'client':client,'mode_id':mode_id,'initial_mode':'self_consumption'}
+                preparation={'site_id':site,'phase':'mode_preparation','started_at':datetime.now(timezone.utc).isoformat(),
+                             'scope':'before_candidate_generation_not_a_MILP_submission'}
+                report.setdefault('preparations',{})[site]=preparation
+                # Persist the separate preparation intent before any HA call.
+                with journal.connect() as db:
+                    db.execute('CREATE TABLE IF NOT EXISTS control_preparations (run_id TEXT, site_id TEXT, started_at TEXT PRIMARY KEY, payload TEXT)')
+                    db.execute('INSERT INTO control_preparations VALUES (?,?,?,?)',
+                               (args.run_id,site,preparation['started_at'],json.dumps(preparation)))
+                report['writes_performed']+=1
+                client.call('select','select_option',mode_id,option='third_party_control')
+                preparation['service_accepted']=True
+                ready_deadline=time.monotonic()+8
+                while True:
+                    ready_states,captured=source.states()
+                    ready={x['entity_id']:x for x in ready_states}
+                    try:
+                        target=float(ready.get(power_id,{}).get('state'))
+                        available=math.isfinite(target) and ready.get(flow_id,{}).get('state') in ('charge','discharge')
+                    except (ValueError,TypeError):available=False
+                    if ready.get(mode_id,{}).get('state')=='third_party_control' and available:
+                        preparation.update(ready=True,ready_at=captured.isoformat())
+                        with journal.connect() as db:
+                            db.execute('UPDATE control_preparations SET payload=? WHERE started_at=?',
+                                       (json.dumps(preparation),preparation['started_at']))
+                        prepared=True
+                        break
+                    if time.monotonic()>=ready_deadline:
+                        raise RuntimeError('control entities did not become available after mode preparation')
+                    time.sleep(.5)
             if args.live:
                 alignment_deadline = time.monotonic() + 8
                 while True:
                     fresh_states, captured = source.states()
                     clock = next((x for x in fresh_states if x['entity_id']==f"sensor.{spec['suffix']}_device_time"),{})
                     if state_is_fresh(clock.get('last_changed'), now=captured, max_age_seconds=.8):
+                        snapshot = snapshot_with_states(snapshot,cfg['stations'],fresh_states,captured)
+                        original_states = fresh_states
                         break
                     if time.monotonic() >= alignment_deadline:
                         raise RuntimeError('could not align a fresh device tick before bounded submission')
                     time.sleep(.2)
-            snapshot, original_states = source.capture()
             coordinate = args.device_timezone or _infer_api_timezone(daily_points(snapshot['prices']), {})
             if coordinate is None:
                 raise ValueError('device clock coordinate could not be established')
@@ -128,22 +194,29 @@ def main():
                                         stations=cfg['stations'], solver_seconds=args.solver_seconds,
                                         device_timezone=coordinate)
             snapshot['stations'] = {site:snapshot['stations'][site]}
+            # Business inputs only; preserve failed exports for offline diagnosis.
+            (args.output / f'snapshot-{site}.json').write_text(json.dumps(snapshot,ensure_ascii=False,indent=2,allow_nan=False))
             plan = controller.plan(snapshot)
             decision = plan['decisions'].get(site)
             if decision is None:
                 report['sites'][site] = {'status':'no_candidate', 'solver':plan['stations'].get(site)}
+                if site in touched:
+                    if restore(site):touched.pop(site)
+                    else:raise RuntimeError('preparation restoration did not complete')
                 continue
             entities = {x['entity_id']:x for x in original_states}
             mode_id = f"select.{spec['suffix']}_operating_mode_device_runs_by_command_in_third_party_controlled"
             power_id = f"number.{spec['suffix']}_power_control"
             flow_id = f"select.{spec['suffix']}_grid_flow"
             initial_mode = entities.get(mode_id,{}).get('state')
-            if args.live and initial_mode != 'self_consumption':
+            if args.live and initial_mode != ('third_party_control' if prepared else 'self_consumption'):
                 report['sites'][site] = {'status':'blocked_existing_controller', 'decision_key':decision['id']}
+                close_before_skip(site)
                 continue
             if args.live and ('third_party_control' not in entities.get(mode_id,{}).get('attributes',{}).get('options',[])
                               or decision['action']['kind'] not in entities.get(flow_id,{}).get('attributes',{}).get('options',[])):
                 report['sites'][site] = {'status':'blocked_control_capability', 'decision_key':decision['id']}
+                close_before_skip(site)
                 continue
             client = source.ha_client()
 
@@ -157,7 +230,7 @@ def main():
                     return False
                 if _device_tick(clock, coordinate) != command.issued_device_time:
                     return False
-                if rows.get(mode_id,{}).get('state') != ('self_consumption' if index==0 else 'third_party_control'):
+                if rows.get(mode_id,{}).get('state') != ('self_consumption' if index==0 and not prepared else 'third_party_control'):
                     return False
                 # Refresh may happen only during a read; HTTP writes are
                 # never retried. Subsequent services use that current token.
@@ -165,7 +238,7 @@ def main():
                 if index==0:
                     # Register before the HTTP call, not after local evidence
                     # persistence: an interruption/DB failure can follow a write.
-                    touched[site] = {'client':client,'mode_id':mode_id,'initial_mode':initial_mode}
+                    touched.setdefault(site,{'client':client,'mode_id':mode_id,'initial_mode':initial_mode})
                 return True
 
             try:
@@ -174,6 +247,7 @@ def main():
             except ValueError as exc:
                 report['sites'][site] = {'status':'blocked_candidate', 'decision_key':decision['id'],
                                         'reason':str(exc)}
+                close_before_skip(site)
                 continue
             report['sites'][site] = submitted
             report['writes_performed'] += submitted['writes_performed']

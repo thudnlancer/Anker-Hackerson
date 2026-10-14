@@ -44,7 +44,8 @@ def forbid_network(monkeypatch):
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     case = SimpleNamespace(scenario="verified", elapsed=0., guard_calls=[], services=[],
-        restore_calls=[], controller_sites=[], captures=[], statuses={}, journal=None,
+        restore_calls=[], controller_sites=[], submit_calls=[], captures=[], statuses={}, journal=None,
+        preparation_calls=[], control_delays={}, unavailable_ready_reads=[], dashboard_reads=0, prepare_requested=False,
         modes={site: "self_consumption" for site in STATIONS})
     cfg = dict(ha_base="http://offline-runner.test:8123", sim_base="http://offline-runner.test:45678",
                live_enabled=True, allow_ha_write=True, allow_formal_contest=False,
@@ -84,6 +85,30 @@ def env(tmp_path, monkeypatch):
         def __init__(self, site):
             self.site, self.token = site, "offline-token"
 
+        def call(self, domain, service, entity_id, **data):
+            assert (domain, service, entity_id, data) == (
+                "select", "select_option",
+                f"select.{STATIONS[self.site]['suffix']}_operating_mode_device_runs_by_command_in_third_party_controlled",
+                {"option": "third_party_control"})
+            # Preparation is a separate durable intent before any simulated HA
+            # effect, not a candidate submission or acknowledgement.
+            with case.journal.connect() as db:
+                rows = db.execute('SELECT payload FROM control_preparations WHERE site_id=?', (self.site,)).fetchall()
+            assert len(rows) == 1
+            assert json.loads(rows[0]["payload"])["scope"] == "before_candidate_generation_not_a_MILP_submission"
+            with case.journal.lock_path.open("a") as other:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            case.preparation_calls.append(self.site)
+            case.services.append(("prepare", self.site))
+            case.modes[self.site] = "third_party_control"
+            case.control_delays[self.site] = 1000 if case.scenario == "preparation_never_ready" else 1
+            if case.scenario == "preparation_runtime_error":
+                raise RuntimeError("offline mode preparation failed after a possible HA effect")
+            if case.scenario == "preparation_keyboard_interrupt":
+                raise KeyboardInterrupt
+            return []
+
         def set_self_consumption(self, suffix, *, live):
             assert live is True and suffix == STATIONS[self.site]["suffix"]
             # A second FD cannot own this flock while cleanup runs. This checks
@@ -106,6 +131,7 @@ def env(tmp_path, monkeypatch):
             case.source = self
 
         def dashboard(self):
+            case.dashboard_reads += 1
             return {"contest": {"mode": "ended" if case.scenario == "ended" else "running",
                 "track": "mock", "start_at": "2026-10-14T08:00:00Z",
                 "end_at": "2026-10-14T08:56:00Z", "date_range": "2031-01-01 ~ 2031-01-08"}}
@@ -115,25 +141,34 @@ def env(tmp_path, monkeypatch):
             for site, item in STATIONS.items():
                 prefix = item["suffix"]
                 mode = "self_consumption" if capture else case.modes[site]
-                if not capture and case.scenario == "guard_rejected":
-                    mode = "third_party_control"  # Someone took control after the initial capture.
+                clock_index = int(case.elapsed / .5) if case.prepare_requested else 0
+                clock_tick = DEVICE + timedelta(minutes=15 * clock_index)
+                clock_report = WALL + timedelta(seconds=.5 * clock_index)
+                controls_unavailable = case.prepare_requested and (
+                    mode == "self_consumption" or case.control_delays.get(site, 0) > 0)
                 result.extend([
-                    {"entity_id": f"sensor.{prefix}_device_time", "state": DEVICE.isoformat(),
-                     "last_changed": WALL.isoformat(), "last_updated": WALL.isoformat()},
+                    {"entity_id": f"sensor.{prefix}_device_time", "state": clock_tick.isoformat(),
+                     "last_changed": clock_report.isoformat(), "last_updated": clock_report.isoformat()},
                     {"entity_id": f"select.{prefix}_operating_mode_device_runs_by_command_in_third_party_controlled",
                      "state": mode, "attributes": {"options": ["self_consumption", "third_party_control"]}},
-                    {"entity_id": f"select.{prefix}_grid_flow", "state": "charge",
-                     "attributes": {"options": ["charge", "discharge"]}},
-                    {"entity_id": f"number.{prefix}_power_control", "state": "2000", "attributes": CAPABILITY},
+                    {"entity_id": f"select.{prefix}_grid_flow", "state": "unavailable" if controls_unavailable else "charge",
+                     "attributes": {"options": ["discharge"] if case.scenario == "prepared_capability_blocked" else ["charge", "discharge"]}},
+                    {"entity_id": f"number.{prefix}_power_control", "state": "unavailable" if controls_unavailable else "2000", "attributes": CAPABILITY},
                 ])
             return result
 
         def states(self):
             case.elapsed += .02
-            return self.rows(), wall()
+            result = self.rows()
+            for site, delay in list(case.control_delays.items()):
+                if delay:
+                    case.unavailable_ready_reads.append(site)
+                    case.control_delays[site] -= 1
+            return result, wall()
 
         def capture(self):
             case.captures.append(len(case.captures) + 1)
+            self.active_site = list(STATIONS)[len(case.captures) - 1]
             return {"prices": {}, "stations": {site: {"state": {}, "received_at": wall().isoformat()}
                                                     for site in STATIONS}}, self.rows(capture=True)
 
@@ -156,16 +191,24 @@ def env(tmp_path, monkeypatch):
             if case.scenario == "no_candidate":
                 return {"decisions": {}, "stations": {site: {"status": "limit_reached"}}}
             decision = dict(id=f"key-{site}", run_id=self.run_id, site_id=site,
-                            decision_id=f"decision-{site}", action={"kind": "charge", "power_kw": 2})
+                            decision_id=f"decision-{site}", action={"kind": "charge", "power_kw": 2},
+                            device_time=snapshot["stations"][site]["state"].get("device_time", DEVICE.isoformat()))
             return {"decisions": {site: decision}, "stations": {site: {"status": "candidate_only"}}}
 
         def submit(self, decision, *, client, guard, live, **kwargs):
             site, key = decision["site_id"], decision["id"]
+            case.submit_calls.append(site)
             if not live:
                 return {"status": "not_sent", "decision_key": key, "writes_performed": 0}
+            if case.scenario == "guard_rejected":
+                # The forecast capture AND the fresh alignment observation were
+                # self-use. A competing controller starts only after those reads,
+                # immediately before the real pre-HTTP guard is invoked.
+                case.modes[site] = "third_party_control"
             command = DispatchCommand(run_id=self.run_id, site_id=site, decision_id=decision["decision_id"],
                 instruction_id=f"instruction-{site}", suffix=STATIONS[site]["suffix"],
-                issued_device_time=DEVICE, flow="charge", target_w=2000, semantics="battery_charge_target")
+                issued_device_time=datetime.fromisoformat(decision["device_time"]),
+                flow="charge", target_w=2000, semantics="battery_charge_target")
             assert self.journal.claim(decision, command)
             issued = wall()
             for index in range(3):
@@ -186,7 +229,7 @@ def env(tmp_path, monkeypatch):
                         self.journal.outcome(command, "partial_failure", {"services_attempted": 1})
                         return {"status": "partial_failure", "decision_key": key, "writes_performed": 1}
             evidence = SubmissionReceipt(run_id=self.run_id, site_id=site, decision_id=decision["decision_id"],
-                instruction_id=command.instruction_id, event_id=f"event-{site}", issued_device_time=DEVICE,
+                instruction_id=command.instruction_id, event_id=f"event-{site}", issued_device_time=command.issued_device_time,
                 issued_wall_time=issued, completed_wall_time=wall(), mode="third_party_control", flow="charge",
                 target_kw=2, semantics="battery_charge_target", source_ref="offline-controller",
                 sender_status="accepted", raw_receipt={"http_status": 200, "services_expected": 3, "services_completed": 3})
@@ -207,13 +250,14 @@ def env(tmp_path, monkeypatch):
         return TelemetryReadback(run_id=receipt.run_id, site_id=receipt.site_id,
             decision_id=receipt.decision_id, instruction_id=receipt.instruction_id,
             observation_id=f"observation-{receipt.site_id}", observed_at=captured_wall_time,
-            updated_at=captured_wall_time, device_time=DEVICE + timedelta(minutes=15),
+            updated_at=captured_wall_time, device_time=receipt.issued_device_time + timedelta(minutes=15),
             mode="third_party_control", flow="charge", setpoint_kw=2, pv_kw=0, load_kw=1,
             charge_kw=2, discharge_kw=0, grid_import_kw=3, grid_export_kw=0)
 
     monkeypatch.setattr(runner, "build_telemetry_readback", readback)
 
-    def run(*, live=True):
+    def run(*, live=True, prepare_controls=False):
+        case.prepare_requested = prepare_controls
         output = tmp_path / "report"
         arguments = ["run_milp_live.py", "--config", str(tmp_path / "private-config.json"),
             "--db", str(tmp_path / "decisions.sqlite"), "--journal", str(tmp_path / "control.sqlite"),
@@ -221,6 +265,8 @@ def env(tmp_path, monkeypatch):
             "--readback-seconds", ".1", "--output", str(output)]
         if live:
             arguments.append("--live")
+        if prepare_controls:
+            arguments.append("--prepare-controls")
         monkeypatch.setattr(runner.sys, "argv", arguments)
         code = runner.main()
         return code, json.loads((output / "summary.json").read_text())
@@ -252,10 +298,27 @@ def test_guard_rejecting_before_any_http_does_not_restore_unrelated_stations(env
     code, report = env.run()
     assert code == 1 and report["outcome"] != "completed"
     assert env.guard_calls == [(site, 0, False) for site in STATIONS]
+    assert env.submit_calls == list(STATIONS)
     assert env.services == [] and env.restore_calls == []
     assert report["writes_performed"] == 0 and report["cleanup"] == {}
     assert all(site["status"] == "blocked" for site in report["sites"].values())
     assert {attempt["state"] for attempt in env.journal.attempts()} == {"blocked"}
+    assert env.modes == {site: "third_party_control" for site in STATIONS}
+
+
+def test_fresh_alignment_already_under_another_controller_never_reaches_submit(env):
+    # The initial forecast capture carries older self-use controls; the real
+    # alignment read sees the current third-party owner before submission.
+    env.modes = {site: "third_party_control" for site in STATIONS}
+    code, report = env.run()
+    assert code == 1 and report["outcome"] != "completed"
+    assert len(report["sites"]) == 3
+    assert all(site["status"] == "blocked_existing_controller" for site in report["sites"].values())
+    assert env.submit_calls == [] and env.guard_calls == []
+    assert env.services == [] and env.restore_calls == []
+    assert env.journal.attempts() == []
+    assert report["writes_performed"] == 0 and report["cleanup"] == {}
+    assert env.modes == {site: "third_party_control" for site in STATIONS}
 
 
 def test_three_accepted_but_unverified_sites_do_not_return_success(env):
@@ -319,3 +382,100 @@ def test_default_candidate_capture_never_invokes_service_guard_or_claim(env):
     assert len(report["sites"]) == 3 and all(site["status"] == "not_sent" for site in report["sites"].values())
     assert env.guard_calls == [] and env.services == [] and env.restore_calls == []
     assert env.journal.attempts() == [] and report["writes_performed"] == 0
+
+
+def preparation_payloads(env):
+    with env.journal.connect() as db:
+        rows = db.execute('SELECT site_id,payload FROM control_preparations ORDER BY site_id').fetchall()
+    return {row["site_id"]: json.loads(row["payload"]) for row in rows}
+
+
+def test_prepared_controls_wait_until_available_then_submit_and_restore_per_site(env):
+    code, report = env.run(prepare_controls=True)
+    assert code == 0 and report["outcome"] == "completed"
+    assert env.preparation_calls == ["1", "2", "3"]
+    assert env.unavailable_ready_reads == ["1", "2", "3"]
+    assert env.services == [event for site in STATIONS for event in (
+        ("prepare", site), ("submit", site, 0), ("submit", site, 1), ("submit", site, 2), ("restore", site))]
+    assert env.guard_calls == [(site, index, True) for site in STATIONS for index in range(3)]
+    assert report["writes_performed"] == 15
+    assert all(site["execution_status"] == "confirmed" for site in report["sites"].values())
+    payloads = preparation_payloads(env)
+    assert len(payloads) == 3
+    assert all(payload["ready"] and payload["restoration"]["restored"] for payload in payloads.values())
+    assert {attempt["state"] for attempt in env.journal.attempts()} == {"restored"}
+
+
+def test_preparation_with_no_candidate_restores_before_preparing_next_site(env):
+    env.scenario = "no_candidate"
+    code, report = env.run(prepare_controls=True)
+    assert code == 1 and report["outcome"] != "completed"
+    assert env.services == [event for site in STATIONS for event in (("prepare", site), ("restore", site))]
+    assert env.submit_calls == [] and env.guard_calls == []
+    assert env.journal.attempts() == []
+    assert report["writes_performed"] == 6
+    assert len(report["sites"]) == 3 and all(site["status"] == "no_candidate" for site in report["sites"].values())
+    assert all(payload["ready"] and payload["restoration"]["restored"]
+               for payload in preparation_payloads(env).values())
+    assert env.modes == {site: "self_consumption" for site in STATIONS}
+
+
+def test_prepared_candidate_with_unsupported_flow_restores_before_next_site(env):
+    env.scenario = "prepared_capability_blocked"
+    code, report = env.run(prepare_controls=True)
+    assert code == 1 and report["outcome"] != "completed"
+    assert env.services == [event for site in STATIONS for event in (("prepare", site), ("restore", site))]
+    assert env.submit_calls == [] and env.guard_calls == [] and env.journal.attempts() == []
+    assert len(report["sites"]) == 3
+    assert all(site["status"] == "blocked_control_capability" for site in report["sites"].values())
+    assert all(payload["ready"] and payload["restoration"]["restored"]
+               for payload in preparation_payloads(env).values())
+    assert env.modes == {site: "self_consumption" for site in STATIONS}
+
+
+def test_historical_unrestored_preparation_stops_live_before_any_source_read_or_write(env, tmp_path):
+    prior = ControlJournal(tmp_path / "control.sqlite", resource_key="http://offline-runner.test:8123",
+                           lock_directory=tmp_path / "owner-locks")
+    payload = {"phase": "mode_preparation", "service_accepted": True,
+               "scope": "before_candidate_generation_not_a_MILP_submission"}
+    with prior.connect() as db:
+        db.execute('CREATE TABLE control_preparations (run_id TEXT, site_id TEXT, started_at TEXT PRIMARY KEY, payload TEXT)')
+        db.execute('INSERT INTO control_preparations VALUES (?,?,?,?)',
+                   ("previous-run", "2", WALL.isoformat(), json.dumps(payload)))
+    code, report = env.run(prepare_controls=True)
+    assert code == 1 and report["outcome"] == "failed" and report["error_type"] == "RuntimeError"
+    assert env.dashboard_reads == 0 and env.captures == [] and env.controller_sites == []
+    assert env.submit_calls == [] and env.guard_calls == [] and env.services == [] and env.restore_calls == []
+    assert report["writes_performed"] == 0 and report["cleanup"] == {} and report["sites"] == {}
+    assert env.journal.attempts() == [] and env.source.closed is True
+    assert preparation_payloads(env) == {"2": payload}  # No silent inspection, restoration or erasure.
+
+
+def test_prepared_mode_with_controls_never_available_times_out_and_restores_once(env):
+    env.scenario = "preparation_never_ready"
+    code, report = env.run(prepare_controls=True)
+    assert code == 1 and report["outcome"] == "failed"
+    assert env.services == [("prepare", "1"), ("restore", "1")]
+    assert env.controller_sites == [] and env.submit_calls == [] and env.guard_calls == []
+    assert env.journal.attempts() == []
+    assert report["writes_performed"] == 2 and report["cleanup"]["1"]["restored"] is True
+    payloads = preparation_payloads(env)
+    assert not payloads["1"].get("ready", False) and payloads["1"]["restoration"]["restored"] is True
+    assert env.modes == {site: "self_consumption" for site in STATIONS}
+
+
+@pytest.mark.parametrize("scenario,outcome", [("preparation_runtime_error", "failed"),
+                                               ("preparation_keyboard_interrupt", "interrupted")])
+def test_preparation_exception_after_possible_mode_effect_restores_without_submission(env, scenario, outcome):
+    env.scenario = scenario
+    code, report = env.run(prepare_controls=True)
+    assert code == 1 and report["outcome"] == outcome
+    assert env.services == [("prepare", "1"), ("restore", "1")]
+    assert env.controller_sites == [] and env.submit_calls == [] and env.guard_calls == []
+    assert env.journal.attempts() == []
+    payloads = preparation_payloads(env)
+    assert list(payloads) == ["1"]
+    assert payloads["1"]["restoration"]["restored"] is True
+    assert not payloads["1"].get("ready", False)
+    assert report["writes_performed"] == 2
+    assert env.modes == {site: "self_consumption" for site in STATIONS}
