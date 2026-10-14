@@ -8,7 +8,7 @@ import sys
 import joblib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-from energy_lab.online_contract import OnlineContractError, hourly_observation_history, load_observation_history, model_compatibility
+from energy_lab.online_contract import OnlineContractError, hourly_observation_history, merge_observation_history, model_compatibility
 from energy_lab.forecast import WEATHER_FEATURES
 
 FULL_HISTORY_HOURS = 168
@@ -30,8 +30,9 @@ def check(cache_dir: Path, model_dir: Path, sites: list[str]) -> dict:
         (feature for feature in item["features"] if feature in WEATHER_FEATURES), weather_available
     ) for target, item in models.items()}
     stations = {}
+    merged = merge_observation_history(cache_dir)  # B4: legacy files + per-node shards
     for site in sites:
-        history = load_observation_history(cache_dir / f"site_{site}.jsonl")
+        history = merged[merged.site == site].reset_index(drop=True) if not merged.empty else merged
         degraded_error = None
         try:
             hourly = hourly_observation_history(history)

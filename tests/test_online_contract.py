@@ -9,9 +9,60 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.online_contract import (
     OnlineContractError, append_observation, load_observation_history,
+    merge_observation_history,
     CONTEST_HISTORY_FIELDS, cache_contest_history, hourly_observation_history,
     model_compatibility, normalize_contest_history, normalize_station_observation, normalize_weather_payload,
 )
+
+
+def _observation(site, device_time, received_at, soc=50):
+    return normalize_station_observation(site, {
+        "soc": str(soc), "solar_power": "120", "home_load": "300",
+        "device_time": device_time,
+    }, received_at, device_timezone="UTC")
+
+
+class MergeObservationHistoryTests(unittest.TestCase):
+    def test_sharded_append_and_merge_dedups_by_received_at(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            append_observation(root, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                  "2026-10-10T06:00:00+00:00", soc=40), node_id="nodeA")
+            append_observation(root, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                  "2026-10-10T06:00:05+00:00", soc=41), node_id="nodeB")
+            append_observation(root, _observation("1", "2032-04-02 00:30:00+00:00",
+                                                  "2026-10-10T06:00:06+00:00"), node_id="nodeA")
+            self.assertTrue((root / "site_1.nodeA.jsonl").exists())
+            self.assertTrue((root / "site_1.nodeB.jsonl").exists())
+            frame = merge_observation_history(root)
+        self.assertEqual(len(frame), 2)
+        first = frame[frame.time == pd.Timestamp("2032-04-02T00:15:00+00:00")].iloc[0]
+        self.assertEqual(float(first["soc"]), 41)  # newest received_at wins
+
+    def test_merge_includes_legacy_unsharded_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            append_observation(root, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                  "2026-10-10T06:00:00+00:00"))
+            append_observation(root, _observation("1", "2032-04-02 00:30:00+00:00",
+                                                  "2026-10-10T06:00:06+00:00"), node_id="nodeB")
+            frame = merge_observation_history(root)
+        self.assertEqual(len(frame), 2)
+
+    def test_merge_accepts_single_file_and_empty_dir(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertTrue(merge_observation_history(root).empty)
+            path = append_observation(root, _observation("1", "2032-04-02 00:15:00+00:00",
+                                                         "2026-10-10T06:00:00+00:00"))
+            self.assertEqual(len(merge_observation_history(path)), 1)
+
+    def test_node_id_must_be_filename_safe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(OnlineContractError):
+                append_observation(Path(temp), _observation("1", "2032-04-02 00:15:00+00:00",
+                                                            "2026-10-10T06:00:00+00:00"),
+                                   node_id="bad/node")
 
 
 class OnlineContractTests(unittest.TestCase):

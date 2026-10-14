@@ -262,13 +262,21 @@ def normalize_station_observation(site: str, state: dict[str, Any], received_at:
     }
 
 
-def append_observation(cache_dir: Path, observation: dict[str, Any]) -> Path:
-    """Append one validated observation to its station JSONL cache."""
+def append_observation(cache_dir: Path, observation: dict[str, Any], *, node_id: str | None = None) -> Path:
+    """Append one validated observation to its station JSONL cache.
+
+    With ``node_id`` the shard file is ``site_{site}.{node_id}.jsonl`` so
+    redundant collectors (B4) never share a write target; without it the
+    legacy ``site_{site}.jsonl`` name is kept.
+    """
     required = ("site", "received_at", "device_time", "soc", "pv", "load", "source")
     if any(key not in observation for key in required):
         raise OnlineContractError("observation is not normalized")
+    if node_id is not None and not str(node_id).replace("_", "").replace("-", "").isalnum():
+        raise OnlineContractError(f"node_id is not filename-safe: {node_id!r}")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    destination = cache_dir / f"site_{observation['site']}.jsonl"
+    suffix = f".{node_id}" if node_id else ""
+    destination = cache_dir / f"site_{observation['site']}{suffix}.jsonl"
     with destination.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(observation, ensure_ascii=False, allow_nan=False) + "\n")
     return destination
@@ -298,6 +306,37 @@ def load_observation_history(path: Path) -> pd.DataFrame:
         rows.append(row)
     result = pd.DataFrame(rows).sort_values("time").drop_duplicates(["site", "time"], keep="last").reset_index(drop=True)
     return result
+
+
+def merge_observation_history(path: Path) -> pd.DataFrame:
+    """B4 merge view: read every cache shard under ``path`` and deduplicate.
+
+    Accepts either a single legacy cache file (delegates to
+    ``load_observation_history``) or a cache directory containing both legacy
+    ``site_{site}.jsonl`` files and per-node ``site_{site}.{node}.jsonl``
+    shards. Duplicate ``(site, device_time)`` rows keep the one with the
+    newest ``received_at``; ties resolve deterministically toward the
+    alphabetically later shard file.
+    """
+    if not Path(path).is_dir():
+        return load_observation_history(Path(path))
+    frames = []
+    for order, shard in enumerate(sorted(Path(path).glob("site_*.jsonl"))):
+        frame = load_observation_history(shard)
+        if frame.empty:
+            continue
+        frame["_received"] = pd.to_datetime(frame["received_at"], utc=True)
+        frame["_order"] = order
+        frames.append(frame)
+    if not frames:
+        return pd.DataFrame(columns=["time", "received_at", "soc", "pv", "load", "site"])
+    merged = pd.concat(frames, ignore_index=True)
+    merged = (merged.sort_values(["_received", "_order"])
+                    .drop_duplicates(["site", "time"], keep="last")
+                    .sort_values("time")
+                    .drop(columns=["_received", "_order"])
+                    .reset_index(drop=True))
+    return merged
 
 
 def hourly_observation_history(history: pd.DataFrame, *, minimum_hours: int = 168,
