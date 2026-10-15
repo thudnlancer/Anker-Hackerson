@@ -19,6 +19,7 @@ import argparse
 import math
 import sys
 import time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
@@ -67,6 +68,12 @@ def price_window(response: object) -> list[dict]:
 def validate_milp_price_window(points: list[dict], device_time: object,
                                device_timezone: str | None = None) -> str | None:
     """Validate the complete optimizer horizon before any solver call."""
+    if not device_timezone:
+        return "device_time_misaligned:missing_trusted_device_timezone"
+    try:
+        ZoneInfo(device_timezone)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return "device_time_misaligned:invalid_device_timezone"
     if not points:
         return "missing_price_data:empty_window"
     try:
@@ -103,13 +110,14 @@ def validate_milp_price_window(points: list[dict], device_time: object,
     return None
 
 
-def current_price_and_future(points: list[dict], device_time: object) -> tuple[dict, list[float]]:
+def current_price_and_future(points: list[dict], device_time: object,
+                             device_timezone: str | None = None) -> tuple[dict, list[float]]:
+    if not device_timezone:
+        raise ValueError("missing_trusted_device_timezone")
+    ZoneInfo(device_timezone)
     stamp = pd.Timestamp(device_time)
     if stamp.tzinfo is None:
-        api_stamp = next((pd.Timestamp(p["time"]) for p in points if pd.Timestamp(p["time"]).tzinfo is not None), None)
-        if api_stamp is None:
-            raise ValueError("price API timestamps have no timezone")
-        stamp = stamp.tz_localize(api_stamp.tz)
+        stamp = stamp.tz_localize(device_timezone)
     frame = pd.DataFrame(points)
     frame["time"] = pd.to_datetime(frame["time"], utc=True)
     wanted = stamp.tz_convert("UTC").floor("h")
@@ -136,7 +144,15 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
             if not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
-            current, future = current_price_and_future(prices, stamp)
+            price_error = validate_milp_price_window(prices, stamp, cfg.get("device_timezone"))
+            if price_error:
+                results.append({"site": site, "status": "economic_action_blocked",
+                                "device_time": stamp, "reason": price_error,
+                                "optimizer_attributed": False,
+                                "attribution": "non-optimizer-attributed",
+                                "write_enabled": False, "writes_performed": 0})
+                continue
+            current, future = current_price_and_future(prices, stamp, cfg.get("device_timezone"))
             solar_w, load_w, soc = numeric(state.get("solar_power")), numeric(state.get("home_load")), numeric(state.get("soc"))
             flow, watts, reason = dispatch(
                 numeric(current.get("import_price")),

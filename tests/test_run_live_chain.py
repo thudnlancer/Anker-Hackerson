@@ -63,7 +63,8 @@ def cfg(verified=None):
     if verified is not None:
         station["zero_flow_verified"] = verified
     return {"stations": {"1": station}, "stale_after_seconds": 15.0, "capacity_kwh": 14.0,
-            "max_power_w": 5000.0, "soc_min": 0.0, "soc_max": 100.0, "solver_seconds": 1.0}
+            "max_power_w": 5000.0, "soc_min": 0.0, "soc_max": 100.0, "solver_seconds": 1.0,
+            "device_timezone": "UTC"}
 
 
 def plan(flow="idle", soc=45.0, charge=0.0, status="optimal"):
@@ -165,13 +166,49 @@ class DryRunChainTests(unittest.TestCase):
 
     def test_timezone_ambiguous_online_tick_falls_back(self):
         ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00")})
+        config = cfg(verified=True)
+        del config["device_timezone"]
         with patch("energy_lab.shadow.optimize_window") as optimize:
-            results = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+            results = run_once_milp(config, ha, StubSim(make_prices()),
                                     write_enabled=True, carry={})
         self.assertEqual(results[0]["reason"],
-                         "device_time_misaligned:price_timestamp_alignment_failed")
+                         "device_time_misaligned:missing_trusted_device_timezone")
         self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
         optimize.assert_not_called()
+
+    def test_aware_device_time_without_trusted_configured_timezone_falls_back(self):
+        ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00+00:00")})
+        config = cfg(verified=True)
+        del config["device_timezone"]
+        with patch("energy_lab.shadow.optimize_window") as optimize:
+            results = run_once_milp(config, ha, StubSim(make_prices()),
+                                    write_enabled=True, carry={})
+        self.assertEqual(results[0]["reason"],
+                         "device_time_misaligned:missing_trusted_device_timezone")
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        optimize.assert_not_called()
+
+    def test_invalid_device_timezone_falls_back_without_solver(self):
+        ha = StubHA({"1502": state()})
+        config = {**cfg(verified=True), "device_timezone": "Not/A_Timezone"}
+        with patch("energy_lab.shadow.optimize_window") as optimize:
+            rows = run_once_milp(config, ha, StubSim(make_prices()),
+                                 write_enabled=True, carry={})
+        self.assertEqual(rows[0]["reason"], "device_time_misaligned:invalid_device_timezone")
+        self.assertFalse(rows[0]["optimizer_attributed"])
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        optimize.assert_not_called()
+
+    def test_dispatch_without_trusted_timezone_blocks_economic_action(self):
+        ha = StubHA({"1502": state()})
+        config = cfg()
+        del config["device_timezone"]
+        with patch("run_live.dispatch") as dispatch:
+            rows = run_once(config, ha, StubSim(make_prices()), write_enabled=True)
+        self.assertEqual(rows[0]["status"], "economic_action_blocked")
+        self.assertEqual(rows[0]["writes_performed"], 0)
+        self.assertEqual(ha.calls, [])
+        dispatch.assert_not_called()
 
 
 class FourSafetySwitchTests(unittest.TestCase):

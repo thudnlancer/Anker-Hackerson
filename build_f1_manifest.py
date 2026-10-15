@@ -59,7 +59,8 @@ def main() -> None:
     # intentionally outside this submission and must not alter this hash set.
     source_files = [ROOT / name for name in (
         "run_contest_strategy_replay.py", "prepare_f2_command.py", "validate_f2_output.py",
-        "run_live.py", "build_f1_manifest.py",
+        "run_live.py", "build_f1_manifest.py", "check_m3_readonly_preflight.py",
+        "src/energy_lab/config.py",
         "src/energy_lab/backtest.py", "src/energy_lab/contest_replay.py",
         "src/energy_lab/execute.py", "src/energy_lab/interface_contract.py",
         "src/energy_lab/model.py", "src/energy_lab/rolling.py",
@@ -83,6 +84,8 @@ def main() -> None:
                  ROOT / "F1_TERMINAL_PV_EVIDENCE.md",
                  ROOT / "F1_ONLINE_PRICE_ANOMALY_EVIDENCE.md",
                  ROOT / "tests/test_run_live_chain.py",
+                 ROOT / "tests/test_config_solver_seconds.py",
+                 ROOT / "tests/test_run_live_time.py",
                  ROOT / "tests/test_contest_replay.py",
                  ROOT / "tests/test_rolling_milp.py",
                  ROOT / "tests/test_prepare_f2_command.py",

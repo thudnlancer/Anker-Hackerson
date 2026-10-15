@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 from energy_lab.config import exchange_ha_token, load_runtime_config, require_runtime_fields
@@ -33,8 +34,13 @@ def inspect(config_path: Path) -> dict:
     except Exception as exc:
         points, price_error = [], f"price_api_error:{type(exc).__name__}"
     report = {"mode": "dry-run", "strategy": "milp", "writes_performed": 0,
+              "collected_at": datetime.now(timezone.utc).isoformat(),
               "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
+              "device_timezone": cfg.get("device_timezone"),
+              "device_timezone_source": cfg.get("device_timezone_source"),
               "price_points": len(points), "price_error": price_error,
+              "price_timestamp_sample": [p.get("time", p.get("start")) for p in points[:2]],
+              "timezone_evidence_kind": "explicit_operator_configuration_not_independent_device_attestation",
               "stations": {}}
     for site in ("1", "2", "3"):
         item = sites[site]

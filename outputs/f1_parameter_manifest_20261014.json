@@ -367,11 +367,13 @@
   "reproducibility": {
     "replay_command_template": "prepare_f2_command.py --manifest outputs/f1_parameter_manifest_20261014.json --expected-sha256 <signed-manifest-sha256> --data forecast_data --output <new-dir> --workers 2; gate prints an explicit stage-4 command with all frozen parameters; it does not start replay",
     "source_sha256": {
-      "build_f1_manifest.py": "06b7d39be9c38323f7451e256adc4d1a5609fdc873b54ab274a69a11bc52f4ab",
+      "build_f1_manifest.py": "29ef21fe5d5bd831ef9198a2a55bc40bfab0a40474540723ac1acc6710d7acb7",
+      "check_m3_readonly_preflight.py": "a6945a3f1f7168587f3d2f056a58beb4fc12da0aeb70ba67383248e3c10c3a1f",
       "prepare_f2_command.py": "08705282b4d020028eeb448fd881d8af9c6d6eb12d790b7a5775fa73b8d45713",
       "run_contest_strategy_replay.py": "833794b5ec31aac497eb89f343bfddff4017e211458926b8dfba707829d128dd",
-      "run_live.py": "83c04c165eba3e38d130eca93f58b1bdcd3424d32b02d44b6f51c2c7341a6a06",
+      "run_live.py": "aadf72e50bec9cbcb78de7280282474123f659ad7f39d77c6a758f6737162bf1",
       "src/energy_lab/backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
+      "src/energy_lab/config.py": "b3fd67f3a46e89741724bda07d5415ca3bb044dbd3c27e35eb615deb19ff8a42",
       "src/energy_lab/contest_replay.py": "1f4d436ad4b9a4ea66f6990ffe87f229bf859b64c8b4ac99704d71b17c427bfa",
       "src/energy_lab/execute.py": "e96727ca7954fdcbef50d587007f5aa9a10c67f7911b35ffa768dcf1f2ceef2e",
       "src/energy_lab/interface_contract.py": "108978f51243bf2fc5063dd59284f35e01eea68dca9d7c49569a42571d47f8a7",
@@ -507,10 +509,12 @@
       "outputs/w1_c4_verification_20261014_1/verification_report.json": "96e91ef18da35a1e431fa48e8f38bd2553f2bf205da19a1a633e8e8578f6d2e8",
       "outputs/w1_readiness_actual_20261014/config_snapshot.json": "103f32a460489b852f6c5dc457f75bc5f4e60570de0c989ee01627d5f082f8b6",
       "outputs/w1_readiness_actual_20261014/readiness.json": "33793c7610e2231f2cb941f06a8c5aa7307db818fc68a5baadfd283f5de53878",
+      "tests/test_config_solver_seconds.py": "4ec48bf219952b98ec9cc4c410683326c7a56d26121b412ffbd665b0394155e8",
       "tests/test_contest_replay.py": "298574550c098fe3ba68da7ce28287c11e551d29e3e163156988241ec66f1fcb",
       "tests/test_prepare_f2_command.py": "6c2ed8169387f6a3c97c47e4c86a0998cf3ad5da7fec4e709c2eb669567f3e4e",
       "tests/test_rolling_milp.py": "a65349355cf78f98a9ea55c8d56680a38c91a5e0eacccf96126026cba05d7f6b",
-      "tests/test_run_live_chain.py": "675e516c973c856ac1cc7668365101e8582ebf1410d7191d7002a3561f7cfd99",
+      "tests/test_run_live_chain.py": "8890a59f92456948cb08d760d241ce522dc8a5658cda0eb0750ed2eef5803e3c",
+      "tests/test_run_live_time.py": "5bcdc8ae971ed3176a035c71ed5c6f04848792dc951ce33550a00d112b6af692",
       "tests/test_validate_f2_output.py": "2e5ce3b7cc3fadff621a63fc5c6dec41319ade30252de8626350994d4cb1f290"
     },
     "no_model_training": true

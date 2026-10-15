@@ -21,7 +21,7 @@ def three_site_config():
                          for site in (1, 2, 3)},
             "stale_after_seconds": 15.0, "capacity_kwh": 14.0,
             "max_power_w": 5000.0, "soc_min": 0.0, "soc_max": 100.0,
-            "solver_seconds": 2.0}
+            "solver_seconds": 2.0, "device_timezone": "UTC"}
 
 
 class ThreeSiteReadonlySmokeTests(unittest.TestCase):

@@ -19,7 +19,7 @@ class RunLiveTimeTests(unittest.TestCase):
             ]},
         }
         points = price_window(response)
-        current, future = current_price_and_future(points, "2032-04-02 23:15:00")
+        current, future = current_price_and_future(points, "2032-04-02 23:15:00", "UTC")
         self.assertEqual(current["import_price"], .2)
         self.assertEqual(future[0], .3)
 
@@ -29,7 +29,16 @@ class RunLiveTimeTests(unittest.TestCase):
             for hour in range(24)
         ]}}
         with self.assertRaises(ValueError):
-            current_price_and_future(price_window(response), "2032-04-03 00:15:00")
+            current_price_and_future(price_window(response), "2032-04-03 00:15:00", "UTC")
+
+    def test_api_timezone_cannot_supply_missing_device_timezone(self):
+        with self.assertRaisesRegex(ValueError, "missing_trusted_device_timezone"):
+            current_price_and_future([], "2032-04-03 00:15:00+00:00")
+
+    def test_explicit_device_timezone_overrides_price_timestamp_timezone(self):
+        points = [{"time": "2032-04-02T15:00:00Z", "import_price": .2}]
+        current, _ = current_price_and_future(points, "2032-04-02 23:15:00", "Asia/Shanghai")
+        self.assertEqual(current["import_price"], .2)
 
 
 if __name__ == "__main__":

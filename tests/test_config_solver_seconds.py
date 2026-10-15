@@ -58,7 +58,40 @@ class SolverSecondsMappingTests(unittest.TestCase):
 
     def test_environment_timezone_is_exposed_for_device_time_alignment(self):
         cfg = load_runtime_config(write_config(env_config(local={"timezone": "Asia/Shanghai"})))
+        self.assertIsNone(cfg["device_timezone"])
+        self.assertIsNone(cfg["device_timezone_source"])
+
+    def test_explicit_device_timezone_is_required_and_wins_over_local_timezone(self):
+        payload = env_config(local={"timezone": "UTC", "device_timezone": "Asia/Shanghai"})
+        cfg = load_runtime_config(write_config(payload))
         self.assertEqual(cfg["device_timezone"], "Asia/Shanghai")
+        self.assertEqual(cfg["device_timezone_source"], "local.device_timezone")
+
+    def test_experiment_device_timezone_overrides_local_device_timezone(self):
+        cfg = load_runtime_config(write_config(env_config(
+            local={"device_timezone": "UTC"},
+            experiment={"device_timezone": "Asia/Shanghai"})))
+        self.assertEqual(cfg["device_timezone"], "Asia/Shanghai")
+        self.assertEqual(cfg["device_timezone_source"], "experiment.device_timezone")
+
+    def test_flat_config_requires_explicit_device_timezone(self):
+        cfg = load_runtime_config(write_config({"timezone": "Asia/Shanghai"}))
+        self.assertIsNone(cfg["device_timezone"])
+        cfg = load_runtime_config(write_config({"device_timezone": "Asia/Shanghai"}))
+        self.assertEqual(cfg["device_timezone_source"], "device_timezone")
+
+    def test_environment_machine_explicit_timezone_precedes_local(self):
+        payload = env_config(local={"timezone": "UTC", "device_timezone": "UTC"})
+        payload["environment_machine"]["device_timezone"] = "Asia/Shanghai"
+        cfg = load_runtime_config(write_config(payload))
+        self.assertEqual(cfg["device_timezone"], "Asia/Shanghai")
+        self.assertEqual(cfg["device_timezone_source"], "environment_machine.device_timezone")
+
+    def test_local_timezone_only_is_rejected_by_online_price_guard(self):
+        from run_live import validate_milp_price_window
+        cfg = load_runtime_config(write_config(env_config(local={"timezone": "Asia/Shanghai"})))
+        self.assertEqual(validate_milp_price_window([], "2031-01-01 08:15:00", cfg["device_timezone"]),
+                         "device_time_misaligned:missing_trusted_device_timezone")
 
     def test_runtime_gate_rejects_non_positive_or_slow_budget(self):
         base = {"ha_base": "http://x", "sim_base": "http://y", "sim_username": "u",

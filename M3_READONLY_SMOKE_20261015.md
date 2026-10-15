@@ -40,6 +40,6 @@ python -m pytest tests/test_m3_readonly_smoke.py tests/test_run_live_chain.py te
 python validate_m3_readonly_log.py --console logs/live.log --audit logs/run_live_audit.csv --min-ticks 3 --output outputs/m3_window_<window>/validation.json
 ```
 
-校验器要求启动头明确为 `dry-run`/`write_enabled=False`/`strategy=milp`，每个 tick 恰有 1/2/3 三站、零写入、审计行数一致且三站均非过期。当前窗口的单 tick 日志会被校验器拒绝（不足 3 tick 且三站过期），这是预期结果。配置加载现将 `local.timezone` 映射到 `device_timezone`；比赛机的扁平 `remote_runtime_config.json` 也必须显式填 `"device_timezone": "Asia/Shanghai"`（模板已补）。新窗口先执行 `python check_m3_readonly_preflight.py --config remote_runtime_config.json --output logs/m3_preflight.json`，核对三站后缀、`state_fresh=true`、`price_alignment=aligned`，再开始持续 dry-run。当前窗口的预检记录在 `outputs/m3_window_check_20261015/preflight.json`：48 个 UTC 价格点与三站设备时间在明确时区下对齐，但三站 `state_fresh=false`，故均不能进入优化器。
+校验器要求启动头明确为 `dry-run`/`write_enabled=False`/`strategy=milp`，每个 tick 恰有 1/2/3 三站、零写入、审计行数一致且三站均非过期。当前窗口的单 tick 日志会被校验器拒绝（不足 3 tick 且三站过期），这是预期结果。`local.timezone` 仅为本机时区元数据，不再映射到 `device_timezone`。比赛机的扁平 `remote_runtime_config.json` 必须显式填写并经负责人核实 `device_timezone`；模板中的 `Asia/Shanghai` 只是待核实示例，不是环境证明。缺少或无效时区时，MILP 跳过优化器并记录 non-optimizer-attributed 自用回退；旧 dispatch 路径阻断经济动作且零写入。新窗口先执行 `python check_m3_readonly_preflight.py --config remote_runtime_config.json --output logs/m3_preflight.json`，核对三站后缀、`device_timezone_source`、`state_fresh=true`、`price_alignment=aligned`，再开始持续 dry-run。旧窗口三站 `state_fresh=false`，不能进入优化器，也不能视为 M3 通过。
 
 本轮不启动新模拟赛、live、正式 100 站 F2，不修改 F1 候选 manifest 或任何签核/授权字段。

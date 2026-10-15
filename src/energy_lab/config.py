@@ -74,7 +74,14 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "sim_username": env.get("sim_username"),
             "sim_password": env.get("sim_password"),
             "stations": _stations(env),
-            "device_timezone": _first(experiment, "device_timezone", default=local.get("timezone")),
+            # A generic local timezone is display metadata, not proof of the
+            # simulator/HA device clock timezone. Require an explicit field.
+            "device_timezone": _first(experiment, "device_timezone",
+                                       default=_first(env, "device_timezone",
+                                                      default=local.get("device_timezone"))),
+            "device_timezone_source": ("experiment.device_timezone" if experiment.get("device_timezone")
+                                       else "environment_machine.device_timezone" if env.get("device_timezone")
+                                       else "local.device_timezone" if local.get("device_timezone") else None),
             "live_enabled": bool(_first(experiment, "live_enabled", default=safety.get("live_enabled", False))),
             "allow_ha_write": bool(_first(experiment, "allow_ha_write", default=safety.get("allow_ha_write", False))),
             "allow_formal_contest": bool(_first(experiment, "allow_formal_contest", default=safety.get("allow_formal_contest", False))),
@@ -107,7 +114,9 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "sim_username": env.get("sim_username"),
             "sim_password": env.get("sim_password"),
             "stations": _stations(env),
-            "device_timezone": local.get("timezone"),
+            "device_timezone": _first(env, "device_timezone", default=local.get("device_timezone")),
+            "device_timezone_source": ("environment_machine.device_timezone" if env.get("device_timezone")
+                                       else "local.device_timezone" if local.get("device_timezone") else None),
             "live_enabled": bool(safety.get("live_enabled", False)),
             "allow_ha_write": bool(safety.get("allow_ha_write", False)),
             "allow_formal_contest": bool(safety.get("allow_formal_contest", False)),
@@ -134,6 +143,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
         "sim_password": raw.get("sim_password"),
         "stations": _stations(raw),
         "device_timezone": raw.get("device_timezone"),
+        "device_timezone_source": "device_timezone" if raw.get("device_timezone") else None,
         "live_enabled": bool(raw.get("live_enabled", False)),
         "allow_ha_write": bool(raw.get("allow_ha_write", False)),
         "allow_formal_contest": bool(raw.get("allow_formal_contest", False)),
