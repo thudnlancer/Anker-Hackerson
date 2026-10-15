@@ -45,6 +45,10 @@ LINES=120 ./remote_dry_run_ctl.sh logs
 
 `start` 使用 `nohup`、独立 PID 和日志文件；关闭本地浏览器终端后进程应继续运行。重新打开浏览器终端后执行 `status` 和 `logs`，确认日志中的 `mode=dry-run; write_enabled=False; strategy=milp`，并检查每个结果 `writes_performed=0`。
 
+导入自检须加项目源码路径：`PYTHONPATH=src .venv311/bin/python -c 'from energy_lab.interface_contract import CommandMapping; print("IMPORT_OK")'`。单独运行 `.venv311/bin/python -c 'import energy_lab'` 不带 `PYTHONPATH=src` 会报 `ModuleNotFoundError`，但 `run_live.py` 启动时会自行加入该路径。`readlink -f /proc/<pid>/exe` 显示 `/usr/bin/python3.11` 是虚拟环境解释器软链接的正常解析结果，应同时核对 `/proc/<pid>/cmdline` 中的 `.venv311/bin/python`。
+
+`logs/live.log` 为追加日志，旧 Python 3.9 的 traceback 不代表当前 PID 失败；须用当前 PID 的 `lstart` 与日志中其后出现的 `mode=dry-run; write_enabled=False; strategy=milp` 区分。模拟窗口已结束时，三站持续 `stale_or_unavailable` 表示 HA `device_time_last_changed` 未刷新并触发 15 秒安全门槛；这只能证明安全拒绝陈旧输入，不能证明三站有效策略或下一窗口 D1/M3 已验收。不得为清除该状态而放宽新鲜度门槛或开启 HA 写入。
+
 ## 断线存活与重启恢复演练
 
 1. 启动后记录 `policy.pid`、`logs/runtime_meta.json`、`sha256sum remote_runtime_config.json` 和 `git rev-parse HEAD`。
