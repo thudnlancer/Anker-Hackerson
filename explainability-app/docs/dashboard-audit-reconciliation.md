@@ -66,6 +66,27 @@
 
 本轮读取时 contest 为 mock/ended、days=7、speed=180，results.runs 共 4 条，均包含站号 1/2/3。逐场复算 `100×ΣΔR/ΣK` 与看板总分一致：
 
+## 开赛前快照命令
+
+使用仓库根目录的 `capture_dashboard_snapshot.py`。开赛前和赛后使用**同一个** `local_run_id`，分别保存 `prestart`、`end`。赛后工具先校验开赛前原始响应哈希，再比较历史结果的规范化哈希；仅新增一场时自动暂定关联，多场新增时须明确传入新结果的 `--selected-run-index`。旧结果不能作为本次比赛结果；无新增结算时拒绝生成 end 快照。新增结果仅是初步关联，还须结合开始/结束窗口证据和在线日志确认。原始 JSON 与 manifest 都是本地证据，目录应放在被 `.gitignore` 排除的运行产物目录；工具拒绝覆盖既有快照。
+
+```powershell
+python capture_dashboard_snapshot.py `
+  --config local_online_config.json `
+  --output-dir outputs/dashboard_snapshots/run-20261015-a `
+  --local-run-id run-20261015-a `
+  --phase prestart
+
+# 赛后：若恰有一场新增结果，可自动关联；多场新增时增加 --selected-run-index
+python capture_dashboard_snapshot.py `
+  --config local_online_config.json `
+  --output-dir outputs/dashboard_snapshots/run-20261015-a `
+  --local-run-id run-20261015-a `
+  --phase end
+```
+
+工具只保存 dashboard 原始响应的 SHA-256、脱敏配置哈希和场次元数据；不保存 token，不调用比赛 start/reset，不访问 HA。赛后对账时将同一目录的两个 manifest 与在线审计日志 manifest 一起提供给集成负责人。若开赛前 `results.runs` 为空或赛后出现新历史记录，必须保留原始响应并在对账报告中明确场次选择依据。
+
 | ended_at（UTC 墙钟） | 数据日期窗口 | 看板及复算总分（百分点） |
 |---|---|---:|
 | 2026-10-14T06:29:55Z | 2026-10-11 ~ 2026-10-18 | 0 |
