@@ -60,6 +60,8 @@ def main() -> None:
     source_files = [ROOT / name for name in (
         "run_contest_strategy_replay.py", "prepare_f2_command.py", "validate_f2_output.py",
         "run_live.py", "build_f1_manifest.py", "check_m3_readonly_preflight.py",
+        "capture_price_anchor_contract.py", "validate_m3_readonly_log.py",
+        "src/energy_lab/price_anchor.py", "src/energy_lab/sim_client.py",
         "src/energy_lab/config.py",
         "src/energy_lab/backtest.py", "src/energy_lab/contest_replay.py",
         "src/energy_lab/execute.py", "src/energy_lab/interface_contract.py",
@@ -86,6 +88,8 @@ def main() -> None:
                  ROOT / "tests/test_run_live_chain.py",
                  ROOT / "tests/test_config_solver_seconds.py",
                  ROOT / "tests/test_run_live_time.py",
+                 ROOT / "tests/test_price_anchor.py",
+                 ROOT / "tests/test_validate_m3_readonly_log.py",
                  ROOT / "tests/test_contest_replay.py",
                  ROOT / "tests/test_rolling_milp.py",
                  ROOT / "tests/test_prepare_f2_command.py",

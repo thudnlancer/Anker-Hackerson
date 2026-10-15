@@ -367,21 +367,25 @@
   "reproducibility": {
     "replay_command_template": "prepare_f2_command.py --manifest outputs/f1_parameter_manifest_20261014.json --expected-sha256 <signed-manifest-sha256> --data forecast_data --output <new-dir> --workers 2; gate prints an explicit stage-4 command with all frozen parameters; it does not start replay",
     "source_sha256": {
-      "build_f1_manifest.py": "29ef21fe5d5bd831ef9198a2a55bc40bfab0a40474540723ac1acc6710d7acb7",
-      "check_m3_readonly_preflight.py": "a6945a3f1f7168587f3d2f056a58beb4fc12da0aeb70ba67383248e3c10c3a1f",
+      "build_f1_manifest.py": "9012898f37207b5b502f8c099f6fd8f29529409d41ec63b63f2ad811a344947f",
+      "capture_price_anchor_contract.py": "d23ce12dc3e525eb11fb0b72d8adb23660a5649828ab2782bdafd177e6334505",
+      "check_m3_readonly_preflight.py": "241c88208b087ebcc504c9f9da35add149febccd627f78c350ea309b3eaf2ded",
       "prepare_f2_command.py": "08705282b4d020028eeb448fd881d8af9c6d6eb12d790b7a5775fa73b8d45713",
       "run_contest_strategy_replay.py": "833794b5ec31aac497eb89f343bfddff4017e211458926b8dfba707829d128dd",
-      "run_live.py": "aadf72e50bec9cbcb78de7280282474123f659ad7f39d77c6a758f6737162bf1",
+      "run_live.py": "8488cf4d55cdd74418765bf5e3d252001d67c58b556d288adab492600e01fa13",
       "src/energy_lab/backtest.py": "a8a09097925ad4244ecccba1d863bbcfe8388afd8dd4da52ce69cea123bf3ad3",
-      "src/energy_lab/config.py": "b3fd67f3a46e89741724bda07d5415ca3bb044dbd3c27e35eb615deb19ff8a42",
+      "src/energy_lab/config.py": "52faf3a9f70ada81ea205f2ae94e71cb784ffadd4e77c09b8ce32b4b7f4a3854",
       "src/energy_lab/contest_replay.py": "1f4d436ad4b9a4ea66f6990ffe87f229bf859b64c8b4ac99704d71b17c427bfa",
       "src/energy_lab/execute.py": "e96727ca7954fdcbef50d587007f5aa9a10c67f7911b35ffa768dcf1f2ceef2e",
       "src/energy_lab/interface_contract.py": "108978f51243bf2fc5063dd59284f35e01eea68dca9d7c49569a42571d47f8a7",
       "src/energy_lab/model.py": "4d1f29e9f63e47264bcd409ca4a741efef4178ef3dff64183c2ef5688e073c20",
+      "src/energy_lab/price_anchor.py": "b921db7816e3dece8493167a218455e516707defc8c64e5f9bae70867deb035d",
       "src/energy_lab/rolling.py": "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4",
       "src/energy_lab/shadow.py": "a1f6dc2264763ac1a06a47679fe611b998485385c51d098e123aeea452d4f0c1",
+      "src/energy_lab/sim_client.py": "c70a55ab19bb090043a6de52665b56c2b912d6c8aece56833e16af5a814cb47f",
       "src/energy_lab/validation.py": "967dfd20e2dceb75acb07dbb66e0d95b32a1784e98d295184a51a2bac4275cf0",
-      "validate_f2_output.py": "3130e06b3014bd0e3b06d70afbaf85fc148871a0c02da697fe2dac7e43fa55e4"
+      "validate_f2_output.py": "3130e06b3014bd0e3b06d70afbaf85fc148871a0c02da697fe2dac7e43fa55e4",
+      "validate_m3_readonly_log.py": "5ccd377c911b834c899ef30eb471c5220097d9f2df1b2608bb03ba2dec67de9c"
     },
     "available_practice_dataset_count": 100,
     "available_practice_dataset_sha256": {
@@ -512,10 +516,12 @@
       "tests/test_config_solver_seconds.py": "4ec48bf219952b98ec9cc4c410683326c7a56d26121b412ffbd665b0394155e8",
       "tests/test_contest_replay.py": "298574550c098fe3ba68da7ce28287c11e551d29e3e163156988241ec66f1fcb",
       "tests/test_prepare_f2_command.py": "6c2ed8169387f6a3c97c47e4c86a0998cf3ad5da7fec4e709c2eb669567f3e4e",
+      "tests/test_price_anchor.py": "33b60f60a75397d3159f05da2512e129a7fd4ad6bb52dc50ef53d955544570d8",
       "tests/test_rolling_milp.py": "a65349355cf78f98a9ea55c8d56680a38c91a5e0eacccf96126026cba05d7f6b",
-      "tests/test_run_live_chain.py": "8890a59f92456948cb08d760d241ce522dc8a5658cda0eb0750ed2eef5803e3c",
-      "tests/test_run_live_time.py": "5bcdc8ae971ed3176a035c71ed5c6f04848792dc951ce33550a00d112b6af692",
-      "tests/test_validate_f2_output.py": "2e5ce3b7cc3fadff621a63fc5c6dec41319ade30252de8626350994d4cb1f290"
+      "tests/test_run_live_chain.py": "798f77db01ab56de3da3d71fb244ef3e8220f9db2c5829aa29863e6adbd8e0f1",
+      "tests/test_run_live_time.py": "b9fd7a56730fe57d61ec257c193a70ab73b365edd8f69ab564039adcf16b0aa4",
+      "tests/test_validate_f2_output.py": "2e5ce3b7cc3fadff621a63fc5c6dec41319ade30252de8626350994d4cb1f290",
+      "tests/test_validate_m3_readonly_log.py": "a332b265adea620754f7f8a13b44fb247a00010dbb33bcba6db127a7096d7220"
     },
     "no_model_training": true
   },

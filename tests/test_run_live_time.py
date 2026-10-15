@@ -33,7 +33,7 @@ class RunLiveTimeTests(unittest.TestCase):
 
     def test_api_timezone_cannot_supply_missing_device_timezone(self):
         with self.assertRaisesRegex(ValueError, "missing_trusted_device_timezone"):
-            current_price_and_future([], "2032-04-03 00:15:00+00:00")
+            current_price_and_future([], "2032-04-03 00:15:00")
 
     def test_explicit_device_timezone_overrides_price_timestamp_timezone(self):
         points = [{"time": "2032-04-02T15:00:00Z", "import_price": .2}]

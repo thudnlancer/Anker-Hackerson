@@ -39,10 +39,17 @@ class StubSim:
     def prices(self):
         return self._prices
 
+    def current_price(self):
+        # Independent explicit current slot, not selected by price value.
+        return {"start": "2031-01-01T00:00:00Z", "end": "2031-01-01T01:00:00Z",
+                "import_price": 0.3, "export_price": 0.1}
+
 
 def make_prices(import_price=0.3):
     return {day: {"date": date, "points": [
-        {"start": f"{date}T{hour:02d}:00:00Z", "import_price": import_price, "export_price": 0.1}
+        {"start": f"{date}T{hour:02d}:00:00Z",
+         "end": (pd.Timestamp(f"{date}T{hour:02d}:00:00Z") + pd.Timedelta(hours=1)).isoformat(),
+         "import_price": import_price, "export_price": 0.1}
         for hour in range(24)]}
         for day, date in (("today", "2031-01-01"), ("tomorrow", "2031-01-02"))}
 
@@ -140,7 +147,7 @@ class DryRunChainTests(unittest.TestCase):
         prices = make_prices()
         del prices["today"]["points"][3]
         self.assert_online_price_anomaly_falls_back(
-            prices, "missing_price_data:incomplete_optimizer_horizon")
+            prices, "price_anchor_rejected:missing_or_noncontinuous_price_slot")
 
     def test_nonfinite_online_price_falls_back_and_is_not_optimized(self):
         prices = make_prices()
@@ -157,7 +164,7 @@ class DryRunChainTests(unittest.TestCase):
         row = results[0]
         self.assertEqual(row["status"], "fallback_self_use_mode")
         self.assertFalse(row["optimizer_attributed"])
-        self.assertEqual(row["reason"], "device_time_misaligned:outside_price_window")
+        self.assertEqual(row["reason"], "device_api_date_hour_conflict")
         self.assertEqual(row["writes_performed"], 1)
         self.assertEqual(logged["reason"], row["reason"])
         self.assertEqual(logged["attribution"], "non-optimizer-attributed")
@@ -168,11 +175,13 @@ class DryRunChainTests(unittest.TestCase):
         ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00")})
         config = cfg(verified=True)
         del config["device_timezone"]
+        sim = StubSim(make_prices())
+        sim.current_price = lambda: {}
         with patch("energy_lab.shadow.optimize_window") as optimize:
-            results = run_once_milp(config, ha, StubSim(make_prices()),
+            results = run_once_milp(config, ha, sim,
                                     write_enabled=True, carry={})
         self.assertEqual(results[0]["reason"],
-                         "device_time_misaligned:missing_trusted_device_timezone")
+                         "price_anchor_rejected:current_slot_missing_or_invalid")
         self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
         optimize.assert_not_called()
 
@@ -180,11 +189,13 @@ class DryRunChainTests(unittest.TestCase):
         ha = StubHA({"1502": state(device_time="2031-01-01T00:15:00+00:00")})
         config = cfg(verified=True)
         del config["device_timezone"]
+        sim = StubSim(make_prices())
+        sim.current_price = lambda: {}
         with patch("energy_lab.shadow.optimize_window") as optimize:
-            results = run_once_milp(config, ha, StubSim(make_prices()),
+            results = run_once_milp(config, ha, sim,
                                     write_enabled=True, carry={})
         self.assertEqual(results[0]["reason"],
-                         "device_time_misaligned:missing_trusted_device_timezone")
+                         "price_anchor_rejected:current_slot_missing_or_invalid")
         self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
         optimize.assert_not_called()
 
@@ -203,8 +214,10 @@ class DryRunChainTests(unittest.TestCase):
         ha = StubHA({"1502": state()})
         config = cfg()
         del config["device_timezone"]
+        sim = StubSim(make_prices())
+        sim.current_price = lambda: {}
         with patch("run_live.dispatch") as dispatch:
-            rows = run_once(config, ha, StubSim(make_prices()), write_enabled=True)
+            rows = run_once(config, ha, sim, write_enabled=True)
         self.assertEqual(rows[0]["status"], "economic_action_blocked")
         self.assertEqual(rows[0]["writes_performed"], 0)
         self.assertEqual(ha.calls, [])

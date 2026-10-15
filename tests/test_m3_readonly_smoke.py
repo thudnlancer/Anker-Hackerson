@@ -81,7 +81,7 @@ class ThreeSiteReadonlySmokeTests(unittest.TestCase):
             rows = run_once_milp(three_site_config(), ha, StubSim(make_prices()),
                                  write_enabled=False, carry={})
         self.assertEqual(rows[1]["status"], "fallback_self_use_mode")
-        self.assertEqual(rows[1]["reason"], "device_time_misaligned:outside_price_window")
+        self.assertEqual(rows[1]["reason"], "device_api_date_hour_conflict")
         self.assertEqual(rows[1]["attribution"], "non-optimizer-attributed")
         self.assertEqual(rows[1]["writes_performed"], 0)
         self.assertEqual(optimize.call_count, 2)

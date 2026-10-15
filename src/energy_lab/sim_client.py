@@ -44,6 +44,9 @@ class SimulatorClient:
     def prices(self) -> Any:
         return self.get("/api/price")
 
+    def current_price(self) -> Any:
+        return self.get("/api/price/current")
+
     def weather(self, day: str = "today", site: int = 1) -> Any:
         return self.get(f"/api/weather/{day}", site=site)
 

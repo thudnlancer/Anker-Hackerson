@@ -28,6 +28,7 @@ from energy_lab.execute import check_soc_divergence, execute_candidate
 from energy_lab.ha_client import HAClient
 from energy_lab.model import dispatch
 from energy_lab.sim_client import SimulatorClient
+from energy_lab.price_anchor import read_anchored_tick
 from energy_lab.shadow import daily_points, make_candidate
 from energy_lab.interface_contract import (CommandMapping, map_battery_action, state_is_fresh,
                                            verify_readback, align_hourly_points)
@@ -68,10 +69,14 @@ def price_window(response: object) -> list[dict]:
 def validate_milp_price_window(points: list[dict], device_time: object,
                                device_timezone: str | None = None) -> str | None:
     """Validate the complete optimizer horizon before any solver call."""
-    if not device_timezone:
-        return "device_time_misaligned:missing_trusted_device_timezone"
     try:
-        ZoneInfo(device_timezone)
+        tick = pd.Timestamp(device_time)
+        if pd.isna(tick):
+            return "device_time_misaligned:invalid_device_time"
+        if not device_timezone and tick.tzinfo is None:
+            return "device_time_misaligned:missing_trusted_device_timezone"
+        if device_timezone:
+            ZoneInfo(device_timezone)
     except (ZoneInfoNotFoundError, ValueError, TypeError):
         return "device_time_misaligned:invalid_device_timezone"
     if not points:
@@ -112,9 +117,10 @@ def validate_milp_price_window(points: list[dict], device_time: object,
 
 def current_price_and_future(points: list[dict], device_time: object,
                              device_timezone: str | None = None) -> tuple[dict, list[float]]:
-    if not device_timezone:
+    if not device_timezone and pd.Timestamp(device_time).tzinfo is None:
         raise ValueError("missing_trusted_device_timezone")
-    ZoneInfo(device_timezone)
+    if device_timezone:
+        ZoneInfo(device_timezone)
     stamp = pd.Timestamp(device_time)
     if stamp.tzinfo is None:
         stamp = stamp.tz_localize(device_timezone)
@@ -130,12 +136,18 @@ def current_price_and_future(points: list[dict], device_time: object,
 
 
 def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool) -> list[dict]:
-    prices = price_window(sim.prices())
+    batch = read_anchored_tick(cfg, ha, sim, price_window,
+                               price_validator=validate_milp_price_window)
+    prices = batch["points"]
     results: list[dict] = []
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
         try:
-            state = ha.station_state(suffix)
+            if site not in batch["states"]:
+                results.append({"site": site, "status": "station_error",
+                                "error": batch["errors"].get(site), "writes_performed": 0})
+                continue
+            state = batch["states"][site]
             stamp = state.get("device_time")
             freshness = state.get("device_time_last_changed")
             if not stamp or not freshness or "unavailable" in str(stamp).lower():
@@ -144,7 +156,8 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
             if not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
-            price_error = validate_milp_price_window(prices, stamp, cfg.get("device_timezone"))
+            resolved = batch["times"].get(site)
+            price_error = batch["errors"].get(site) or validate_milp_price_window(prices, resolved)
             if price_error:
                 results.append({"site": site, "status": "economic_action_blocked",
                                 "device_time": stamp, "reason": price_error,
@@ -152,7 +165,7 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
                                 "attribution": "non-optimizer-attributed",
                                 "write_enabled": False, "writes_performed": 0})
                 continue
-            current, future = current_price_and_future(prices, stamp, cfg.get("device_timezone"))
+            current, future = current_price_and_future(prices, resolved)
             solar_w, load_w, soc = numeric(state.get("solar_power")), numeric(state.get("home_load")), numeric(state.get("soc"))
             flow, watts, reason = dispatch(
                 numeric(current.get("import_price")),
@@ -187,6 +200,9 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
                 "soc": state.get("soc"),
                 "reason": reason,
                 "write_enabled": write_enabled,
+                "ha_device_time_raw": stamp,
+                "resolved_device_time": str(resolved),
+                **batch["metadata"],
             }
             if write_enabled:
                 if command_flow == "self_consumption":
@@ -218,18 +234,19 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
     from config, revocable by the SOC guard); ``carry["previous"]`` keeps each
     site's last candidate/record for next-tick readback and divergence checks.
     """
-    try:
-        points = price_window(sim.prices())
-        price_payload_error = None
-    except Exception as exc:
-        points = []
-        price_payload_error = f"missing_price_data:price_api_unavailable:{type(exc).__name__}"
+    batch = read_anchored_tick(cfg, ha, sim, price_window,
+                               price_validator=validate_milp_price_window)
+    points = batch["points"]
     results: list[dict] = []
     audit_rows: list[dict] = []
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
         try:
-            state = ha.station_state(suffix)
+            if site not in batch["states"]:
+                results.append({"site": site, "status": "station_error",
+                                "error": batch["errors"].get(site), "writes_performed": 0})
+                continue
+            state = batch["states"][site]
             stamp = state.get("device_time")
             freshness = state.get("device_time_last_changed")
             if not stamp or not freshness or "unavailable" in str(stamp).lower():
@@ -254,7 +271,8 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     check = verify_readback(
                         CommandMapping(True, prev_record["command_flow"], prev_record["target_w"],
                                        "executed_command"),
-                        state, sent_device_time=prev_candidate.get("device_time"),
+                        {**state, "device_time": batch["times"].get(site, stamp)},
+                        sent_device_time=prev_candidate.get("device_time"),
                         issued_at=previous["issued_at"], now=_utcnow_iso())
                     previous_verdict = check.reason
                 if prev_record["writes_performed"] and math.isfinite(soc_now):
@@ -269,19 +287,18 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     if guard["guard_action"] == "revoke_zero_flow_verified":
                         carry["verified"][site] = verified = False
 
-            price_error = price_payload_error or validate_milp_price_window(
-                points, stamp, cfg.get("device_timezone"))
+            resolved = batch["times"].get(site)
+            price_error = batch["errors"].get(site) or validate_milp_price_window(points, resolved)
             if price_error:
                 candidate = {"status": "blocked", "solver_status": "not_run",
                              "device_time": stamp, "fallback": price_error}
             else:
                 try:
                     candidate = make_candidate(
-                        state, points,
+                        {**state, "device_time": resolved.isoformat()}, points,
                         solver_seconds=float(cfg.get("solver_seconds", 2.0)),
                         capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
                         soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
-                        device_timezone=cfg.get("device_timezone"),
                         idle_candidate="zero_charge_unverified" if verified else "legacy_hold")
                 except Exception as exc:
                     # Keep failures outside the explicitly classified price
@@ -299,6 +316,11 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                    "observed_soc": state.get("soc"), "observed_pv": state.get("solar_power"),
                    "observed_load": state.get("home_load"), "write_enabled": write_enabled,
                    **record,
+                   "ha_device_time_raw": stamp,
+                   "resolved_device_time": None if resolved is None else resolved.isoformat(),
+                   **batch["metadata"],
+                   "alignment_attempts": batch["alignment_attempts"],
+                   "alignment_rejection_reason": price_error,
                    "attribution": ("optimizer-attributed" if record["optimizer_attributed"] else
                                    "non-optimizer-attributed"),
                    "previous_readback_verdict": previous_verdict,

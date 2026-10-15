@@ -1,0 +1,467 @@
+{
+  "read_only": true,
+  "writes_performed": 0,
+  "config_sha256": "257d1a076e6930ad1240cbbf28208d6c9e5d6540c74bbb305bf29d9d0bda0f8c",
+  "samples": [
+    {
+      "endpoint": "/api/price/current",
+      "requested_at": "2026-10-15T07:41:20.204684+00:00",
+      "received_at": "2026-10-15T07:41:21.036761+00:00",
+      "response": {
+        "start": "2026-10-17T08:00:00Z",
+        "end": "2026-10-17T09:00:00Z",
+        "import_price": 0.27463,
+        "export_price": 0.15813,
+        "currency": "EUR",
+        "unit": "kWh"
+      }
+    },
+    {
+      "endpoint": "/api/price",
+      "requested_at": "2026-10-15T07:41:21.036778+00:00",
+      "received_at": "2026-10-15T07:41:21.430683+00:00",
+      "response": {
+        "today": {
+          "date": "2026-10-17",
+          "weekday": "Saturday",
+          "currency": "EUR",
+          "unit": "kWh",
+          "points": [
+            {
+              "start": "2026-10-17T00:00:00Z",
+              "end": "2026-10-17T01:00:00Z",
+              "import_price": 0.28747,
+              "export_price": 0.17125,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T01:00:00Z",
+              "end": "2026-10-17T02:00:00Z",
+              "import_price": 0.28509,
+              "export_price": 0.16882,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T02:00:00Z",
+              "end": "2026-10-17T03:00:00Z",
+              "import_price": 0.28307,
+              "export_price": 0.16675,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T03:00:00Z",
+              "end": "2026-10-17T04:00:00Z",
+              "import_price": 0.28104,
+              "export_price": 0.16468,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T04:00:00Z",
+              "end": "2026-10-17T05:00:00Z",
+              "import_price": 0.27872,
+              "export_price": 0.16231,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T05:00:00Z",
+              "end": "2026-10-17T06:00:00Z",
+              "import_price": 0.28104,
+              "export_price": 0.16468,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T06:00:00Z",
+              "end": "2026-10-17T07:00:00Z",
+              "import_price": 0.29036,
+              "export_price": 0.17419,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T07:00:00Z",
+              "end": "2026-10-17T08:00:00Z",
+              "import_price": 0.2888,
+              "export_price": 0.1726,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T08:00:00Z",
+              "end": "2026-10-17T09:00:00Z",
+              "import_price": 0.27463,
+              "export_price": 0.15813,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T09:00:00Z",
+              "end": "2026-10-17T10:00:00Z",
+              "import_price": 0.23977,
+              "export_price": 0.12253,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T10:00:00Z",
+              "end": "2026-10-17T11:00:00Z",
+              "import_price": 0.21298,
+              "export_price": 0.09519,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T11:00:00Z",
+              "end": "2026-10-17T12:00:00Z",
+              "import_price": 0.18044,
+              "export_price": 0.06196,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T12:00:00Z",
+              "end": "2026-10-17T13:00:00Z",
+              "import_price": 0.15818,
+              "export_price": 0.03922,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T13:00:00Z",
+              "end": "2026-10-17T14:00:00Z",
+              "import_price": 0.15775,
+              "export_price": 0.03879,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T14:00:00Z",
+              "end": "2026-10-17T15:00:00Z",
+              "import_price": 0.19687,
+              "export_price": 0.07873,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T15:00:00Z",
+              "end": "2026-10-17T16:00:00Z",
+              "import_price": 0.22539,
+              "export_price": 0.10786,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T16:00:00Z",
+              "end": "2026-10-17T17:00:00Z",
+              "import_price": 0.25246,
+              "export_price": 0.13549,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T17:00:00Z",
+              "end": "2026-10-17T18:00:00Z",
+              "import_price": 0.28473,
+              "export_price": 0.16844,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T18:00:00Z",
+              "end": "2026-10-17T19:00:00Z",
+              "import_price": 0.33208,
+              "export_price": 0.2168,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T19:00:00Z",
+              "end": "2026-10-17T20:00:00Z",
+              "import_price": 0.32491,
+              "export_price": 0.20948,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T20:00:00Z",
+              "end": "2026-10-17T21:00:00Z",
+              "import_price": 0.29363,
+              "export_price": 0.17754,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T21:00:00Z",
+              "end": "2026-10-17T22:00:00Z",
+              "import_price": 0.27675,
+              "export_price": 0.1603,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T22:00:00Z",
+              "end": "2026-10-17T23:00:00Z",
+              "import_price": 0.2696,
+              "export_price": 0.153,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-17T23:00:00Z",
+              "end": "2026-10-18T00:00:00Z",
+              "import_price": 0.25568,
+              "export_price": 0.13878,
+              "currency": "EUR",
+              "unit": "kWh"
+            }
+          ],
+          "stats": {
+            "import_min": 0.15775,
+            "import_max": 0.33208,
+            "import_avg": 0.25881,
+            "import_min_hour": 13,
+            "import_max_hour": 18,
+            "export_min": 0.03879,
+            "export_max": 0.2168,
+            "export_avg": 0.14198000000000002
+          }
+        },
+        "tomorrow": {
+          "date": "2026-10-18",
+          "weekday": "Sunday",
+          "currency": "EUR",
+          "unit": "kWh",
+          "points": [
+            {
+              "start": "2026-10-18T00:00:00Z",
+              "end": "2026-10-18T01:00:00Z",
+              "import_price": 0.24866,
+              "export_price": 0.13162,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T01:00:00Z",
+              "end": "2026-10-18T02:00:00Z",
+              "import_price": 0.24243,
+              "export_price": 0.12525,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T02:00:00Z",
+              "end": "2026-10-18T03:00:00Z",
+              "import_price": 0.23884,
+              "export_price": 0.12159,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T03:00:00Z",
+              "end": "2026-10-18T04:00:00Z",
+              "import_price": 0.23599,
+              "export_price": 0.11868,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T04:00:00Z",
+              "end": "2026-10-18T05:00:00Z",
+              "import_price": 0.23926,
+              "export_price": 0.12201,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T05:00:00Z",
+              "end": "2026-10-18T06:00:00Z",
+              "import_price": 0.24126,
+              "export_price": 0.12405,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T06:00:00Z",
+              "end": "2026-10-18T07:00:00Z",
+              "import_price": 0.24263,
+              "export_price": 0.12546,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T07:00:00Z",
+              "end": "2026-10-18T08:00:00Z",
+              "import_price": 0.22888,
+              "export_price": 0.11142,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T08:00:00Z",
+              "end": "2026-10-18T09:00:00Z",
+              "import_price": 0.18094,
+              "export_price": 0.06246,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T09:00:00Z",
+              "end": "2026-10-18T10:00:00Z",
+              "import_price": 0.14057,
+              "export_price": 0.02124,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T10:00:00Z",
+              "end": "2026-10-18T11:00:00Z",
+              "import_price": 0.13205,
+              "export_price": 0.01254,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T11:00:00Z",
+              "end": "2026-10-18T12:00:00Z",
+              "import_price": 0.12766,
+              "export_price": 0.00806,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T12:00:00Z",
+              "end": "2026-10-18T13:00:00Z",
+              "import_price": 0.1139,
+              "export_price": -0.00599,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T13:00:00Z",
+              "end": "2026-10-18T14:00:00Z",
+              "import_price": 0.12179,
+              "export_price": 0.00207,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T14:00:00Z",
+              "end": "2026-10-18T15:00:00Z",
+              "import_price": 0.13064,
+              "export_price": 0.0111,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T15:00:00Z",
+              "end": "2026-10-18T16:00:00Z",
+              "import_price": 0.1455,
+              "export_price": 0.02627,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T16:00:00Z",
+              "end": "2026-10-18T17:00:00Z",
+              "import_price": 0.22899,
+              "export_price": 0.11153,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T17:00:00Z",
+              "end": "2026-10-18T18:00:00Z",
+              "import_price": 0.28676,
+              "export_price": 0.17052,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T18:00:00Z",
+              "end": "2026-10-18T19:00:00Z",
+              "import_price": 0.32531,
+              "export_price": 0.20989,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T19:00:00Z",
+              "end": "2026-10-18T20:00:00Z",
+              "import_price": 0.33248,
+              "export_price": 0.21721,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T20:00:00Z",
+              "end": "2026-10-18T21:00:00Z",
+              "import_price": 0.31805,
+              "export_price": 0.20247,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T21:00:00Z",
+              "end": "2026-10-18T22:00:00Z",
+              "import_price": 0.30238,
+              "export_price": 0.18647,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T22:00:00Z",
+              "end": "2026-10-18T23:00:00Z",
+              "import_price": 0.29496,
+              "export_price": 0.17889,
+              "currency": "EUR",
+              "unit": "kWh"
+            },
+            {
+              "start": "2026-10-18T23:00:00Z",
+              "end": "2026-10-19T00:00:00Z",
+              "import_price": 0.28903,
+              "export_price": 0.17284,
+              "currency": "EUR",
+              "unit": "kWh"
+            }
+          ],
+          "stats": {
+            "import_min": 0.1139,
+            "import_max": 0.33248,
+            "import_avg": 0.22454000000000005,
+            "import_min_hour": 12,
+            "import_max_hour": 19,
+            "export_min": -0.00599,
+            "export_max": 0.21721,
+            "export_avg": 0.10698541666666665
+          }
+        }
+      }
+    },
+    {
+      "endpoint": "/api/price/current",
+      "requested_at": "2026-10-15T07:41:21.430694+00:00",
+      "received_at": "2026-10-15T07:41:21.807487+00:00",
+      "response": {
+        "start": "2026-10-17T08:00:00Z",
+        "end": "2026-10-17T09:00:00Z",
+        "import_price": 0.27463,
+        "export_price": 0.15813,
+        "currency": "EUR",
+        "unit": "kWh"
+      }
+    }
+  ],
+  "contract_check": {
+    "unique_current_slot": true,
+    "api_current_start": "2026-10-17T08:00:00Z",
+    "api_current_end": "2026-10-17T09:00:00Z",
+    "selected_price_slot": "2026-10-17T08:00:00Z",
+    "alignment_source": "api_current_slot"
+  }
+}

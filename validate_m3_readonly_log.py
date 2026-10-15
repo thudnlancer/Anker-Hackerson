@@ -7,6 +7,10 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+from energy_lab.price_anchor import anchor_device_time, slot
 
 
 def validate(console: Path, audit: Path, min_ticks: int = 3) -> dict:
@@ -50,11 +54,30 @@ def validate(console: Path, audit: Path, min_ticks: int = 3) -> dict:
     all_eligible = all(row.get("status") != "stale_or_unavailable" for row in records)
     if not all_eligible:
         raise ValueError("one or more stations remained stale during continuous M3")
+    previous = {}
+    for row in records:
+        if row.get("alignment_source") != "api_current_slot" or row.get("alignment_rejection_reason"):
+            raise ValueError("missing or rejected API current-slot alignment")
+        if row.get("status") in ("station_error", "candidate_error"):
+            raise ValueError("station/candidate error during continuous M3")
+        try:
+            start, _ = slot({"start": row["api_current_start"], "end": row["api_current_end"]})
+            resolved = anchor_device_time(row["ha_device_time_raw"], start)
+            if resolved != pd.Timestamp(row["resolved_device_time"]) or start != pd.Timestamp(row["selected_price_slot"]):
+                raise ValueError("slot mismatch")
+            if row["site"] in previous and resolved <= previous[row["site"]]:
+                raise ValueError("device time did not increase")
+            previous[row["site"]] = resolved
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid API current-slot evidence: {exc}") from exc
+    if "alignment_source" not in frame or not frame.alignment_source.eq("api_current_slot").all():
+        raise ValueError("audit lacks API current-slot evidence")
     return {"valid": True, "mode": "dry-run", "strategy": "milp",
             "ticks": len(records) // 3, "site_records": len(records),
             "audited_rows": audited_rows, "writes_performed": 0,
             "all_sites_each_tick": True,
-            "all_sites_eligible": all_eligible}
+            "all_sites_eligible": all_eligible, "api_current_slot_alignment": True,
+            "device_time_increasing": True}
 
 
 def main() -> None:
