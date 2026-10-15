@@ -20,15 +20,19 @@ git rev-parse HEAD
 
 ```bash
 chmod 600 remote_runtime_config.json
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+python3.11 --version  # 本项目要求 Python >=3.10；比赛机旧 python3/.venv 可能是 3.9
+python3.11 -m venv .venv311
+.venv311/bin/python -m pip install -r requirements.txt
+printf '%s\n' "$PWD/.venv311" > .runtime_venv
 export PINNED_COMMIT=<PINNED_COMMIT>
 printf '%s\n' "$PINNED_COMMIT" > .pinned_commit
-export VENV=$PWD/.venv
+export VENV=$PWD/.venv311
 export CONFIG=$PWD/remote_runtime_config.json
 ```
 
 配置必须满足 `mode=dry-run`，且 `live_enabled=false`、`allow_ha_write=false`、`allow_formal_contest=false`。控制脚本会拒绝任何不满足条件的配置。
+
+若 `python3.11` 不存在，先在 Amazon Linux 2023 上执行 `sudo dnf install -y python3.11`，再重建新的 `.venv311`。不要在旧的 3.9 虚拟环境上运行 `pip install` 来尝试升级解释器；保留旧 `.venv` 和已有日志以便审计。
 
 ## 常驻、断线、状态/日志/停止
 

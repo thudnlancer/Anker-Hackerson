@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${CONFIG:-$ROOT/remote_runtime_config.json}"
-VENV="${VENV:-$ROOT/.venv}"
+VENV="${VENV:-$(test -f "$ROOT/.runtime_venv" && cat "$ROOT/.runtime_venv" || echo "$ROOT/.venv")}"
 PIDFILE="${PIDFILE:-$ROOT/policy.pid}"
 LOGFILE="${LOGFILE:-$ROOT/logs/live.log}"
 META="${META:-$ROOT/logs/runtime_meta.json}"
@@ -12,7 +12,13 @@ PINNED_COMMIT="${PINNED_COMMIT:-$(test -f "$ROOT/.pinned_commit" && cat "$ROOT/.
 UNIT=solarbank-dry-run.service
 
 die() { echo "ERROR: $*" >&2; exit 1; }
-need_files() { [[ -f "$CONFIG" ]] || die "missing $CONFIG"; [[ -x "$VENV/bin/python" ]] || die "missing $VENV/bin/python"; mkdir -p "$(dirname "$LOGFILE")"; }
+need_files() {
+  [[ -f "$CONFIG" ]] || die "missing $CONFIG"
+  [[ -x "$VENV/bin/python" ]] || die "missing $VENV/bin/python"
+  "$VENV/bin/python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' ||
+    die "Python >=3.10 is required; found $($VENV/bin/python --version 2>&1) in $VENV"
+  mkdir -p "$(dirname "$LOGFILE")"
+}
 validate_config() {
   "$VENV/bin/python" - "$CONFIG" <<'PY'
 import json, sys
