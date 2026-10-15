@@ -25,7 +25,8 @@ Write-Host "Checking SSH connectivity to $remote ..."
 & ssh @sshArgs "mkdir -p '$work' '$work/logs' '$work/models'"
 if ($LASTEXITCODE -ne 0) { throw "SSH connectivity check failed" }
 
-$items = @("src", "run_live.py", "run_online_dry_run.py", "requirements.txt", "models")
+$items = @("src", "run_live.py", "run_online_dry_run.py", "requirements.txt", "models",
+    "remote_dry_run_ctl.sh", "install_remote_dry_run_recovery.sh")
 foreach ($item in $items) {
     $local = Join-Path $root $item
     if (-not (Test-Path -LiteralPath $local)) { throw "Missing deployment item: $local" }
