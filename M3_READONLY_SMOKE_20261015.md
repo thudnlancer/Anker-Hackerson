@@ -28,4 +28,18 @@ python -m pytest tests/test_m3_readonly_smoke.py tests/test_run_live_chain.py te
 
 ## 后续门槛
 
-新窗口启动后，再验证同一窗口身份、三站新鲜设备时间及价格窗口对齐，并保存连续多 tick 审计、零写入计数与恢复记录。本轮不启动新模拟赛、live、正式 100 站 F2，不修改 F1 候选 manifest 或任何签核/授权字段。
+新窗口启动后，在环境机只读执行（不使用 `live`）：
+
+```bash
+./remote_dry_run_ctl.sh start
+```
+
+该守护进程会持续运行 `run_live.py --mode dry-run --strategy milp`，写入 `logs/live.log` 和 `logs/run_live_audit.csv`。停止/查看使用 `./remote_dry_run_ctl.sh stop|logs|status`。收集至少 3 个完整三站 tick 后，在本地用：
+
+```powershell
+python validate_m3_readonly_log.py --console logs/live.log --audit logs/run_live_audit.csv --min-ticks 3 --output outputs/m3_window_<window>/validation.json
+```
+
+校验器要求启动头明确为 `dry-run`/`write_enabled=False`/`strategy=milp`，每个 tick 恰有 1/2/3 三站、零写入、审计行数一致且三站均非过期。当前窗口的单 tick 日志会被校验器拒绝（不足 3 tick 且三站过期），这是预期结果。配置加载现将 `local.timezone` 映射到 `device_timezone`；比赛机的扁平 `remote_runtime_config.json` 也必须显式填 `"device_timezone": "Asia/Shanghai"`（模板已补）。新窗口先执行 `python check_m3_readonly_preflight.py --config remote_runtime_config.json --output logs/m3_preflight.json`，核对三站后缀、`state_fresh=true`、`price_alignment=aligned`，再开始持续 dry-run。当前窗口的预检记录在 `outputs/m3_window_check_20261015/preflight.json`：48 个 UTC 价格点与三站设备时间在明确时区下对齐，但三站 `state_fresh=false`，故均不能进入优化器。
+
+本轮不启动新模拟赛、live、正式 100 站 F2，不修改 F1 候选 manifest 或任何签核/授权字段。

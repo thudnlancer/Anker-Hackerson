@@ -1,0 +1,43 @@
+{
+  "mode": "dry-run",
+  "strategy": "milp",
+  "writes_performed": 0,
+  "config_sha256": "73d50bb5b70b7b457efca67478a2fb41000ae68c2cd1f562731e0439d62f2a3c",
+  "price_points": 48,
+  "price_error": null,
+  "stations": {
+    "1": {
+      "suffix": "anker_solix_solarbank_max_ac_1502",
+      "device_time": "2026-10-17 08:15:00",
+      "device_time_last_changed": "2026-10-14T18:17:03.312939+00:00",
+      "state_fresh": false,
+      "price_alignment": "aligned",
+      "eligible_for_milp_tick": false,
+      "soc": "88",
+      "solar_power_w": "753",
+      "home_load_w": "180"
+    },
+    "2": {
+      "suffix": "anker_solix_solarbank_max_ac_1503",
+      "device_time": "2026-10-17 08:15:00",
+      "device_time_last_changed": "2026-10-14T18:17:03.245520+00:00",
+      "state_fresh": false,
+      "price_alignment": "aligned",
+      "eligible_for_milp_tick": false,
+      "soc": "75",
+      "solar_power_w": "210",
+      "home_load_w": "0"
+    },
+    "3": {
+      "suffix": "anker_solix_solarbank_max_ac_1504",
+      "device_time": "2026-10-17 08:15:00",
+      "device_time_last_changed": "2026-10-14T18:17:00.958004+00:00",
+      "state_fresh": false,
+      "price_alignment": "aligned",
+      "eligible_for_milp_tick": false,
+      "soc": "0",
+      "solar_power_w": "312",
+      "home_load_w": "1402"
+    }
+  }
+}

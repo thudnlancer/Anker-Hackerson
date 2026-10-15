@@ -56,6 +56,10 @@ class SolverSecondsMappingTests(unittest.TestCase):
             self.assertEqual(cfg["solver_seconds"], 2.0)
             self.assertLess(cfg["solver_seconds"], cfg["poll_seconds"])
 
+    def test_environment_timezone_is_exposed_for_device_time_alignment(self):
+        cfg = load_runtime_config(write_config(env_config(local={"timezone": "Asia/Shanghai"})))
+        self.assertEqual(cfg["device_timezone"], "Asia/Shanghai")
+
     def test_runtime_gate_rejects_non_positive_or_slow_budget(self):
         base = {"ha_base": "http://x", "sim_base": "http://y", "sim_username": "u",
                 "sim_password": "p", "ha_token": "token", "stations": {"1": {"suffix": "s"}},
