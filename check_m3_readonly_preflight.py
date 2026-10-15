@@ -26,15 +26,16 @@ def inspect(config_path: Path) -> dict:
     suffixes = [str(sites[key]["suffix"]) for key in ("1", "2", "3")]
     if len(set(suffixes)) != 3:
         raise ValueError("station suffixes must be unique")
-    ha = HAClient(str(cfg["ha_base"]), exchange_ha_token(cfg))
+    ha = HAClient(str(cfg["ha_base"]), exchange_ha_token(cfg), proxy_mode=cfg["proxy_mode"])
     sim = SimulatorClient(str(cfg["sim_base"]), str(cfg["sim_username"]),
-                          str(cfg["sim_password"]))
+                          str(cfg["sim_password"]), proxy_mode=cfg["proxy_mode"])
     batch = read_anchored_tick(cfg, ha, sim, price_window,
                                price_validator=validate_milp_price_window)
     points = batch["points"]
     report = {"mode": "dry-run", "strategy": "milp", "writes_performed": 0,
               "collected_at": datetime.now(timezone.utc).isoformat(),
               "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
+              "proxy_mode": cfg["proxy_mode"],
               "device_timezone": cfg.get("device_timezone"),
               "device_timezone_source": cfg.get("device_timezone_source"),
               "price_points": len(points), "alignment_attempts": batch["alignment_attempts"],

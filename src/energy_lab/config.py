@@ -40,6 +40,14 @@ def canonical_suffix(value: object) -> str:
     return f"{prefix}{suffix}"
 
 
+def proxy_mode(value: object) -> str:
+    """Select one consistent requests policy for HA auth, HA and simulator."""
+    mode = str(value if value is not None else "environment").lower()
+    if mode not in ("environment", "direct"):
+        raise ValueError("proxy_mode must be environment or direct")
+    return mode
+
+
 def _stations(source: dict[str, Any]) -> dict[str, dict[str, Any]]:
     stations = source.get("stations") or {}
     result: dict[str, dict[str, Any]] = {}
@@ -74,6 +82,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "sim_username": env.get("sim_username"),
             "sim_password": env.get("sim_password"),
             "stations": _stations(env),
+            "proxy_mode": proxy_mode(_first(experiment, "proxy_mode", default=local.get("proxy_mode"))),
             # A generic local timezone is display metadata, not proof of the
             # simulator/HA device clock timezone. Require an explicit field.
             "device_timezone": _first(experiment, "device_timezone",
@@ -116,6 +125,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
             "sim_username": env.get("sim_username"),
             "sim_password": env.get("sim_password"),
             "stations": _stations(env),
+            "proxy_mode": proxy_mode(local.get("proxy_mode")),
             "device_timezone": _first(env, "device_timezone", default=local.get("device_timezone")),
             "device_timezone_source": ("environment_machine.device_timezone" if env.get("device_timezone")
                                        else "local.device_timezone" if local.get("device_timezone") else None),
@@ -146,6 +156,7 @@ def load_runtime_config(path: Path, mode_override: str | None = None) -> dict[st
         "sim_username": raw.get("sim_username"),
         "sim_password": raw.get("sim_password"),
         "stations": _stations(raw),
+        "proxy_mode": proxy_mode(raw.get("proxy_mode")),
         "device_timezone": raw.get("device_timezone"),
         "device_timezone_source": "device_timezone" if raw.get("device_timezone") else None,
         "live_enabled": bool(raw.get("live_enabled", False)),
@@ -189,7 +200,7 @@ def exchange_ha_token(cfg: dict[str, Any]) -> str:
     base = str(cfg["ha_base"]).rstrip("/")
     client = "http://localhost:8123/"
     session = requests.Session()
-    session.trust_env = False
+    session.trust_env = proxy_mode(cfg.get("proxy_mode")) == "environment"
     flow = session.post(
         f"{base}/auth/login_flow",
         json={"client_id": client, "handler": ["homeassistant", None], "redirect_uri": client},

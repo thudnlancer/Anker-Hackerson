@@ -1,6 +1,7 @@
 {
   "mode": "online_dry_run",
   "local": {
+    "proxy_mode": "environment",
     "timezone": "Asia/Shanghai",
     "poll_seconds": 5,
     "stale_after_seconds": 15,

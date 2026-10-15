@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 import requests
 import time
-from .config import canonical_suffix
+from .config import canonical_suffix, proxy_mode
 from .read_budget import timed_read
 from .write_transaction import ACTIVE_WRITE
 from urllib3.util import Timeout
@@ -15,9 +15,12 @@ class HAClient:
     base: str
     token: str
     timeout: float = 10.0
+    proxy_mode: str = "environment"
 
     def __post_init__(self) -> None:
         self.base = self.base.rstrip("/")
+        self.session = requests.Session()
+        self.session.trust_env = proxy_mode(self.proxy_mode) == "environment"
 
     @property
     def headers(self) -> dict[str, str]:
@@ -25,14 +28,14 @@ class HAClient:
 
     def state(self, entity_id: str) -> dict[str, Any]:
         def read(timeout):
-            r = requests.get(f"{self.base}/api/states/{entity_id}", headers=self.headers, timeout=timeout)
+            r = self.session.get(f"{self.base}/api/states/{entity_id}", headers=self.headers, timeout=timeout)
             r.raise_for_status()
             return r.json()
         return timed_read(f"ha.states/{entity_id}", read, self.timeout)
 
     def snapshot(self) -> dict[str, list[dict[str, Any]]]:
         def read(timeout):
-            r = requests.get(f"{self.base}/api/states", headers=self.headers, timeout=timeout)
+            r = self.session.get(f"{self.base}/api/states", headers=self.headers, timeout=timeout)
             r.raise_for_status()
             payload = r.json()
             if not isinstance(payload, list):
@@ -93,7 +96,7 @@ class HAClient:
             transaction.steps.append(step)
         started = time.monotonic()
         try:
-            r = requests.post(
+            r = self.session.post(
             f"{self.base}/api/services/{domain}/{service}",
             headers=self.headers,
             json={"entity_id": entity_id, **data},

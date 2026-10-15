@@ -1,5 +1,6 @@
 {
   "mode": "dry-run",
+  "proxy_mode": "direct",
   "ha_base": "http://<环境机公网IP或域名>:8123",
   "ha_token": "<HA_LONG_LIVED_TOKEN>",
   "sim_base": "http://<环境机公网IP或域名>:45678",

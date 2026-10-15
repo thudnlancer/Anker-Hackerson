@@ -33,7 +33,7 @@ class BulkSnapshotTests(unittest.TestCase):
         self_payload = self.payload
         cfg = {"stations": {str(i): {"suffix": f"15{i:02d}"} for i in (1, 2, 3)},
                "device_timezone": None, "poll_seconds": 5, "solver_seconds": 2}
-        with patch("energy_lab.ha_client.requests.get", return_value=Response()) as get:
+        with patch.object(self.client.session, "get", return_value=Response()) as get:
             result = read_anchored_tick(cfg, self.client, StubSim(make_prices()), price_window)
         self.assertEqual(get.call_count, 1)
         self.assertEqual(result["alignment_attempts"], 1)

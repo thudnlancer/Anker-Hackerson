@@ -35,7 +35,7 @@ class WriteFaultTests(unittest.TestCase):
         self.ha = HAClient("http://mock.invalid", "fake-token")
 
     def exercise(self, effects, *, seconds=3, current=None):
-        with patch("energy_lab.ha_client.requests.post", side_effect=effects) as post, \
+        with patch.object(self.ha.session, "post", side_effect=effects) as post, \
              patch("energy_lab.write_transaction.time.sleep"):
             row = execute_candidate(candidate(), suffix="1501", ha=self.ha, live=True,
                                     deadline=time.monotonic() + seconds, current=current)

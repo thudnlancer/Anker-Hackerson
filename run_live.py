@@ -436,9 +436,11 @@ def main() -> None:
     write_enabled = mode == "live"
     require_runtime_fields(cfg, write_enabled=write_enabled)
     token = exchange_ha_token(cfg)
-    ha = HAClient(str(cfg["ha_base"]), token)
-    sim = SimulatorClient(str(cfg["sim_base"]), str(cfg["sim_username"]), str(cfg["sim_password"]))
-    print(f"mode={mode}; write_enabled={write_enabled}; strategy={args.strategy}; config={cfg['source']}")
+    ha = HAClient(str(cfg["ha_base"]), token, proxy_mode=cfg["proxy_mode"])
+    sim = SimulatorClient(str(cfg["sim_base"]), str(cfg["sim_username"]),
+                          str(cfg["sim_password"]), proxy_mode=cfg["proxy_mode"])
+    print(f"mode={mode}; write_enabled={write_enabled}; strategy={args.strategy}; "
+          f"proxy_mode={cfg['proxy_mode']}; config={cfg['source']}")
     if write_enabled:
         print("WARNING: HA write mode is enabled by all safety gates")
         if args.strategy == "milp":

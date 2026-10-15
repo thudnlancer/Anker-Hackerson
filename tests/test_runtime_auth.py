@@ -10,7 +10,9 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from energy_lab.config import exchange_ha_token, require_runtime_fields
+from energy_lab.config import exchange_ha_token, require_runtime_fields, load_runtime_config
+from energy_lab.ha_client import HAClient
+from energy_lab.sim_client import SimulatorClient
 import run_shadow_dry_run as shadow_runner
 
 
@@ -25,6 +27,40 @@ def configuration():
 
 
 class RuntimeAuthenticationTests(unittest.TestCase):
+    def test_proxy_policy_is_shared_by_auth_ha_and_simulator(self):
+        for mode, expected in (("environment", True), ("direct", False)):
+            with self.subTest(mode=mode):
+                cfg = configuration() | {"proxy_mode": mode}
+                responses = [Mock(), Mock(), Mock()]
+                for response, body in zip(responses, (
+                    {"flow_id": "unit-flow"}, {"result": "unit-code"},
+                    {"access_token": "unit-exchanged-token"},
+                )):
+                    response.json.return_value = body
+                with patch("energy_lab.config.requests.Session") as factory:
+                    factory.return_value.post.side_effect = responses
+                    exchange_ha_token(cfg)
+                    self.assertEqual(factory.return_value.trust_env, expected)
+                self.assertEqual(HAClient("http://unit.test", "fake", proxy_mode=mode).session.trust_env,
+                                 expected)
+                self.assertEqual(SimulatorClient("http://unit.test", "fake", "fake",
+                                                 proxy_mode=mode).session.trust_env, expected)
+
+    def test_invalid_proxy_policy_rejected_before_requests(self):
+        with self.assertRaisesRegex(ValueError, "proxy_mode"):
+            HAClient("http://unit.test", "fake", proxy_mode="invalid")
+        with self.assertRaisesRegex(ValueError, "proxy_mode"):
+            SimulatorClient("http://unit.test", "fake", "fake", proxy_mode="invalid")
+        with self.assertRaisesRegex(ValueError, "proxy_mode"):
+            exchange_ha_token(configuration() | {"proxy_mode": "invalid"})
+
+    def test_local_and_remote_example_proxy_modes(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(load_runtime_config(root / "local_online_config.example.json")["proxy_mode"],
+                         "environment")
+        self.assertEqual(load_runtime_config(root / "remote_runtime_config.example.json")["proxy_mode"],
+                         "direct")
+
     def test_absent_or_null_token_uses_account_exchange_instead_of_bearer_none(self):
         for supplied in (False, True):
             with self.subTest(token_present=supplied):
@@ -42,7 +78,7 @@ class RuntimeAuthenticationTests(unittest.TestCase):
                     session.post.side_effect = responses
                     token = exchange_ha_token(cfg)
                 self.assertEqual(token, "unit-exchanged-token")
-                self.assertFalse(session.trust_env)
+                self.assertTrue(session.trust_env)
                 client = "http://localhost:8123/"
                 self.assertEqual(session.post.call_args_list, [
                     call("http://unit.test:8123/auth/login_flow", json={

@@ -39,7 +39,7 @@ class ReconciliationTests(unittest.TestCase):
 
     def test_timeout_persists_and_restart_blocks_site(self):
         store = ReconciliationStore(self.path)
-        with patch("energy_lab.ha_client.requests.post", side_effect=requests.Timeout("lost")) as post:
+        with patch.object(self.ha.session, "post", side_effect=requests.Timeout("lost")) as post:
             row = execute_candidate(candidate(), suffix="1502", site="1", ha=self.ha,
                                     live=True, reconciliation_store=store)
         self.assertEqual(post.call_count, 1)
@@ -60,7 +60,7 @@ class ReconciliationTests(unittest.TestCase):
         def post(*args, **kwargs):
             observations.append(ReconciliationStore(self.path).pending()["1"]["steps"][-1]["status"])
             return Response()
-        with patch("energy_lab.ha_client.requests.post", side_effect=post), \
+        with patch.object(self.ha.session, "post", side_effect=post), \
              patch("energy_lab.write_transaction.time.sleep"):
             row = execute_candidate(candidate(), suffix="1502", site="1", ha=self.ha,
                                     live=True, reconciliation_store=store)
@@ -86,7 +86,7 @@ class ReconciliationTests(unittest.TestCase):
     def test_direct_execute_cannot_bypass_pending_incident(self):
         store = ReconciliationStore(self.path)
         store.checkpoint("1", "1502", "2031-01-01T00:15:00+00:00", [])
-        with patch("energy_lab.ha_client.requests.post") as post:
+        with patch.object(self.ha.session, "post") as post:
             with self.assertRaisesRegex(ValueError, "reconciliation_required"):
                 execute_candidate(candidate(), suffix="1502", site="1", ha=self.ha,
                                   live=True, reconciliation_store=store)
