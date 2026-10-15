@@ -21,7 +21,11 @@ switch ($Action) {
     { $_ -in @("start", "dry-run", "live") } {
         $runMode = if ($Action -eq "live") { "live" } else { "dry-run" }
         if ($runMode -eq "live") { Write-Warning "Requesting remote HA write mode; the remote configuration must pass all safety gates" }
-        $command = "cd '$work' && mkdir -p logs && if test -f policy.pid && kill -0 `$(cat policy.pid) 2>/dev/null; then echo ALREADY_RUNNING; else nohup '$($machine.venv_directory)/bin/python' run_live.py --config remote_runtime_config.json --mode $runMode >> logs/live.log 2>&1 </dev/null & echo `$! > policy.pid; echo STARTED; fi"
+        if ($runMode -eq "dry-run") {
+            $command = "cd '$work' && ./remote_dry_run_ctl.sh start"
+        } else {
+            $command = "cd '$work' && mkdir -p logs && if test -f policy.pid && kill -0 `$(cat policy.pid) 2>/dev/null; then echo ALREADY_RUNNING; else nohup '$($machine.venv_directory)/bin/python' run_live.py --config remote_runtime_config.json --mode live --strategy milp >> logs/live.log 2>&1 </dev/null & echo `$! > policy.pid; echo STARTED; fi"
+        }
         & ssh @sshArgs $command
     }
     "status" {

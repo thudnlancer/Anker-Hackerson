@@ -150,6 +150,8 @@ MILP 分块入口为 `run_milp_chunk.ps1`，例如：
 
 ## 仅使用 EC2 Instance Connect 浏览器
 
+比赛机固定提交、只读常驻、断线/重启恢复及 `status/logs/stop` 演练以 [远程 dry-run runbook](REMOTE_DRY_RUN_RUNBOOK.md) 为准。下文旧的裸 `nohup` 示例不含固定提交与显式 `--strategy milp`，不得用于当前验收。
+
 当前参赛机连接信息为：实例 `i-0217afcd24bf6e9da`，可用区 `us-west-2a`，区域 `us-west-2`，公网地址 `35.92.220.3`，登录用户 `ec2-user`。浏览器连接路径是 AWS 控制台的 **EC2 → us-west-2 → Instances → Connect → EC2 Instance Connect**。
 
 这种连接方式不提供本机 `ssh/scp` 私钥，因此 `deploy_remote.ps1` 和 `run_remote.ps1` 不能直接从本地调用。进入浏览器终端后，仍需先把代码包和模型传入实例；推荐顺序是：
