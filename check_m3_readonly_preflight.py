@@ -65,6 +65,8 @@ def inspect(config_path: Path) -> dict:
                 "eligible_for_milp_tick": fresh and alignment is None,
                 "soc": state.get("soc"), "solar_power_w": state.get("solar_power"),
                 "home_load_w": state.get("home_load"),
+                "entity_diagnostics": state.get("entity_diagnostics"),
+                "missing_entities": state.get("missing_entities", []),
             }
         except Exception as exc:
             report["stations"][site] = {"suffix": suffix,

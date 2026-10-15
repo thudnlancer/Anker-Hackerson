@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_run_live_chain import StubHA, StubSim, cfg, make_prices, plan, state
 from run_live import run_once, run_once_milp, price_window, validate_milp_price_window
 from energy_lab.price_anchor import anchor_prices, anchor_device_time
+from energy_lab.price_anchor import read_anchored_tick
+from energy_lab.read_budget import ACTIVE_READ_BUDGET, ReadBudget, timed_read
 
 
 def slot(start="2031-01-01T00:00:00Z", price=.3):
@@ -33,6 +36,53 @@ class SequenceSim(StubSim):
 
 
 class PriceAnchorTests(unittest.TestCase):
+    def test_slow_http_response_is_bounded_and_discarded(self):
+        budget = ReadBudget(.04)
+        token = ACTIVE_READ_BUDGET.set(budget)
+        try:
+            with self.assertRaisesRegex(TimeoutError, "alignment_deadline_exceeded"):
+                timed_read("sim/api/price/current", lambda timeout: (time.sleep(.12), slot())[1], 10)
+        finally:
+            ACTIVE_READ_BUDGET.reset(token)
+        self.assertLess(budget.requests[0]["elapsed_seconds"], .1)
+        self.assertEqual(budget.requests[0]["status"], "error")
+        time.sleep(.13)  # Let the daemon read release the process-wide slot.
+
+    def test_slow_first_response_exceeds_whole_round_without_retry(self):
+        sim = SequenceSim([slot()])
+        original = sim.current_price
+        def slow():
+            time.sleep(.09)
+            return original()
+        sim.current_price = slow
+        config = {**cfg(verified=True), "device_timezone": None,
+                  "alignment_budget_seconds": .05}
+        started = time.monotonic()
+        batch = read_anchored_tick(config, StubHA({"1502": state()}), sim,
+                                   price_window, price_validator=validate_milp_price_window)
+        self.assertLess(time.monotonic() - started, .2)
+        self.assertEqual(batch["alignment_attempts"], 1)
+        self.assertEqual(batch["metadata"]["alignment_stop_reason"], "deadline_exceeded")
+        self.assertEqual(batch["times"], {})
+        self.assertEqual(len(batch["metadata"]["alignment_operations"]), 1)
+
+    def test_stale_state_is_not_reread(self):
+        ha = StubHA({"1502": state(stale=True)})
+        sim = SequenceSim([slot()])
+        batch = read_anchored_tick({**cfg(verified=True), "device_timezone": None},
+                                   ha, sim, price_window)
+        self.assertEqual(batch["alignment_attempts"], 1)
+        self.assertEqual(batch["errors"]["1"], "stale_or_unavailable")
+        self.assertEqual(sim.reads, 1)
+
+    def test_invalid_timezone_rejects_without_price_request(self):
+        sim = SequenceSim([slot()])
+        batch = read_anchored_tick({**cfg(verified=True), "device_timezone": "Bad/Zone"},
+                                   StubHA({"1502": state()}), sim, price_window)
+        self.assertEqual(batch["alignment_attempts"], 1)
+        self.assertEqual(sim.reads, 0)
+        self.assertIn("invalid_device_timezone", batch["errors"]["1"])
+
     def execute(self, sim=None, *, raw="2031-01-01 00:15:00", config=None, expected=None):
         config = {**cfg(verified=True), "device_timezone": None} if config is None else config
         ha = StubHA({"1502": state(device_time=raw)})

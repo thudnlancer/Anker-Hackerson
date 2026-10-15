@@ -5,6 +5,8 @@ No wall clock, price-value matching, array positions, or inferred IANA timezone.
 from __future__ import annotations
 
 import math
+import time
+import requests
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 
@@ -80,32 +82,156 @@ def anchor_device_time(raw: object, start: pd.Timestamp,
         raise ValueError(str(exc) or "invalid_device_time") from exc
 
 
-def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_attempts=3):
-    """Bounded full rereads; per-site faults remain isolated in the final batch."""
-    from energy_lab.interface_contract import state_is_fresh
+def _retryable(error):
+    """Explicit allowlist: malformed inputs/configuration are never retried."""
+    return any(token in str(error) for token in (
+        "current_slot_changed_during_read", "device_api_date_hour_conflict",
+        "current_slot_price_conflict", "temporary", "Timeout", "ConnectionError"))
 
-    for attempt in range(1, max_attempts + 1):
-        points, states, errors, times, metadata = [], {}, {}, {}, {}
-        payload_error = None
+
+def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_attempts=3):
+    """One acquisition-round deadline, transient-only retries, isolated site faults."""
+    from energy_lab.interface_contract import state_is_fresh
+    from energy_lab.read_budget import ACTIVE_READ_BUDGET, ReadBudget
+
+    started = time.monotonic()
+    points, states, errors, times, metadata = [], {}, {}, {}, {}
+    attempt, operations = 0, []
+    # Acquisition-only deadline. Three serial MILPs can consume 3 x the
+    # per-site solver limit; never pretend one 2 s reserve covers them all.
+    try:
+        poll = float(cfg.get("poll_seconds", 5))
+        solver = float(cfg.get("solver_seconds", 2))
+        seconds = float(cfg.get("alignment_budget_seconds", min(2.5, poll - solver - .25)))
+        if not math.isfinite(seconds) or seconds <= 0 or seconds >= poll:
+            raise ValueError("invalid_alignment_budget")
+        config_error = None
+        if cfg.get("device_timezone"):
+            try:
+                ZoneInfo(cfg["device_timezone"])
+            except (ZoneInfoNotFoundError, ValueError, TypeError):
+                config_error = "device_time_misaligned:invalid_device_timezone"
+        stale_seconds = float(cfg.get("stale_after_seconds", 15))
+        if not math.isfinite(stale_seconds) or stale_seconds <= 0:
+            raise ValueError("invalid_stale_after_seconds")
+    except Exception as exc:
+        return {"points": [], "states": {}, "times": {},
+                "errors": {s: f"invalid_anchor_config:{type(exc).__name__}:{exc}" for s in cfg["stations"]},
+                "metadata": {"alignment_elapsed_seconds": time.monotonic() - started,
+                             "alignment_stop_reason": "invalid_anchor_config",
+                             "alignment_requests": [], "alignment_operations": []},
+                "alignment_attempts": 0}
+    budget = ReadBudget(seconds, started=started)
+    token = ACTIVE_READ_BUDGET.set(budget)
+    permanent = {}
+    stop_reason = "accepted"
+
+    def read(label, operation):
+        begin = time.monotonic()
+        row = {"operation": label, "attempt": attempt,
+               "started_offset_seconds": begin - started}
         try:
-            before = sim.current_price()
+            budget.remaining()
+            value = operation()
+            budget.remaining()
+            row["status"] = "ok"
+            return value
+        except Exception as exc:
+            row.update(status="error", error_type=type(exc).__name__)
+            raise
+        finally:
+            row["elapsed_seconds"] = time.monotonic() - begin
+            operations.append(row)
+
+    try:
+      for attempt in range(1, max_attempts + 1):
+        if attempt > 1 and time.monotonic() - started >= seconds:
+            attempt -= 1
+            stop_reason = "deadline_exceeded"
+            break
+        times, errors = {}, dict(permanent)
+        if config_error:
+            errors = {s: config_error for s in cfg["stations"]}
+            stop_reason = "deterministic_rejection"
+            break
+        try:
+            before = read("sim.current.before", sim.current_price)
+            slot(before)  # Invalid payload is deterministic.
             if isinstance(before, dict):
                 metadata = {"api_current_start": before.get("start"), "api_current_end": before.get("end"),
                             "selected_price_slot": None, "alignment_source": None}
-            points = price_window(sim.prices())
+            points = price_window(read("sim.prices", sim.prices))
         except Exception as exc:
-            payload_error = str(exc)
-        for site, item in cfg["stations"].items():
+            reason = f"price_anchor_rejected:{exc}"
+            errors.update({s: reason for s in cfg["stations"] if s not in permanent})
+            if _retryable(reason) or isinstance(exc, (TimeoutError, ConnectionError,
+                                                      requests.exceptions.Timeout,
+                                                      requests.exceptions.ConnectionError)):
+                if time.monotonic() - started >= seconds:
+                    stop_reason = "deadline_exceeded"
+                    break
+                stop_reason = "transient_attempt_limit"
+                continue
+            stop_reason = "deterministic_rejection"
+            if time.monotonic() - started < seconds:
+                try:
+                    bad_price_snapshot = read("ha.snapshot", ha.snapshot) if hasattr(ha, "snapshot") else None
+                except Exception:
+                    bad_price_snapshot = None
+                for site, item in cfg["stations"].items():
+                    try:
+                        if bad_price_snapshot is not None:
+                            states[site] = ha.station_from_snapshot(str(item["suffix"]), bad_price_snapshot)
+                        elif not hasattr(ha, "snapshot"):
+                            states[site] = read(f"ha.station.{site}",
+                                                lambda: ha.station_state(str(item["suffix"])))
+                    except Exception as ha_exc:
+                        errors[site] = f"ha_read_error:{type(ha_exc).__name__}:{ha_exc}"
+            break
+        snapshot = None
+        if hasattr(ha, "snapshot") and len(permanent) < len(cfg["stations"]):
             try:
-                states[site] = ha.station_state(str(item["suffix"]))
+                snapshot = read("ha.snapshot", ha.snapshot)
             except Exception as exc:
-                errors[site] = f"ha_read_error:{type(exc).__name__}"
+                reason = f"ha_snapshot_error:{type(exc).__name__}:{exc}"
+                errors.update({s: reason for s in cfg["stations"] if s not in permanent})
+                if not _retryable(reason):
+                    permanent.update({s: reason for s in cfg["stations"] if s not in permanent})
+                stop_reason = "transient_attempt_limit" if _retryable(reason) else "deterministic_rejection"
+                if not _retryable(reason):
+                    break
+                continue
+        for site, item in cfg["stations"].items():
+            if site in permanent:
+                continue
+            try:
+                states[site] = (ha.station_from_snapshot(str(item["suffix"]), snapshot)
+                                if snapshot is not None else read(
+                                    f"ha.station.{site}",
+                                    lambda: ha.station_state(str(item["suffix"]))))
+                for diagnostic in states[site].get("entity_diagnostics", {}).values():
+                    diagnostic["fresh"] = bool(diagnostic.get("last_changed") and state_is_fresh(
+                        diagnostic["last_changed"], max_age_seconds=stale_seconds))
+                if states[site].get("missing_entities"):
+                    permanent[site] = errors[site] = "missing_or_duplicate_ha_entities:" + ",".join(
+                        states[site]["missing_entities"])
+                    continue
+                if not state_is_fresh(states[site].get("device_time_last_changed"),
+                                      max_age_seconds=stale_seconds):
+                    permanent[site] = errors[site] = "stale_or_unavailable"
+            except Exception as exc:
+                errors[site] = f"ha_read_error:{type(exc).__name__}:{exc}"
+                if not _retryable(errors[site]):
+                    permanent[site] = errors[site]
+        if len(permanent) == len(cfg["stations"]):
+            stop_reason = "deterministic_rejection"
+            break
         try:
-            after = sim.current_price()
-            if payload_error:
-                raise ValueError(payload_error)
+            after = read("sim.current.after", sim.current_price)
             start, metadata = anchor_prices(points, before, after)
             for site, state in states.items():
+                if site in errors:
+                    continue
                 try:
                     if not state_is_fresh(state.get("device_time_last_changed"),
                                           max_age_seconds=float(cfg.get("stale_after_seconds", 15))):
@@ -119,9 +245,28 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
                     times[site] = resolved
                 except Exception as exc:
                     errors[site] = str(exc)
+                    if not _retryable(errors[site]):
+                        permanent[site] = errors[site]
         except Exception as exc:
-            errors = {site: f"price_anchor_rejected:{exc}" for site in cfg["stations"]}
-        if not errors:
+            times = {}
+            errors.update({site: f"price_anchor_rejected:{exc}"
+                           for site in cfg["stations"] if site not in permanent})
+        if not any(_retryable(error) for s, error in errors.items() if s not in permanent):
+            stop_reason = "accepted" if not errors else "deterministic_rejection"
             break
+        stop_reason = "transient_attempt_limit"
+    finally:
+        ACTIVE_READ_BUDGET.reset(token)
+    elapsed = time.monotonic() - started
+    if elapsed >= seconds:
+        times = {}
+        errors.update({s: "alignment_deadline_exceeded" for s in cfg["stations"] if s not in permanent})
+        stop_reason = "deadline_exceeded"
+    metadata.update(alignment_budget_seconds=seconds, alignment_elapsed_seconds=elapsed,
+                    serial_solver_worst_seconds=solver * len(cfg["stations"]),
+                    serial_tick_budget_floor_seconds=seconds + solver * len(cfg["stations"]),
+                    serial_tick_fits_poll=(seconds + solver * len(cfg["stations"]) <= poll),
+                    alignment_stop_reason=stop_reason, alignment_requests=budget.requests,
+                    alignment_operations=operations)
     return {"points": points, "states": states, "errors": errors, "times": times,
             "metadata": metadata, "alignment_attempts": attempt}

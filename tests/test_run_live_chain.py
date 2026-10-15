@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import tempfile
+import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -71,7 +73,7 @@ def cfg(verified=None):
         station["zero_flow_verified"] = verified
     return {"stations": {"1": station}, "stale_after_seconds": 15.0, "capacity_kwh": 14.0,
             "max_power_w": 5000.0, "soc_min": 0.0, "soc_max": 100.0, "solver_seconds": 1.0,
-            "device_timezone": "UTC"}
+            "device_timezone": "UTC", "round_deadline_seconds": 5.0}
 
 
 def plan(flow="idle", soc=45.0, charge=0.0, status="optimal"):
@@ -87,6 +89,31 @@ class DryRunChainTests(unittest.TestCase):
         kwargs.setdefault("carry", {})
         with patch("energy_lab.shadow.optimize_window", return_value=kwargs.pop("mock_plan", plan())):
             return run_once_milp(config, ha, sim, **kwargs), kwargs["carry"]
+
+    def test_unknown_delivery_quarantines_next_round_without_more_writes(self):
+        ha = StubHA({"1502": state()})
+        carry = {}
+        def fail(*args, **kwargs):
+            from energy_lab.write_transaction import ACTIVE_WRITE
+            ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
+                                             "status": "attempted_unknown"})
+            raise TimeoutError("mock_post_timeout")
+        with patch("run_live.make_candidate", return_value={
+                "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                "battery_flow": "charge", "battery_power_w": 100,
+                "candidate": {"target_w": 100}}), \
+             patch.object(ha, "set_dispatch", side_effect=fail) as dispatch:
+            first = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                  write_enabled=True, carry=carry)
+            second = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                   write_enabled=True, carry=carry)
+        self.assertEqual(dispatch.call_count, 1)
+        self.assertEqual(first[0]["status"], "delivery_failed")
+        self.assertEqual(first[0]["writes_performed"], 0)
+        self.assertEqual(first[0]["write_requests_attempted"], 1)
+        self.assertEqual(second[0]["status"], "reconciliation_required")
+        self.assertEqual(second[0]["writes_performed"], 0)
+        self.assertTrue(second[0]["read_only_state_observed"])
 
     def test_dry_run_verified_site_full_chain_zero_writes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -124,6 +151,49 @@ class DryRunChainTests(unittest.TestCase):
         results, _ = self.run_chain(StubHA({"1502": state(stale=True)}), cfg(verified=True),
                                     StubSim(make_prices()))
         self.assertEqual(results[0]["status"], "stale_or_unavailable")
+
+    def test_late_solver_candidate_is_never_written(self):
+        ha = StubHA({"1502": state()})
+        with patch("run_live.make_candidate", side_effect=lambda *a, **k: (time.sleep(.08), {
+                "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                "battery_flow": "charge", "battery_power_w": 100,
+                "candidate": {"target_w": 100}})[1]):
+            rows = run_once_milp({**cfg(verified=True), "round_deadline_seconds": .03},
+                                 ha, StubSim(make_prices()), write_enabled=True, carry={})
+        self.assertEqual(ha.calls, [])
+        self.assertEqual(rows[0]["writes_performed"], 0)
+        self.assertIn(rows[0]["execution_safety_rejection"],
+                      ("solver_deadline_exceeded", "round_deadline_exceeded"))
+        self.assertEqual(rows[0]["status"], "fallback_self_use_mode")
+        time.sleep(.09)
+
+    def test_superseded_round_cannot_write_old_candidate(self):
+        ha = StubHA({"1502": state()})
+        entered = threading.Event()
+        release = threading.Event()
+        carry = {}
+        previous_rows = []
+        candidate = {"status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                     "battery_flow": "charge", "battery_power_w": 100,
+                     "candidate": {"target_w": 100}}
+        def slow(*args, **kwargs):
+            entered.set()
+            release.wait(1)
+            return candidate
+        config = {**cfg(verified=True), "round_deadline_seconds": .5}
+        with patch("run_live.make_candidate", side_effect=slow):
+            previous = threading.Thread(target=lambda: previous_rows.extend(run_once_milp(
+                config, ha, StubSim(make_prices()), write_enabled=True, carry=carry)))
+            previous.start()
+            self.assertTrue(entered.wait(.3))
+            newer = run_once_milp(config, ha, StubSim(make_prices()),
+                                  write_enabled=True, carry=carry)
+            release.set()
+            previous.join(1)
+        self.assertFalse(previous.is_alive())
+        self.assertEqual(ha.calls, [])
+        self.assertEqual(newer[0]["writes_performed"], 0)
+        self.assertEqual(previous_rows[0]["execution_safety_rejection"], "superseded_round")
 
     def assert_online_price_anomaly_falls_back(self, prices, expected_reason):
         ha = StubHA({"1502": state()})

@@ -18,6 +18,7 @@ from pathlib import Path
 import argparse
 import math
 import sys
+import threading
 import time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
@@ -30,6 +31,8 @@ from energy_lab.model import dispatch
 from energy_lab.sim_client import SimulatorClient
 from energy_lab.price_anchor import read_anchored_tick
 from energy_lab.shadow import daily_points, make_candidate
+from energy_lab.solve_schedule import solve_until
+from energy_lab.reconciliation import ReconciliationStore
 from energy_lab.interface_contract import (CommandMapping, map_battery_action, state_is_fresh,
                                            verify_readback, align_hourly_points)
 
@@ -143,17 +146,21 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
         try:
-            if site not in batch["states"]:
+            if site not in batch["states"] and (
+                    site not in batch["errors"] or
+                    batch["errors"][site].startswith("ha_read_error:")):
                 results.append({"site": site, "status": "station_error",
                                 "error": batch["errors"].get(site), "writes_performed": 0})
                 continue
-            state = batch["states"][site]
+            state = batch["states"].get(site, {})
             stamp = state.get("device_time")
             freshness = state.get("device_time_last_changed")
-            if not stamp or not freshness or "unavailable" in str(stamp).lower():
+            if (batch["errors"].get(site) == "stale_or_unavailable" or
+                    not batch["errors"].get(site) and
+                    (not stamp or not freshness or "unavailable" in str(stamp).lower())):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
-            if not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
+            if not batch["errors"].get(site) and not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
             resolved = batch["times"].get(site)
@@ -228,12 +235,25 @@ def _append_audit(path: Path, rows: list[dict]) -> None:
 
 
 def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool,
-                  carry: dict, audit_csv: Path | None = None) -> list[dict]:
+                  carry: dict, audit_csv: Path | None = None,
+                  reconciliation_store: ReconciliationStore | None = None) -> list[dict]:
     """One step-4 chain tick per station. ``carry`` persists across ticks:
     ``carry["verified"]`` holds the in-memory site verification flags (seeded
     from config, revocable by the SOC guard); ``carry["previous"]`` keeps each
     site's last candidate/record for next-tick readback and divergence checks.
     """
+    round_started = time.monotonic()
+    round_limit = float(cfg.get("round_deadline_seconds", cfg.get("poll_seconds", 5.0)))
+    if not math.isfinite(round_limit) or round_limit <= 0:
+        raise ValueError("invalid_round_deadline_seconds")
+    round_deadline = round_started + round_limit
+    generation_lock = carry.setdefault("round_generation_lock", threading.Lock())
+    with generation_lock:
+        generation = carry.get("round_generation", 0) + 1
+        carry["round_generation"] = generation
+        if reconciliation_store is not None:
+            # The disk journal is authoritative after restart or manual clear.
+            carry["delivery_unknown"] = reconciliation_store.pending()
     batch = read_anchored_tick(cfg, ha, sim, price_window,
                                price_validator=validate_milp_price_window)
     points = batch["points"]
@@ -242,17 +262,21 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
         try:
-            if site not in batch["states"]:
+            if site not in batch["states"] and (
+                    site not in batch["errors"] or
+                    batch["errors"][site].startswith("ha_read_error:")):
                 results.append({"site": site, "status": "station_error",
                                 "error": batch["errors"].get(site), "writes_performed": 0})
                 continue
-            state = batch["states"][site]
+            state = batch["states"].get(site, {})
             stamp = state.get("device_time")
             freshness = state.get("device_time_last_changed")
-            if not stamp or not freshness or "unavailable" in str(stamp).lower():
+            if (batch["errors"].get(site) == "stale_or_unavailable" or
+                    not batch["errors"].get(site) and
+                    (not stamp or not freshness or "unavailable" in str(stamp).lower())):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
-            if not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
+            if not batch["errors"].get(site) and not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
                 results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
                 continue
 
@@ -262,6 +286,19 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
             guard = None
             previous_verdict = None
             previous = carry.setdefault("previous", {}).get(site)
+            if site in carry.setdefault("delivery_unknown", {}):
+                # HA service calls are not atomic. A timeout/5xx may have
+                # applied a prefix of the command; sensor state alone cannot
+                # prove its mode/flow/value. Keep the site write-quarantined
+                # until a separate, explicit reconciliation clears this flag.
+                results.append({"site": site, "status": "reconciliation_required",
+                                "device_time": stamp, "write_enabled": False,
+                                "writes_performed": 0, "optimizer_attributed": False,
+                                "attribution": "non-optimizer-attributed",
+                                "reason": "previous_delivery_unknown",
+                                "read_only_state_observed": True,
+                                "previous_delivery": carry["delivery_unknown"][site]})
+                continue
             if previous is not None:
                 prev_candidate, prev_record = previous["candidate"], previous["record"]
                 if prev_record["writes_performed"] and prev_record["command_mode"] in (
@@ -292,14 +329,19 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
             if price_error:
                 candidate = {"status": "blocked", "solver_status": "not_run",
                              "device_time": stamp, "fallback": price_error}
+                solve_elapsed = 0.0
             else:
                 try:
-                    candidate = make_candidate(
-                        {**state, "device_time": resolved.isoformat()}, points,
-                        solver_seconds=float(cfg.get("solver_seconds", 2.0)),
-                        capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
-                        soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
-                        idle_candidate="zero_charge_unverified" if verified else "legacy_hold")
+                    candidate, deadline_error, solve_elapsed = solve_until(
+                        round_deadline, lambda: make_candidate(
+                            {**state, "device_time": resolved.isoformat()}, points,
+                            solver_seconds=float(cfg.get("solver_seconds", 2.0)),
+                            capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
+                            soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
+                            idle_candidate="zero_charge_unverified" if verified else "legacy_hold"))
+                    if deadline_error:
+                        candidate = {"status": "blocked", "solver_status": "not_run",
+                                     "device_time": stamp, "fallback": deadline_error}
                 except Exception as exc:
                     # Keep failures outside the explicitly classified price
                     # policy on the existing fail-closed path.
@@ -307,20 +349,52 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                                     "error": str(exc), "write_enabled": False})
                     continue
             issued_at = _utcnow_iso()
-            record = execute_candidate(candidate, suffix=suffix, ha=ha, site=site,
-                                       zero_flow_verified=verified, live=write_enabled,
-                                       readback_state=None, issued_at=issued_at, now=issued_at)
-            carry["previous"][site] = {"candidate": candidate, "record": record,
-                                       "issued_at": issued_at}
+            with generation_lock:
+                safety_error = None
+                if carry.get("round_generation") != generation:
+                    safety_error = "superseded_round"
+                elif time.monotonic() >= round_deadline:
+                    safety_error = "round_deadline_exceeded"
+                if safety_error:
+                    candidate = {"status": "blocked", "solver_status": "not_run",
+                                 "device_time": stamp, "fallback": safety_error}
+                record = execute_candidate(candidate, suffix=suffix, ha=ha, site=site,
+                                           zero_flow_verified=verified,
+                                           reconciliation_store=reconciliation_store,
+                                           deadline=round_deadline,
+                                           current=lambda: carry.get("round_generation") == generation,
+                                           live=write_enabled and safety_error is None and
+                                                candidate.get("fallback") not in (
+                                                    "solver_deadline_exceeded",
+                                                    "previous_solver_still_running",
+                                                    "round_deadline_exceeded"),
+                                           readback_state=None, issued_at=issued_at, now=issued_at)
+                if carry.get("round_generation") == generation:
+                    carry["previous"][site] = {"candidate": candidate, "record": record,
+                                               "issued_at": issued_at}
+                    if record["requires_reconciliation"]:
+                        carry["delivery_unknown"][site] = (
+                            reconciliation_store.pending()[site] if reconciliation_store is not None
+                            else {"device_time": stamp, "delivery_steps": record["delivery_steps"],
+                                  "reason": record["reason"]})
             row = {"received_at": _utcnow_iso(), "site": site,
                    "observed_soc": state.get("soc"), "observed_pv": state.get("solar_power"),
                    "observed_load": state.get("home_load"), "write_enabled": write_enabled,
                    **record,
                    "ha_device_time_raw": stamp,
+                   "ha_entity_diagnostics": state.get("entity_diagnostics"),
+                   "ha_missing_entities": state.get("missing_entities"),
                    "resolved_device_time": None if resolved is None else resolved.isoformat(),
                    **batch["metadata"],
                    "alignment_attempts": batch["alignment_attempts"],
                    "alignment_rejection_reason": price_error,
+                   "solve_elapsed_seconds": solve_elapsed,
+                   "round_deadline_seconds": round_limit,
+                   "round_generation": generation,
+                   "execution_safety_rejection": safety_error or candidate.get("fallback") if
+                       candidate.get("fallback") in ("solver_deadline_exceeded",
+                                                     "previous_solver_still_running",
+                                                     "round_deadline_exceeded") else safety_error,
                    "attribution": ("optimizer-attributed" if record["optimizer_attributed"] else
                                    "non-optimizer-attributed"),
                    "previous_readback_verdict": previous_verdict,
@@ -331,6 +405,14 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
             results.append(row)
         except Exception as exc:  # isolate one failed station from the other two
             results.append({"site": site, "status": "station_error", "error": str(exc)})
+    round_elapsed = time.monotonic() - round_started
+    for row in results:
+        row["round_elapsed_seconds"] = round_elapsed
+        row["serial_solver_worst_seconds"] = batch["metadata"].get("serial_solver_worst_seconds")
+        row["serial_tick_budget_floor_seconds"] = batch["metadata"].get("serial_tick_budget_floor_seconds")
+        row["serial_tick_fits_poll"] = batch["metadata"].get("serial_tick_fits_poll")
+    for row in audit_rows:
+        row["round_elapsed_seconds"] = round_elapsed
     if audit_csv is not None:
         _append_audit(Path(audit_csv), audit_rows)
     return results
@@ -345,6 +427,9 @@ def main() -> None:
                         help="dispatch: legacy rule entry; milp: step-4 shadow/execute chain")
     parser.add_argument("--audit-csv", type=Path, default=Path("outputs/run_live_audit.csv"),
                         help="milp strategy audit log, appended every tick")
+    parser.add_argument("--reconciliation-state", type=Path,
+                        default=Path("outputs/ha_reconciliation_state.json"),
+                        help="durable live MILP delivery quarantine; preserve across restarts")
     args = parser.parse_args()
     cfg = load_runtime_config(args.config, args.mode)
     mode = str(cfg["mode"]).lower().replace("_", "-")
@@ -362,17 +447,21 @@ def main() -> None:
                     print(f"site {site}: zero_flow_verified missing/false; "
                           "live idle steps will be refused (fourth safety switch)")
     carry: dict = {}
+    reconciliation_store = (ReconciliationStore(args.reconciliation_state)
+                            if write_enabled and args.strategy == "milp" else None)
     while True:
+        loop_started = time.monotonic()
         if args.strategy == "milp":
             tick_results = run_once_milp(cfg, ha, sim, write_enabled=write_enabled,
-                                         carry=carry, audit_csv=args.audit_csv)
+                                         carry=carry, audit_csv=args.audit_csv,
+                                         reconciliation_store=reconciliation_store)
         else:
             tick_results = run_once(cfg, ha, sim, write_enabled=write_enabled)
         for result in tick_results:
             print(result, flush=True)
         if args.once:
             return
-        time.sleep(max(5.0, float(cfg["poll_seconds"])))
+        time.sleep(max(0.1, float(cfg["poll_seconds"]) - (time.monotonic() - loop_started)))
 
 
 if __name__ == "__main__":

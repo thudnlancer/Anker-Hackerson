@@ -23,6 +23,8 @@ being reinterpreted.
 from __future__ import annotations
 
 import math
+import time
+from .write_transaction import ACTIVE_WRITE, WriteTransaction
 
 from .interface_contract import CommandMapping, verify_readback
 
@@ -40,7 +42,9 @@ AUDIT_FIELDS = ("site", "device_time", "status", "solver_status",
                 "accepted_incumbent", "mip_gap",
                 "planned_flow", "planned_power_w", "command_mode", "command_flow",
                 "target_w", "readback_verdict", "realized_soc",
-                "optimizer_attributed", "writes_performed", "reason")
+                "optimizer_attributed", "writes_performed", "reason",
+                "delivery_steps", "write_requests_attempted",
+                "write_requests_acknowledged", "requires_reconciliation")
 
 
 def _record(**fields):
@@ -77,7 +81,59 @@ def _fallback_readback(state, *, live):
     return "mode_echo_verified" if mode == "self_consumption" else "mode_echo_mismatch"
 
 
-def execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verified=False,
+def execute_candidate(candidate, *, deadline=None, current=None, reconciliation_store=None, **kwargs):
+    """Audit partial/unknown delivery without retrying or rolling it back.
+
+    An HTTP timeout cannot prove the server did not apply the request. Such a
+    transaction requires readback/reconciliation, not an automatic retry.
+    """
+    # Programming/configuration errors must remain visible to the caller; only
+    # failures after a real HA delivery attempt become uncertain delivery.
+    if kwargs.get("live") and kwargs.get("ha") is None:
+        raise ValueError("live execution requires an HA client")
+    if not isinstance(candidate, dict):
+        raise ValueError("candidate must be a shadow.make_candidate record")
+    if candidate.get("status") == "candidate_only" and candidate.get("battery_flow") not in (
+            "charge", "discharge", "idle"):
+        raise ValueError(f"unknown planned flow {candidate.get('battery_flow')!r}; refusing implicit handling")
+    if kwargs.get("live") and reconciliation_store is not None and str(
+            kwargs.get("site", kwargs.get("suffix"))) in reconciliation_store.pending():
+        raise ValueError("reconciliation_required_site_refusal")
+    transaction = WriteTransaction(deadline if deadline is not None else time.monotonic() + 5,
+                                   current=current, store=reconciliation_store,
+                                   site=str(kwargs.get("site", kwargs.get("suffix"))),
+                                   suffix=str(kwargs.get("suffix")),
+                                   device_time=str(candidate.get("device_time")))
+    token = ACTIVE_WRITE.set(transaction)
+    try:
+        if kwargs.get("live"):
+            transaction.remaining()
+        record = _execute_candidate(candidate, **kwargs)
+        if kwargs.get("live") and reconciliation_store is not None and transaction.steps:
+            reconciliation_store.complete(transaction.site)
+    except Exception as exc:
+        if not kwargs.get("live") or not transaction.steps and not isinstance(exc, TimeoutError):
+            raise
+        record = _record(site=str(kwargs.get("site", kwargs.get("suffix"))),
+                         device_time=candidate.get("device_time"), status="delivery_failed",
+                         solver_status=candidate.get("solver_status"),
+                         writes_performed=0, optimizer_attributed=False,
+                         readback_verdict="required_delivery_unknown",
+                         reason=f"delivery_error:{type(exc).__name__}")
+        record["delivery_error"] = str(exc) if isinstance(exc, TimeoutError) else type(exc).__name__
+        record["requires_reconciliation"] = bool(transaction.steps)
+    finally:
+        ACTIVE_WRITE.reset(token)
+    record["delivery_steps"] = transaction.steps
+    record["write_requests_attempted"] = len(transaction.steps)
+    record["write_requests_acknowledged"] = sum(
+        s["status"] == "http_acknowledged_not_device_verified" for s in transaction.steps)
+    if record["requires_reconciliation"] is None:
+        record["requires_reconciliation"] = False
+    return record
+
+
+def _execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verified=False,
                       live=False, readback_state=None, issued_at=None, now=None,
                       readback_tolerance_w=100.0):
     """Decide and optionally perform the write for one shadow candidate.
