@@ -70,6 +70,16 @@
 
 使用仓库根目录的 `capture_dashboard_snapshot.py`。开赛前和赛后使用**同一个** `local_run_id`，分别保存 `prestart`、`end`。赛后工具先校验开赛前原始响应哈希，再比较历史结果的规范化哈希；仅新增一场时自动暂定关联，多场新增时须明确传入新结果的 `--selected-run-index`。旧结果不能作为本次比赛结果；无新增结算时拒绝生成 end 快照。新增结果仅是初步关联，还须结合开始/结束窗口证据和在线日志确认。原始 JSON 与 manifest 都是本地证据，目录应放在被 `.gitignore` 排除的运行产物目录；工具拒绝覆盖既有快照。
 
+本轮新窗口基线使用 `local_run_id=contest-prestart-20261015-b`，目录为 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015-b/`。开赛前原始响应 SHA-256 为 `798b8d7101a35eb7f86fd5dc42cae0eff1991e12b8063a133309740207e190f8`；采集时看板为上一场 `mock/ended`，历史结果 4 条。旧基线 `contest-prestart-20261015` 保留但**不得用于此次窗口**。新窗口结束后仅在该目录以同一 ID 执行 `--phase end`；无新增 run、选中旧 run 或新增多条未指定索引时均拒绝关联。赛后仍须核对窗口身份、三站结算及在线审计，不能仅凭“新增”宣称策略收益。
+
+```powershell
+python capture_dashboard_snapshot.py `
+  --config D:\Anker黑客松\实验环境\local_online_config.json `
+  --output-dir D:\Anker黑客松\实验环境\outputs\dashboard_snapshots\contest-prestart-20261015-b `
+  --local-run-id contest-prestart-20261015-b `
+  --phase end
+```
+
 ```powershell
 python capture_dashboard_snapshot.py `
   --config local_online_config.json `

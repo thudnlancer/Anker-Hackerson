@@ -103,6 +103,8 @@ def capture(config_path: Path, output_dir: Path, local_run_id: str, phase: str,
         elif len(new_indices) == 1:
             selected_run_index = new_indices[0]
             selected = results[selected_run_index]
+        else:
+            raise ValueError("multiple new settled runs; select one with --selected-run-index")
     selected_meta = None
     if isinstance(selected, dict):
         selected_meta = {key: selected.get(key) for key in

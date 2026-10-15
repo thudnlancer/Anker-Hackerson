@@ -65,6 +65,26 @@ class CaptureDashboardSnapshotTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 capture(config, root / "out", "run-1", "prestart")
 
+    def test_multiple_new_runs_require_explicit_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config.json"
+            config.write_text(json.dumps({"sim_base": "https://example.invalid", "sim_username": "u",
+                                          "sim_password": "p"}))
+            old = {"ended_at": "old", "track": "mock", "days": 7}
+            first = {"ended_at": "first", "track": "mock", "days": 7}
+            second = {"ended_at": "second", "track": "mock", "days": 7}
+            with patch("capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "t"})), \
+                 patch("capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
+                                                                                _Response(_dashboard([old, first, second])),
+                                                                                _Response(_dashboard([old, first, second]))]):
+                capture(config, root / "out", "run-2", "prestart")
+                with self.assertRaisesRegex(ValueError, "multiple new settled runs"):
+                    capture(config, root / "out", "run-2", "end")
+                with self.assertRaisesRegex(ValueError, "not a new post-prestart run"):
+                    capture(config, root / "out", "run-2", "end", selected_run_index=0)
+            self.assertFalse((root / "out" / "run-2.end.dashboard.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -226,6 +226,8 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 ## 9. 进度交接记录
 
+2026-10-15 W2 新窗口基线：建立 `local_run_id=contest-prestart-20261015-b`，prestart 原始看板响应及 manifest 存于 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015-b/`，SHA-256 `798b8d7101a35eb7f86fd5dc42cae0eff1991e12b8063a133309740207e190f8`。采集时仍为上一场 mock/ended、已有 4 条历史成绩。旧窗口快照保留但不得复用；赛后仅对本次基线之后新增的 run 做暂定关联和三站结算/审计对账。无新增 run 或多条新增未指明索引时工具拒绝 end 关联；详见看板对账契约。未启动/复位比赛，未写 HA。
+
 2026-10-15 W2 开赛前基线：只读捕获工具 `capture_dashboard_snapshot.py` 已交付，实际保存 `local_run_id=contest-prestart-20261015` 的 dashboard 原始响应及 manifest 于 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015/`（Git 忽略）。原始响应 SHA-256 `999e8cbf83bf78ba8225801b27cfc628ff35239794e31e7ab350a0a47373b588`，复算一致；采集时看板仍为上一次 mock/ended，历史成绩 4 条，**不是新赛已经启动或结算**。赛后须同 ID 捕获新增结果并结合在线审计与明确设备窗口复验；仅新增结果是暂定关联，不等于正式三站收益验收。无 HA 写入、无比赛 start/reset。
 
 2026-10-15 W2 只读看板调查：页面实际使用 GET /api/dashboard；已核实 results.runs 的场次字段、三站 sites[].metrics 和总成绩结构。四场模拟赛总分按 100×Σsaving_settled/Σbaseline_cost 复算一致，不能用 baseline_settled 作分母。交付 [在线成绩对账契约](explainability-app/docs/dashboard-audit-reconciliation.md)，暂停离线页面扩展。未找到本地对应 run_live_audit.csv，远程日志未读取；场次关联、日志覆盖、执行回读仍为 unknown，尚未完成线上闭环或正式排名验收。本轮没有启动/复位比赛、HA 写入或数据库变更。
