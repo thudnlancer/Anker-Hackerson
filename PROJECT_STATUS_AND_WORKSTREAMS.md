@@ -226,6 +226,8 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 ## 9. 进度交接记录
 
+2026-10-15 W2 开赛前基线：只读捕获工具 `capture_dashboard_snapshot.py` 已交付，实际保存 `local_run_id=contest-prestart-20261015` 的 dashboard 原始响应及 manifest 于 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015/`（Git 忽略）。原始响应 SHA-256 `999e8cbf83bf78ba8225801b27cfc628ff35239794e31e7ab350a0a47373b588`，复算一致；采集时看板仍为上一次 mock/ended，历史成绩 4 条，**不是新赛已经启动或结算**。赛后须同 ID 捕获新增结果并结合在线审计与明确设备窗口复验；仅新增结果是暂定关联，不等于正式三站收益验收。无 HA 写入、无比赛 start/reset。
+
 2026-10-15 W2 只读看板调查：页面实际使用 GET /api/dashboard；已核实 results.runs 的场次字段、三站 sites[].metrics 和总成绩结构。四场模拟赛总分按 100×Σsaving_settled/Σbaseline_cost 复算一致，不能用 baseline_settled 作分母。交付 [在线成绩对账契约](explainability-app/docs/dashboard-audit-reconciliation.md)，暂停离线页面扩展。未找到本地对应 run_live_audit.csv，远程日志未读取；场次关联、日志覆盖、执行回读仍为 unknown，尚未完成线上闭环或正式排名验收。本轮没有启动/复位比赛、HA 写入或数据库变更。
 
 2026-10-15 W2 增量：旧 trace 的 solver_status/fallback/optimizer_attributed/attribution 缺失或空白时返回 null、详情显示“未知”；不从 solver_status 推断，不引用不存在的诊断列。只读边界维持：dataset_local_hour，无设备时区/在线 deadline，无执行确认或官方结算，不写入决策表。应用独立 .venv 补齐根依赖后本地全套 98 passed + 49 subtests，focused 14 passed，前端 16 passed/build 通过，pip check 通过；跨仓命令及依赖见 explainability-app/docs/w1-offline-replay-integration.md。E5 仍待集成，未替代集成负责人签核。
