@@ -220,11 +220,13 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 | Worker | 当前状态 | 当前任务 | 分支/提交 | 下一验收 |
 |---|---|---|---|---|
 | W1 | 待开始 | A5/A6 口径收尾 | 待建立独立 worktree | A5 归因测试与报告 |
-| W2 | 待集成 | E5 实现已冻结；三站讲稿、界面证据边界与隔离集成复验完成 | 代码 `257bf13`；前置选择性集成 `8362854` | 负责人接入主分支并签核；不得提前改为已验收 |
+| W2 | 待集成 | E5 实现已冻结；W1 单站只读回放已接入，补齐旧 trace 未知字段与跨仓依赖说明 | 代码 `257bf13`；只读接入 `1b1c788`；增量见本节交接 | 负责人接入主分支并签核；不得提前改为已验收 |
 | W3 | 待开始 | B4 本地采集冗余设计落地 | 待建立独立 worktree | watchdog 故障演练 |
 | 集成负责人 | 进行中 | 归属未提交改动、建立协作基线 | `feat/explainability-integration` | 冻结 worktree 与接口 |
 
 ## 9. 进度交接记录
+
+2026-10-15 W2 增量：旧 trace 的 solver_status/fallback/optimizer_attributed/attribution 缺失或空白时返回 null、详情显示“未知”；不从 solver_status 推断，不引用不存在的诊断列。只读边界维持：dataset_local_hour，无设备时区/在线 deadline，无执行确认或官方结算，不写入决策表。应用独立 .venv 补齐根依赖后本地全套 98 passed + 49 subtests，focused 14 passed，前端 16 passed/build 通过，pip check 通过；跨仓命令及依赖见 explainability-app/docs/w1-offline-replay-integration.md。E5 仍待集成，未替代集成负责人签核。
 
 | 日期 | 角色 | 事项 | 结果/阻塞 | 证据 |
 |---|---|---|---|---|

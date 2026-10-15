@@ -111,7 +111,7 @@ export interface PVDaily {
   totals: Record<string, number>; bottlenecks: Record<string, number | null>; caveat: string;
 }
 export interface OfflineReplaySummary { site_id: string; arms: string[]; hours_per_arm: number; time_basis: string; start_local_hour: string; end_local_hour: string; source_sha256: string; source_kind: string; official_score_claim: boolean; negative_price_rows: number; weather_source: string; scope: string }
-export interface OfflineReplayStep { record: Record<string, string | number | boolean>; facts: { text: string; evidence_refs: string[] }[]; source_sha256: string; source_kind: string; time_basis: string; capabilities: { counterfactual: boolean; plan_feasibility: boolean }; execution_status: string; settlement: null; scope: string }
+export interface OfflineReplayStep { record: Record<string, string | number | boolean | null>; facts: { text: string; evidence_refs: string[] }[]; source_sha256: string; source_kind: string; time_basis: string; capabilities: { counterfactual: boolean; plan_feasibility: boolean }; execution_status: string; settlement: null; scope: string }
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? undefined : {
