@@ -113,17 +113,51 @@ describe('储能解释用户流程', () => {
     expect(screen.getByText('未结算')).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([path]) => path.includes('counterfactual'))).toBe(false);
   });
+  it('零并网输出目标明确注明功率含义，避免误读为电池零放电', async () => {
+    const gridTargetOverview = {
+      ...overview,
+      stations: overview.stations.map((station) => ({
+        ...station, source_kind: 'external', site_id: '并网零目标站',
+        action: { kind: 'discharge', power_kw: 0, control_semantics: 'grid_export_target' },
+        sources: { pv: 'observed', load: 'observed', pv_forecast: 'assumption', load_forecast: 'assumption' },
+        reason_summary: '并网点输出目标为 0 kW，电池放电以对应计划为准。',
+      })),
+    };
+    mockApi({ '/api/stations': gridTargetOverview, '/api/stations?run_id=demo-run': gridTargetOverview });
+    render(<App />);
+    expect(await screen.findByText('功率含义：并网点输出目标')).toBeInTheDocument();
+    expect(screen.getByRole('article')).toHaveTextContent('放电0.00 kW');
+    expect(screen.getByRole('article')).toHaveTextContent('功率含义：并网点输出目标');
+    expect(screen.queryByText('功率含义：电池充电功率')).not.toBeInTheDocument();
+  });
   it('提交零充电干预，完成导航并如实展示负费用差', async () => {
     const fetchMock = mockApi(); window.location.hash = '#/decisions/evidence-1'; render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: '计算替代方案' }));
     expect(await screen.findByText('−€0.500000')).toBeInTheDocument();
     expect(screen.getByText('在本次假设下，替代方案费用更低。')).toBeInTheDocument();
+    expect(screen.getByText('−€0.500000').closest('.delta-card')).toHaveClass('negative');
     const request = fetchMock.mock.calls.find(([path]) => path === '/api/decisions/evidence-1/counterfactuals');
     expect(request).toBeDefined();
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({ first_charge_kw: 0 });
     expect(window.location.hash).toBe('#/comparisons/job-1');
     expect(screen.getAllByRole('table')).toHaveLength(2);
     expect(screen.getByText(/不能据此推断 HA 控制模式/)).toBeInTheDocument();
+  });
+  it('浮点误差级的负差额展示近似相同，保留真实负差额判断', async () => {
+    const tinyDelta = -1.776e-15;
+    mockApi({ '/api/counterfactuals/job-1': {
+      ...readyJob,
+      result: {
+        ...readyJob.result!, delta_eur: tinyDelta,
+        alternative: { ...readyJob.result!.alternative, cost: { ...readyJob.result!.baseline.cost, objective_eur: readyJob.result!.baseline.cost.objective_eur + tinyDelta } },
+      },
+    } });
+    window.location.hash = '#/comparisons/job-1'; render(<App />);
+    expect(await screen.findByText('≈€0.000000')).toBeInTheDocument();
+    expect(screen.getByText('在计算精度内，两种方案费用相同。')).toBeInTheDocument();
+    expect(screen.queryByText('在本次假设下，替代方案费用更低。')).not.toBeInTheDocument();
+    expect(screen.queryByText('−€0.000000')).not.toBeInTheDocument();
+    expect(screen.getByText('≈€0.000000').closest('.delta-card')).not.toHaveClass('negative');
   });
   it('真实记录未注册模型时明确展示能力不可用', async () => {
     mockApi({ '/api/decisions/evidence-1': { ...decision, source_kind: 'external', snapshot: { ...decision.snapshot, sources: { pv: 'unknown', load: 'assumption' } }, capabilities: { counterfactual: false, supported_interventions: [] } } });

@@ -110,6 +110,8 @@ python -m energy_explain import-records --file outputs/shadow-team-run-001/expla
 
 协作走功能分支与 Draft PR，评审后合并 main；不要把运行配置、令牌、原始会话 JSONL、数据库或实验输出提交。原独立仓库可作历史参考，共同策略的日常开发以这个仓库为准。
 
-本次准备的 CI 分别运行策略 unittest、解释 pytest 与前端测试/构建。解释测试须从 `explainability-app/` 运行，避免两个 `tests` 目录的 Python 名字碰撞。GitHub CI 尚未触发；本地验收见 [共同仓库验收记录](explainability-app/docs/shared-integration-acceptance.md)。
+CI 分别运行策略 unittest、解释 pytest 与前端测试/构建，首次集成已在 GitHub 全部通过。解释测试须从 `explainability-app/` 运行，避免两个 `tests` 目录的 Python 名字碰撞。初始本地验收见 [共同仓库验收记录](explainability-app/docs/shared-integration-acceptance.md)。
 
-真实输入的下一步是取得同次完整现场导出并在解释服务核对费用，随后才接提交/回读和官方结算事件。本次已完成代码与人工输入的端到端验证；未验收真实预测精度、HA 控制闭环、云部署或比赛收益。
+随后已完成真实 HA 三站读取、现场输入的本地 shadow、证据导入及反事实验收，详见 [真实环境只读接入验收](explainability-app/docs/live-readonly-acceptance.md)。原共同仓库验收文档保留发布前的本地快照；最新远端 CI 状态以协作 PR 的 Checks 为准。
+
+已获得同次完整现场导出，并在解释服务核对费用。下一步是接入持续采集、提交/回读和官方结算事件；真实预测精度、HA 控制闭环、云部署与比赛收益尚未验收。

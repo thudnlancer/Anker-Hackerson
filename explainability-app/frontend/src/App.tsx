@@ -102,6 +102,7 @@ function StationCard({ station, index, settlement }: { station: Station; index: 
     <p className="device-time"><Icon name="clock" size={14} />{time(station.device_time)} UTC · 设备时间</p>
     <div className="station-energy"><BatteryRing percent={station.soc_percent} /><div className="energy-readings"><div><Icon name="sun" /><span>快照光伏<strong>{power(station.pv_kw)}</strong></span></div><div><Icon name="home" /><span>输入负载<strong>{power(station.load_kw)}</strong></span></div></div></div>
     <div className="recommendation"><span>当前建议</span><strong>{actionNames[station.action.kind] ?? station.action.kind}<em>{power(station.action.power_kw)}</em></strong></div>
+    <p className="control-note" style={{ margin: '7px 0 0' }}>功率含义：{controlLabel(station.action.control_semantics)}</p>
     <p className="reason-summary">{station.reason_summary || '等待策略模块提供决策依据。'}</p>
     <StatusGrid solver={station.solver_status} forecast={station.forecast_status} execution={station.execution_status} settlement={settlement} />
     <button className="card-link" onClick={() => navigate(`/decisions/${encodeURIComponent(station.id)}`)}>查看决策依据<Icon name="arrow" size={17} /></button>
@@ -221,6 +222,8 @@ function ComparisonPage({ id }: { id: string }) {
     }
     void load(); return () => { active = false; clearTimeout(timer); };
   }, [id, refresh]);
+  const deltaEur = job?.result?.delta_eur;
+  const effectivelyEqual = deltaEur !== undefined && Math.abs(deltaEur) <= 1e-9;
   return <>
     <button className="back-link" onClick={() => job ? navigate(`/decisions/${encodeURIComponent(job.decision_id)}`) : navigate('/')}><Icon name="back" size={16} />返回决策依据</button>
     <PageTitle eyebrow="COUNTERFACTUAL COMPARISON" title="如果换一种做法" description="同一输入快照、同一模型，固定首步动作后重新优化。" action={source && source !== 'unknown' ? <SourceBadge source={source} sources={inputSources} provenance={provenance} /> : <span className="source-badge">{source === 'unknown' ? '记录来源待核验' : '正在读取记录来源'}</span>} />
@@ -229,7 +232,7 @@ function ComparisonPage({ id }: { id: string }) {
     {job && <><div className="comparison-context"><div><Icon name="compare" /><span>首步电池充电固定为 <strong>{power(job.first_charge_kw)}</strong></span></div><Badge value={job.status === 'ready' ? '计算完成' : job.status} tone={job.status === 'ready' ? 'green' : undefined} /></div>
       {(job.status === 'queued' || job.status === 'running') && <div className="job-pending" role="status"><span className="spinner" /><h2>{job.status === 'queued' ? '任务已入队，等待模型工作进程' : '正在重新优化后续计划'}</h2><p>页面会自动更新。普通原因解释仍可直接查看。</p></div>}
       {job.status !== 'queued' && job.status !== 'running' && job.status !== 'ready' && <div className="job-message" role="status"><Icon name="info" size={30} /><h2>{label(job.status)}</h2><p>{job.error || '此次比较没有可展示的模型结果。'}</p>{job.status === 'timeout' && <p>计算超时无法判断替代方案是否可行。</p>}{job.status === 'unsupported' && <p>需要为这条真实记录注册对应模型适配器。</p>}</div>}
-      {job.status === 'ready' && job.result && <><div className={`delta-card ${job.result.delta_eur < 0 ? 'negative' : ''}`}><div><p>替代方案费用 − 原方案费用</p><h2>{job.result.delta_eur >= 0 ? '+' : '−'}{money(Math.abs(job.result.delta_eur), 6)}</h2><span>{job.result.delta_eur > 0 ? '在本次假设下，替代方案费用更高。' : job.result.delta_eur < 0 ? '在本次假设下，替代方案费用更低。' : '在本次假设下，两种方案费用相同。'}</span></div><div className="delta-icon"><Icon name="compare" size={34} /></div></div><div className="scenario-grid"><ScenarioPanel title="原方案" scenario={job.result.baseline} /><ScenarioPanel title="替代方案" scenario={job.result.alternative} alternative /></div><section className="panel assumptions-panel"><div className="panel-heading"><Icon name="info" /><h2>比较成立的假设</h2></div><ul>{job.result.assumptions.map((assumption, index) => <li key={index}>{assumption}</li>)}</ul><p className="scope-note">这是模型费用比较，不代表实际执行收益或官方比赛成绩。0 kW 干预仅约束电池首步充电，不能据此推断 HA 控制模式。</p></section></>}
+      {job.status === 'ready' && job.result && <><div className={`delta-card ${!effectivelyEqual && job.result.delta_eur < 0 ? 'negative' : ''}`}><div><p>替代方案费用 − 原方案费用</p><h2>{effectivelyEqual ? '≈€0.000000' : `${job.result.delta_eur >= 0 ? '+' : '−'}${money(Math.abs(job.result.delta_eur), 6)}`}</h2><span>{effectivelyEqual ? '在计算精度内，两种方案费用相同。' : job.result.delta_eur > 0 ? '在本次假设下，替代方案费用更高。' : '在本次假设下，替代方案费用更低。'}</span></div><div className="delta-icon"><Icon name="compare" size={34} /></div></div><div className="scenario-grid"><ScenarioPanel title="原方案" scenario={job.result.baseline} /><ScenarioPanel title="替代方案" scenario={job.result.alternative} alternative /></div><section className="panel assumptions-panel"><div className="panel-heading"><Icon name="info" /><h2>比较成立的假设</h2></div><ul>{job.result.assumptions.map((assumption, index) => <li key={index}>{assumption}</li>)}</ul><p className="scope-note">这是模型费用比较，不代表实际执行收益或官方比赛成绩。0 kW 干预仅约束电池首步充电，不能据此推断 HA 控制模式。</p></section></>}
     </>}
   </>;
 }

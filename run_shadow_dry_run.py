@@ -28,6 +28,15 @@ def utcnow():
 
 def fetch_snapshot(config, *, include_prices=True):
     cfg = load_runtime_config(config, mode_override="dry-run")
+    return fetch_snapshot_from_config(cfg, include_prices=include_prices)
+
+
+def fetch_snapshot_from_config(cfg, *, include_prices=True):
+    """Collect from a normalized in-memory config without persisting credentials.
+
+    This entry point shares the same read-only endpoint allowlist as the file
+    wrapper. Configuration mode and write flags cannot enable control calls.
+    """
     require_runtime_fields(cfg, write_enabled=False)
     token = exchange_ha_token(cfg)
     session = requests.Session()
