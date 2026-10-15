@@ -14,7 +14,7 @@ const path = require('node:path');
   page.on('pageerror', e => errors.push(e.message));
   const checks = [];
   try {
-    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.goto(base + '/#/evidence', { waitUntil: 'networkidle' });
     await page.locator('#run-select').selectOption('demo-four-step-v1');
     await page.getByRole('heading', { name: 'site-01', exact: true }).waitFor();
     assert.equal(await page.locator('.station-card').count(), 3);

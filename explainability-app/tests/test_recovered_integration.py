@@ -261,10 +261,12 @@ class RecoveredModelIntegrationTests(unittest.TestCase):
                     observed_at="2026-10-13T00:00:02Z", device_time="2026-10-13T00:15:00Z",
                     observed_mode="synthetic-api-fixture", observed_power_kw=imported["action"]["power_kw"])
                 confirmation = client.post(event_path, json=confirm)
-                self.assertEqual(confirmation.status_code, 200, confirmation.text)
+                # External callers must supply structured submission/readback
+                # evidence; a raw assertion must not confirm this model record.
+                self.assertEqual(confirmation.status_code, 422, confirmation.text)
                 detail = client.get(f"/api/decisions/{imported['id']}").json()
-                self.assertEqual(detail["execution_status"], "confirmed")
-                self.assertEqual(len(detail["execution_events"]), 2)
+                self.assertEqual(detail["execution_status"], "submitted")
+                self.assertEqual(len(detail["execution_events"]), 1)
                 self.assertEqual(detail["snapshot_hash"], imported["snapshot_hash"])
                 self.assertIsNone(detail["settlement"])
 
@@ -325,7 +327,9 @@ class RecoveredModelIntegrationTests(unittest.TestCase):
     def test_signed_zero_execution_reimport_is_append_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
             store = Store(Path(temp) / "events-zero.sqlite")
-            key = store.add_decision(DecisionIn.model_validate(self.record))["id"]
+            # Raw event numeric serialization is a demo-only contract. External
+            # execution confirmation is exercised by the structured bridge.
+            key = store.add_decision(make_decision())["id"]
             issued = self.record["snapshot"]["device_time"]
             store.add_execution(key, ExecutionEvent.model_validate({"event_id": "zero-submit",
                 "instruction_id": "zero-instruction", "kind": "submitted", "issued_at": issued}))

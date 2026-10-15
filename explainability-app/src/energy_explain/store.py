@@ -11,6 +11,7 @@ import time
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .schemas import DecisionIn, ExecutionEvent, Intervention, SettlementIn
+from .collection import CollectionStatus, record_freshness
 
 
 class Conflict(ValueError):
@@ -69,6 +70,16 @@ class Store:
                 result TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                 lease_until REAL, attempts INTEGER NOT NULL DEFAULT 0);
               CREATE INDEX IF NOT EXISTS queue_status ON jobs(status,created_at);
+              CREATE TABLE IF NOT EXISTS collection_status (
+                run_id TEXT PRIMARY KEY REFERENCES runs(run_id), payload TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS submission_receipts (
+                decision_key TEXT NOT NULL REFERENCES decisions(id), instruction_id TEXT NOT NULL,
+                payload TEXT NOT NULL, received_at TEXT NOT NULL,
+                PRIMARY KEY(decision_key,instruction_id));
+              CREATE TABLE IF NOT EXISTS readback_observations (
+                decision_key TEXT NOT NULL REFERENCES decisions(id), observation_id TEXT NOT NULL,
+                payload TEXT NOT NULL, result TEXT NOT NULL, received_at TEXT NOT NULL,
+                PRIMARY KEY(decision_key,observation_id));
             """)
 
     @contextmanager
@@ -125,33 +136,106 @@ class Store:
         return data
 
     def execution_events(self, key: str) -> list[dict]:
-        self.get_decision(key)
+        decision = self.get_decision(key)
         with self.connect() as db:
             rows = db.execute("SELECT * FROM execution_events WHERE decision_key=? ORDER BY sequence", (key,)).fetchall()
-        return [dict(json.loads(r["payload"]), sequence=r["sequence"], received_at=r["received_at"]) for r in rows]
+        events = [dict(json.loads(r["payload"]), sequence=r["sequence"], received_at=r["received_at"]) for r in rows]
+        if decision["source_kind"] == "external":
+            verified = self._verified_instruction_ids(key)
+            for event in events:
+                if event["kind"] == "confirmed":
+                    event["verification_status"] = "verified" if event["instruction_id"] in verified else "unverified"
+        return events
+
+    def _verified_instruction_ids(self, key: str) -> set[str]:
+        with self.connect() as db:
+            rows = db.execute("SELECT payload,result FROM readback_observations WHERE decision_key=?", (key,)).fetchall()
+        return {json.loads(r["payload"])["instruction_id"] for r in rows if json.loads(r["result"])["status"] == "verified"}
 
     def add_execution(self, key: str, event: ExecutionEvent) -> dict:
-        self.get_decision(key)
-        payload = canonical(event.model_dump(mode="json"))
+        decision = self.get_decision(key)
+        if decision["source_kind"] == "external" and event.kind == "confirmed":
+            raise ValueError("external confirmation requires the structured submission/readback bridge")
         with self.connect(write=True) as db:
-            existing = db.execute("SELECT payload FROM execution_events WHERE decision_key=? AND event_id=?", (key, event.event_id)).fetchone()
-            if existing:
-                if json.loads(existing["payload"]) != event.model_dump(mode="json"):
-                    raise Conflict("event identity already exists with different content")
-                return {"created": False, "event": event.model_dump(mode="json")}
-            submission = db.execute("SELECT * FROM execution_events WHERE decision_key=? AND instruction_id=? AND kind='submitted' ORDER BY sequence LIMIT 1", (key, event.instruction_id)).fetchone()
-            if event.kind == "submitted":
-                if submission:
-                    raise Conflict("instruction already has a submission event")
-            else:
-                if not submission:
-                    raise ValueError("terminal event requires a prior matching submission")
-                saved = json.loads(submission["payload"])
-                if saved["issued_at"] != event.model_dump(mode="json")["issued_at"]:
-                    raise ValueError("terminal event issued_at must match the submitted instruction")
-            db.execute("INSERT INTO execution_events (decision_key,event_id,instruction_id,kind,issued_at,payload,received_at) VALUES (?,?,?,?,?,?,?)",
-                (key, event.event_id, event.instruction_id, event.kind, event.issued_at.isoformat(), payload, now()))
-        return {"created": True, "event": event.model_dump(mode="json")}
+            return self._insert_execution(db, key, event)
+
+    def _insert_execution(self, db, key: str, event: ExecutionEvent) -> dict:
+        data = event.model_dump(mode="json")
+        existing = db.execute("SELECT payload FROM execution_events WHERE decision_key=? AND event_id=?", (key, event.event_id)).fetchone()
+        if existing:
+            if json.loads(existing["payload"]) != data:
+                raise Conflict("event identity already exists with different content")
+            return {"created": False, "event": data}
+        submission = db.execute("SELECT payload FROM execution_events WHERE decision_key=? AND instruction_id=? AND kind='submitted' ORDER BY sequence LIMIT 1", (key, event.instruction_id)).fetchone()
+        if event.kind == "submitted":
+            if submission:
+                raise Conflict("instruction already has a submission event")
+        elif not submission:
+            raise ValueError("terminal event requires a prior matching submission")
+        elif json.loads(submission["payload"])["issued_at"] != data["issued_at"]:
+            raise ValueError("terminal event issued_at must match the submitted instruction")
+        db.execute("INSERT INTO execution_events (decision_key,event_id,instruction_id,kind,issued_at,payload,received_at) VALUES (?,?,?,?,?,?,?)",
+            (key, event.event_id, event.instruction_id, event.kind, event.issued_at.isoformat(), canonical(data), now()))
+        return {"created": True, "event": data}
+
+    def _check_evidence_identity(self, key: str, evidence) -> dict:
+        decision = self.get_decision(key)
+        if any(decision[field] != getattr(evidence, field) for field in ("run_id", "site_id", "decision_id")):
+            raise ValueError("execution evidence does not match the decision identity")
+        return decision
+
+    def add_submission_receipt(self, key: str, receipt) -> dict:
+        decision = self._check_evidence_identity(key, receipt)
+        action = decision["action"]
+        expected = "grid_export_target" if receipt.flow == "discharge" else "battery_charge"
+        if action["kind"] != receipt.flow or action["control_semantics"] != expected or abs(action["power_kw"] - receipt.target_kw) > 1e-6:
+            raise ValueError("actual command differs from the saved candidate; save a separate decision")
+        if receipt.issued_device_time < datetime.fromisoformat(decision["snapshot"]["device_time"].replace("Z", "+00:00")):
+            raise ValueError("submission device clock predates the candidate")
+        if receipt.issued_wall_time < datetime.fromisoformat(decision["snapshot"]["observed_at"].replace("Z", "+00:00")):
+            raise ValueError("submission wall clock predates candidate capture")
+        if (receipt.completed_wall_time - datetime.now(timezone.utc)).total_seconds() > 2:
+            raise ValueError("submission wall clock is in the future")
+        data = receipt.model_dump(mode="json")
+        event = ExecutionEvent(event_id=receipt.event_id, instruction_id=receipt.instruction_id,
+            kind="submitted", issued_at=receipt.issued_device_time, note="外部提交回执；等待提交后的遥测回读。")
+        with self.connect(write=True) as db:
+            old = db.execute("SELECT payload FROM submission_receipts WHERE decision_key=? AND instruction_id=?", (key, receipt.instruction_id)).fetchone()
+            if old:
+                if json.loads(old["payload"]) != data:
+                    raise Conflict("submission receipt identity has different content")
+                return {"created":False, "receipt":data}
+            self._insert_execution(db, key, event)
+            db.execute("INSERT INTO submission_receipts VALUES (?,?,?,?)", (key, receipt.instruction_id, canonical(data), now()))
+        return {"created":True, "receipt":data}
+
+    def add_readback(self, key: str, telemetry) -> dict:
+        from .execution import SubmissionReceipt, verify_readback, build_execution_event
+        self._check_evidence_identity(key, telemetry)
+        data = telemetry.model_dump(mode="json")
+        with self.connect(write=True) as db:
+            old = db.execute("SELECT payload,result FROM readback_observations WHERE decision_key=? AND observation_id=?", (key, telemetry.observation_id)).fetchone()
+            if old:
+                if json.loads(old["payload"]) != data:
+                    raise Conflict("readback observation identity has different content")
+                return {"created":False,"verification":json.loads(old["result"])}
+            row = db.execute("SELECT payload FROM submission_receipts WHERE decision_key=? AND instruction_id=?", (key, telemetry.instruction_id)).fetchone()
+            receipt = SubmissionReceipt.model_validate_json(row["payload"]) if row else None
+            result = verify_readback(receipt, telemetry, now=datetime.now(timezone.utc))
+            if result.status == "verified":
+                event = ExecutionEvent.model_validate(build_execution_event(receipt, telemetry, result))
+                self._insert_execution(db, key, event)
+            saved = result.model_dump(mode="json")
+            db.execute("INSERT INTO readback_observations VALUES (?,?,?,?,?)", (key, telemetry.observation_id, canonical(data), canonical(saved), now()))
+        return {"created":True,"verification":saved}
+
+    def execution_evidence(self, key: str) -> dict:
+        self.get_decision(key)
+        with self.connect() as db:
+            receipts = db.execute("SELECT payload FROM submission_receipts WHERE decision_key=? ORDER BY received_at", (key,)).fetchall()
+            readings = db.execute("SELECT payload,result,received_at FROM readback_observations WHERE decision_key=? ORDER BY received_at,observation_id", (key,)).fetchall()
+        return {"submission_receipts":[json.loads(r["payload"]) for r in receipts],
+                "readbacks":[{"observation":json.loads(r["payload"]),"verification":json.loads(r["result"]),"received_at":r["received_at"]} for r in readings]}
 
     def execution_status(self, key: str) -> str:
         events = self.execution_events(key)
@@ -160,7 +244,12 @@ class Store:
             return "candidate_only"
         latest = max(submissions, key=lambda e: (datetime.fromisoformat(e["issued_at"].replace("Z", "+00:00")), e["sequence"]))
         terminal = [e for e in events if e["instruction_id"] == latest["instruction_id"] and e["kind"] != "submitted"]
-        return terminal[-1]["kind"] if terminal else "submitted"
+        if not terminal:
+            return "submitted"
+        event = terminal[-1]
+        if event["kind"] == "confirmed" and event.get("verification_status") == "unverified":
+            return "confirmation_unverified"
+        return event["kind"]
 
     def add_settlement(self, run_id: str, event: SettlementIn) -> dict:
         payload = canonical(event.model_dump(mode="json"))
@@ -168,10 +257,10 @@ class Store:
             run = db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if not run:
                 raise NotFound("run not found")
-            if run["source_kind"] == "demo" and event.source_kind == "official":
-                raise ValueError("demo runs cannot be labelled as official settlement")
-            if run["source_kind"] == "external" and event.source_kind != "official":
-                raise ValueError("external runs require official-source settlement records")
+            if run["source_kind"] == "demo" and event.source_kind != "demo":
+                raise ValueError("demo runs cannot be labelled as external settlement")
+            if run["source_kind"] == "external" and event.source_kind not in {"official", "simulator_mock"}:
+                raise ValueError("external runs require an official or simulator-mock settlement source")
             existing = db.execute("SELECT payload FROM settlements WHERE run_id=? AND event_id=?", (run_id, event.event_id)).fetchone()
             if existing:
                 if json.loads(existing["payload"]) != event.model_dump(mode="json"):
@@ -216,13 +305,75 @@ class Store:
         with self.connect() as db:
             return [dict(r) for r in db.execute("SELECT * FROM runs ORDER BY created_at DESC,run_id")]
 
+    def update_collection_status(self, status: dict) -> dict:
+        value = CollectionStatus.model_validate(status)
+        wall = datetime.now(timezone.utc)
+        if (value.updated_at - wall).total_seconds() > 2:
+            raise ValueError("collector heartbeat wall clock is in the future")
+        data = value.model_dump(mode="json")
+        with self.connect(write=True) as db:
+            run = db.execute("SELECT source_kind FROM runs WHERE run_id=?", (value.run_id,)).fetchone()
+            if run and run["source_kind"] != "external":
+                raise Conflict("collector requires an external run")
+            old = db.execute("SELECT payload FROM collection_status WHERE run_id=?", (value.run_id,)).fetchone()
+            if old:
+                previous = CollectionStatus.model_validate_json(old["payload"])
+                if value.updated_at < previous.updated_at or value.started_at < previous.started_at:
+                    raise Conflict("delayed collector heartbeat rejected")
+                if value.owner_id != previous.owner_id and previous.state != "stopped" and (wall - previous.updated_at).total_seconds() <= previous.heartbeat_expiry_seconds:
+                    raise Conflict("another collector owns this run")
+                # The heartbeat and checkpoint are separate databases. A crash
+                # after the accepted heartbeat must not let an older checkpoint
+                # erase the last whole-cycle outcome on the next process start.
+                if previous.last_success_at is not None and (value.last_success_at is None or previous.last_success_at > value.last_success_at):
+                    data["last_success_at"] = previous.model_dump(mode="json")["last_success_at"]
+                if previous.last_error_at is not None and (value.last_error_at is None or previous.last_error_at > value.last_error_at):
+                    data["last_error_at"] = previous.model_dump(mode="json")["last_error_at"]
+                    data["last_error"] = previous.last_error
+            db.execute("INSERT OR IGNORE INTO runs VALUES (?,?,?)", (value.run_id, "external", now()))
+            db.execute("INSERT INTO collection_status VALUES (?,?) ON CONFLICT(run_id) DO UPDATE SET payload=excluded.payload", (value.run_id, canonical(data)))
+        return data
+
+    def collection_status(self, run_id: str | None, wall: datetime | None = None) -> dict | None:
+        if not run_id:
+            return None
+        with self.connect() as db:
+            row = db.execute("SELECT payload FROM collection_status WHERE run_id=?", (run_id,)).fetchone()
+        if not row:
+            return None
+        value = json.loads(row["payload"])
+        wall = wall or datetime.now(timezone.utc)
+        age = (wall - datetime.fromisoformat(value["updated_at"].replace("Z", "+00:00"))).total_seconds()
+        if age < -2 or (value["state"] != "stopped" and age > value["heartbeat_expiry_seconds"]):
+            value.update(state="unknown", reason="clock_unverified" if age < -2 else "heartbeat_expired")
+        return value
+
     def stations(self, run_id: str | None = None) -> dict:
         runs = self.runs()
         run_id = run_id or (runs[0]["run_id"] if runs else None)
         if run_id and not any(r["run_id"] == run_id for r in runs):
             raise NotFound("run not found")
+        wall = datetime.now(timezone.utc)
+        collection = self.collection_status(run_id, wall)
         with self.connect() as db:
             keys = db.execute("SELECT id,site_id FROM decisions WHERE run_id=? ORDER BY device_time DESC,created_at DESC,id", (run_id,)).fetchall()
+            submitted = db.execute("""SELECT d.id,d.site_id,r.payload,r.received_at
+                FROM submission_receipts r JOIN decisions d ON d.id=r.decision_key
+                WHERE d.run_id=? ORDER BY r.received_at DESC,d.id""", (run_id,)).fetchall()
+        # The newest shadow candidate must not hide a prior, actually submitted
+        # control decision. This is explicitly historical, never a live setpoint.
+        last_submissions = {}
+        for row in submitted:
+            if row["site_id"] in last_submissions:
+                continue
+            receipt = json.loads(row["payload"])
+            last_submissions[row["site_id"]] = {
+                "decision_key":row["id"], "instruction_id":receipt["instruction_id"],
+                "submitted_at":receipt["completed_wall_time"], "device_time":receipt["issued_device_time"],
+                "action":{"kind":receipt["flow"],"power_kw":receipt["target_kw"],
+                          "control_semantics":"battery_charge" if receipt["flow"] == "charge" else "grid_export_target"},
+                "execution_status":self.execution_status(row["id"]),
+            }
         seen, stations = set(), []
         from .facts import explain
         for row in keys:
@@ -235,8 +386,12 @@ class Store:
             stations.append({k: d[k] for k in ("id","run_id","site_id","decision_id","source_kind","action","solver_status")}
                 | {k: s[k] for k in ("device_time","soc_percent","pv_kw","load_kw","forecast_status")}
                 | {"execution_status": execution_status, "reason_summary": explain(d,execution_status)["summary"],
-                   "sources":s["sources"],"provenance":d.get("provenance")})
+                   "observed_at":s["observed_at"], "created_at":d["created_at"],
+                   "record_freshness":record_freshness(s["observed_at"], collection, wall),
+                   "sources":s["sources"],"provenance":d.get("provenance"),
+                   "last_submission":last_submissions.get(d["site_id"])})
         return {"run_id":run_id,"runs":runs,"stations": sorted(stations,key=lambda x:x["site_id"]),
+                "server_time":wall.isoformat(), "collection":collection,
                 "settlement":self.get_settlement(run_id) if run_id else None}
 
     def create_job(self, key: str, intervention: Intervention) -> dict:

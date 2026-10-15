@@ -19,7 +19,7 @@ const path=require('node:path');
       assert.deepEqual(d.execution_events,[]); assert.equal(d.settlement,null);
     }
     checks.push('full external decision import using recovered model; no execution or settlement invented');
-    await page.goto(base,{waitUntil:'networkidle'});
+    await page.goto(base + '/#/evidence',{waitUntil:'networkidle'});
     await page.locator('#run-select').selectOption('recovered-model-validation-v1');
     await page.getByRole('heading',{name:'model-4-step',exact:true}).waitFor();
     assert.equal(await page.locator('.station-card').count(),3);
