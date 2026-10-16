@@ -43,3 +43,5 @@ B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 d
 2026-10-16 06:28 UTC 再次联网只读 GET：新快照在 `outputs/local_mock_20261016_o7_readonly_20261016/snapshot.json`（SHA-256 `08B707272EAA0C93749DCB53C32A31A4DAD853C75E5F449B71FBF0954D98E235`）。比赛为 `ended/mock`，看板 `results.count=7`；三站 mode 仍为 `third_party_control`，device_time 均停在 `2026-10-17 08:15:00`，未见新的设备 tick。站 1/2 的 flow 为 charge、setpoint 为 5000/2541 W；站 3 为 discharge、0 W。run2 journal 当前 pending incident 分别为 `666bd879…`、`79fbd223…`、`d46070fe…`。本次只读快照不证明安全恢复；不得清除这些 incident 或启动下一轮写入，直到操作者取得同一 incident 对应的安全模式回显及新的设备 tick 证据并完成复核。
 
 新增 `scripts/online/review_ha_reconciliation.py` 作为清除前机械审查器：对照当前 journal incident、两次 HA 快照的站点实体、`self_consumption` 回显、模式更新时间和 device_time 推进，输出 `readback_candidate`；它只读且永不清除 journal。对本轮真实证据生成的 `review.json` 显示三个站点均为 `false`，因此 O7 继续保持未通过。
+
+O9 本地准备进一步收紧：`remote_dry_run_ctl.sh start/foreground` 现在要求显式完整 40 位 pinned SHA、HEAD 精确匹配且工作树干净；README 将 SSH 私钥部署段标为当前不适用的历史方案，browser-terminal Git runbook 为准。`bash -n`、核心测试和敏感本机状态的 ignore 检查通过；未连接比赛机，故这只是部署材料与启动门禁准备，不是 O9 远程运行验收。

@@ -117,7 +117,9 @@ MILP 分块入口为 `run_milp_chunk.ps1`，例如：
 
 在线只读检查：`python run_online_dry_run.py --config local_online_config.json --output online_dry_run_latest.json`。该命令会读取 HA 三站实体和模拟器电价/天气，并把结果保存到本地；`writes_performed` 应保持为 `0`。
 
-## 本地到远程的切换
+## 本地到远程的切换（旧 SSH 私钥方案，当前不适用）
+
+当前只有 EC2 Instance Connect 浏览器终端，没有本地 SSH 私钥。下列 `deploy_remote.ps1` / `run_remote.ps1` 命令保留作历史方案，不用于当前验收；实际部署与常驻 dry-run 只按 [远程 dry-run runbook](REMOTE_DRY_RUN_RUNBOOK.md) 的 Git 固定提交路径执行，且须另行授权远端操作。
 
 本地里程碑完成后，远程参赛机只需要接收代码、模型和自己的运行配置。私钥仍保存在本机，HA 令牌和看板密码不写入命令行，也不随代码同步。
 

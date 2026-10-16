@@ -16,6 +16,8 @@ git rev-parse HEAD
 
 工作区必须干净，`git rev-parse HEAD` 必须等于批准的提交号。若仓库需要认证，使用实例已有 Git 凭据；不要把 token 写入命令行历史。
 
+`remote_dry_run_ctl.sh start/foreground` 现在会再次强制验证完整 40 位 `PINNED_COMMIT`、HEAD 一致和 Git 工作区干净；缺少 `.pinned_commit`/环境变量或检查不通过时拒绝启动。`.pinned_commit` 是本机忽略的操作标记，不随 Git 发布；必须在浏览器终端逐次写入经批准的提交号。
+
 ## 配置与依赖
 
 ```bash

@@ -35,6 +35,18 @@ for site, item in (c.get("stations") or {}).items():
 print("dry-run safety gates: verified; HA writes disabled")
 PY
 }
+verify_checkout() {
+  [[ "$PINNED_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] ||
+    die "PINNED_COMMIT must be an explicit full 40-character commit SHA"
+  local commit
+  commit="$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null)" ||
+    die "cannot verify Git HEAD in $ROOT"
+  [[ "$commit" == "$PINNED_COMMIT" ]] ||
+    die "checked-out commit $commit does not match PINNED_COMMIT $PINNED_COMMIT"
+  [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]] ||
+    die "Git worktree is dirty; refusing to start"
+  printf '%s' "$commit"
+}
 alive() {
   [[ -s "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null || return 1
   local command
@@ -50,10 +62,10 @@ status() {
 start() {
   if managed; then systemctl --user start "$UNIT"; status; return; fi
   need_files; validate_config
+  local commit
+  commit="$(verify_checkout)"
   if alive; then echo "ALREADY_RUNNING pid=$(cat "$PIDFILE")"; return 0; fi
   rm -f "$PIDFILE"
-  local commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-  [[ -z "$PINNED_COMMIT" || "$commit" == "$PINNED_COMMIT" ]] || die "checked-out commit $commit does not match PINNED_COMMIT $PINNED_COMMIT"
   local cfg_hash="$(sha256sum "$CONFIG" | awk '{print $1}')"
   local started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   "$VENV/bin/python" - "$META" "$commit" "$cfg_hash" "$started" <<'PY'
@@ -68,8 +80,8 @@ PY
 }
 foreground() {
   need_files; validate_config
-  local commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-  [[ -z "$PINNED_COMMIT" || "$commit" == "$PINNED_COMMIT" ]] || die "checked-out commit $commit does not match PINNED_COMMIT $PINNED_COMMIT"
+  local commit
+  commit="$(verify_checkout)"
   echo $$ > "$PIDFILE"
   trap 'rm -f "$PIDFILE"' EXIT INT TERM
   exec "$VENV/bin/python" -u run_live.py --config "$CONFIG" --mode dry-run --strategy milp --audit-csv logs/run_live_audit.csv
