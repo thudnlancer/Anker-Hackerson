@@ -41,7 +41,7 @@ def test_default_preflight_refuses_missing_heartbeat_without_writing():
     evidence = ROOT / "outputs" / "restart_contract_test"
     assert not evidence.exists()
     result = subprocess.run(["powershell", "-NoProfile", "-File", str(SCRIPT),
-                             "-ExpectedPid", "1", "-Config", "local_online_config.json",
+                             "-ExpectedPid", "1", "-Config", "local_online_config.example.json",
                              "-CacheDir", "outputs/local_mock_20261016_run3",
                              "-HealthDir", "outputs/local_mock_20261016_run3",
                              "-EvidenceDir", "outputs/restart_contract_test", "-NodeId", "nodeA"],
