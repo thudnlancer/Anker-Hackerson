@@ -33,3 +33,5 @@
 B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 dry-run；live 要求显式参数、授权说明、安全配置和现存 reconciliation journal，并只读扫描 `outputs/` 下全部 journal，任一 pending 时在执行 HA/API 请求前 fail-closed。当前三站 pending 会阻止 live。离线演练及 CLI 门禁测试通过，但没有真实写入或硬件回读，O7 状态不变。
 
 最新代码基线 `b706fd2`：W3 只读 collector launcher 已改为显式路径与次数参数，避免复用旧 mock 缓存或默认无限运行；主工作区与集成 worktree 对齐。该代码门禁不改变 run3 的事故结论：看板 6→7、三站 HA 事务与失败隔离有证据，但赛后模式仍未回显，O7/O9 未通过。下一轮本机模拟赛必须在三站 pending 经人工核验后才可启动，并用新窗口重新验证 O2/O5/O7。
+
+当前基线更新为 `2e2f0a2`：D2 和 collector restart 工具已加入结构化目录，但默认分别为 plan-only 和只读 preflight；核心全套 370 项通过。三站 pending 仍未清除，O7 继续失败；这次代码重构不构成新的在线比赛或 HA 恢复证据。
