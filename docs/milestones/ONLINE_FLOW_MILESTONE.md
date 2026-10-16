@@ -35,3 +35,5 @@ B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 d
 最新代码基线 `b706fd2`：W3 只读 collector launcher 已改为显式路径与次数参数，避免复用旧 mock 缓存或默认无限运行；主工作区与集成 worktree 对齐。该代码门禁不改变 run3 的事故结论：看板 6→7、三站 HA 事务与失败隔离有证据，但赛后模式仍未回显，O7/O9 未通过。下一轮本机模拟赛必须在三站 pending 经人工核验后才可启动，并用新窗口重新验证 O2/O5/O7。
 
 当前基线更新为 `2e2f0a2`：D2 和 collector restart 工具已加入结构化目录，但默认分别为 plan-only 和只读 preflight；核心全套 370 项通过。三站 pending 仍未清除，O7 继续失败；这次代码重构不构成新的在线比赛或 HA 恢复证据。
+
+2026-10-16 部署准备补充：新增 `deployment_preflight.py`（实现位于 `scripts/maintenance/`），仅检查本地固定提交、干净工作区、必需文件受 Git 跟踪、模板为 dry-run、私有配置未受 Git 跟踪，并记录受控文件散列；不连接 EC2/HA，也不读取本地凭证内容。实际浏览器终端 + Git 拉取流程仍需在恢复远端控制授权后单独验证。此项即使本地通过，也仅证明 O9 的部署前置准备，不代表比赛机已部署或可不间断运行；O7 三站 pending 和 `third_party_control` 状态不变。加入该工具后的核心测试为 373 passed。
