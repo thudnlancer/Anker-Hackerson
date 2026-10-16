@@ -46,3 +46,5 @@
 进一步复核：借用现有 W3 `.venv` 且显式设置 W2 产品 `src` 与 W2 根 `src` 为 `PYTHONPATH`，W2 后端得到 98 passed + 49 subtests（1 条 Starlette/httpx deprecation warning）。这证明 W2 代码在现有依赖环境可执行，但借用 W3 虚拟环境不等价于 W2 自己的锁定依赖可复现；合入前仍需独立环境门禁。E4 全套设置 `PYTHONUTF8=1` 后 124 passed；W2 E5 detached 验证树核心测试 200 passed。
 
 2026-10-16 追加归属：`src/energy_lab/calibration.py`、`src/energy_lab/zero_flow.py` 及其 34 项定向测试已从 worker 未跟踪文件纳入主线（提交 `751f8c6`）。它们是无 I/O 的物理一致性/零流量判定模块；`charge=0 W` 仍标记为 `hardware_verified=false`，没有因此授权或执行真实 HA 写入。D1/D2 分析脚本、B1 runner 和其余 worker 文件仍待逐项归属。
+
+后续收敛：B1/B3 runner 已在 `7202ff9` 纳入并通过核心测试；B1 默认 dry-run 且 pending journal 会在联网前阻断 live。W3 启动/重启脚本和 D2 批处理仍保留未跟踪状态，不纳入当前发布门禁。
