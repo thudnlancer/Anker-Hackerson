@@ -1,6 +1,6 @@
 # 仓库地图与 worktree 对齐基线（2026-10-16）
 
-当前 Git 仓库位于实验环境，上级目录只是工作容器。五个 worktree 的状态：
+当前 Git 仓库位于实验环境，上级目录只是工作容器。下表保留初次盘点快照；当前进度以文末更新和 `WORKTREE_ALIGNMENT_CHECKLIST.md` 为准。
 
 | 目录 | 提交 | 职责 | 状态 |
 |---|---|---|---|
@@ -17,3 +17,7 @@
 对齐规则：先固定每个 worktree 的 SHA、变更清单和测试证据，再按在线安全链路、W3 采集器、W2 产品、E4 求解约束逐一集成。禁止整体重置或删除脏工作区。run2 的 reconciliation journal 和 run3 证据包在三站 pending 解除前不得迁移或删除。
 
 W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心采集器比主线天气降级/epoch 契约更旧，不可直接覆盖。第一批目录化已经把本机 mock 工具移入 `scripts/online/`、分析工具移入 `scripts/analysis/`，并保留根目录兼容入口。`archive/OUTPUT_INVENTORY_20261016.json` 是 161 个 output 顶层条目的只读盘点，21 个 run2/run3 受保护文件记录 SHA；没有执行删除或移动。
+
+## 2026-10-16 集成更新
+
+主工作区现为 `c994ddd`，有未跟踪 worker 文件；独立集成候选 `integration-worktree` 位于 `integration/online-milestone` @ `7cc9b68`，工作区干净。W2 `a228f4b` 已在集成候选中通过 merge commit `bc94545` 纳入；主工作区尚未快进，因此“已合入集成候选”不等于“主工作区已对齐”或“已部署”。W3 `7cd64c4` 与 E4 `f6ff5df` 仍须选择性审查，不能整分支覆盖较新的在线采集或求解契约。run2/run3 的三站事故证据仍在主工作区忽略目录，未归档或删除；在线里程碑 O7/O9 未通过。
