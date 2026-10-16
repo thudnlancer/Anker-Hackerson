@@ -21,3 +21,5 @@ W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心�
 ## 2026-10-16 集成更新
 
 主工作区现为 `c994ddd`，有未跟踪 worker 文件；独立集成候选 `integration-worktree` 位于 `integration/online-milestone` @ `7cc9b68`，工作区干净。W2 `a228f4b` 已在集成候选中通过 merge commit `bc94545` 纳入；主工作区尚未快进，因此“已合入集成候选”不等于“主工作区已对齐”或“已部署”。W3 `7cd64c4` 与 E4 `f6ff5df` 仍须选择性审查，不能整分支覆盖较新的在线采集或求解契约。run2/run3 的三站事故证据仍在主工作区忽略目录，未归档或删除；在线里程碑 O7/O9 未通过。
+
+后续结构更新：主工作区与集成 worktree 现均为 `b4034a2`。W2 的 dashboard 快照工具已迁到 `scripts/online/capture_dashboard_snapshot.py`，根目录保留同名兼容入口；该入口和整套核心测试通过。上段是历史时间点的审计记录，并非当前 HEAD。主工作区仍有未归属的 worker 文件；未获归属前不批量移动或删除。
