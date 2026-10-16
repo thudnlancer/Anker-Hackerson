@@ -14,6 +14,7 @@ LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
 def broken_links(root: Path, files: list[Path]) -> list[tuple[str, str]]:
     broken = []
+    tracked = {path.as_posix() for path in files}
     for relative in files:
         source = root / relative
         for match in LINK.finditer(source.read_text(encoding="utf-8")):
@@ -21,7 +22,19 @@ def broken_links(root: Path, files: list[Path]) -> list[tuple[str, str]]:
             if not raw or raw.startswith(("#", "http:", "https:", "mailto:", "data:")):
                 continue
             target = unquote(raw.split("#", 1)[0])
-            if not target or not (source.parent / target).exists():
+            if not target:
+                continue
+            resolved = (source.parent / target).resolve()
+            try:
+                repository_path = resolved.relative_to(root.resolve()).as_posix()
+            except ValueError:
+                broken.append((relative.as_posix(), raw))
+                continue
+            # outputs/ is intentionally gitignored: these links document
+            # reproducible local evidence paths, not repository files.
+            if repository_path == "outputs" or repository_path.startswith("outputs/"):
+                continue
+            if repository_path not in tracked and not (root / repository_path).exists():
                 broken.append((relative.as_posix(), raw))
     return broken
 

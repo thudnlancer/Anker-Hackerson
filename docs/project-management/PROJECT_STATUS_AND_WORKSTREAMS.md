@@ -128,7 +128,7 @@ HA 鉴权、HA 读取和模拟器读取统一为显式 `proxy_mode`：本地 `en
 最新未签核 manifest SHA-256：`18135692e64fa97f73ebc6d1b774fa0dd99e0c7ccba7a53779425442055ddff7`，替代此前候选 SHA；`f2_authorized=false`，未代签、未启动 F2/live、新模拟赛或远端进程更新。W3 待集成负责人确认上述提交及真实设备时区后再受控部署。
 
 > 用途：此后各 worker 与集成负责人交流进度的唯一共享看板。本文档区分已验证事实、进行中工作和计划，不做时间估算；排序以里程碑门槛表示。
-> 关联文档：[预赛方案_更新版.md](../../../预赛方案_更新版.md)（产品方案）、[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[NEXT_STAGE_RESULTS.md](../experiments/NEXT_STAGE_RESULTS.md)（实验证据）、[HOLD_SEMANTICS_DESIGN.md](../decisions/HOLD_SEMANTICS_DESIGN.md)（语义对齐设计，Q1 已决策）。
+> 关联文档：`预赛方案_更新版.md`（仓库外原始方案）（产品方案）、[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[NEXT_STAGE_RESULTS.md](../experiments/NEXT_STAGE_RESULTS.md)（实验证据）、[HOLD_SEMANTICS_DESIGN.md](../decisions/HOLD_SEMANTICS_DESIGN.md)（语义对齐设计，Q1 已决策）。
 > 状态核验：2026-10-14；当前集成分支 `feat/explainability-integration`，E4-1、W3 选择性集成和 W2 E4 产品分别落在 `82ba72c`、`a632a56`、`76399f0`。工作区仍有其他实验/设计改动，未纳入上述提交。
 
 ## 0. 共享协作规则（所有 worker 必读）
@@ -263,7 +263,7 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 ### 线 E：场景三解释器与演示产品（比赛交付物）
 
 **目标**：预赛方案五大功能中面向评委的解释体验：决策解释卡片、自然语言反事实追问、用电计划可行性检查、光伏消纳分析。
-**来源**：[预赛方案_更新版.md](../../../预赛方案_更新版.md)。
+**来源**：`预赛方案_更新版.md`（仓库外原始方案）。
 **需要设备/授权**：否，**可完全基于离线 replay 数据与审计 schema 开发**。
 
 - [x] E1 审计证据消费层与 schema
@@ -406,11 +406,11 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 W2 最新进展：显式 `dataset_local_hour` 离线模式已实现（默认仍要求带时区时间，不猜 UTC），三站选定 replay 已导入独立 E5 数据库，新建 24 site-days、逐站 API 查询通过。五类真实优化器验收通过；应用回归 95 passed + 49 subtests，floor/桥接定向回归 11 passed + 6 subtests。证据为 `w2-worktree/explainability-app/artifacts/e4-floor-acceptance/acceptance.json`、`artifacts/e5-real-replay/import-report.json`。E5 仅核算数据导入，不代表在线决策重放、正式比赛三站或官方结算；所选窗口无负价样本。
 
-2026-10-14 集成更新：E4-1 已在 `82ba72c`，E4-2/E4-4 已在 `76399f0`；真实共享 MILP 截止约束测试通过。此前预检定位 `outputs/contest_hold_pair_zero_v2_20261013/` 三站练习站点 replay（每站 504 行、选定 `irradiance` 臂 168 行），但原 trace 无时区，被核算接口正确拒绝；不得悄悄补时区并冒充原始数据或官方比赛三站。来源说明见 [W2 E4/E5 预检](../../../w2-worktree/explainability-app/docs/w2-e4-e5-preflight.md)。
+2026-10-14 集成更新：E4-1 已在 `82ba72c`，E4-2/E4-4 已在 `76399f0`；真实共享 MILP 截止约束测试通过。此前预检定位 `outputs/contest_hold_pair_zero_v2_20261013/` 三站练习站点 replay（每站 504 行、选定 `irradiance` 臂 168 行），但原 trace 无时区，被核算接口正确拒绝；不得悄悄补时区并冒充原始数据或官方比赛三站。来源说明见 [W2 E4/E5 预检](../../explainability-app/docs/w2-e4-e5-preflight.md)。
 
 1. 已完成：共享模型版本/哈希及证据导出层对齐；可行、设备不可达、真实 HiGHS solver timeout、缺失约束能力 unsupported、非对齐 deadline 拒绝五类验收通过。验收输入为人工快照，超时与缺失能力采用明确记录的故障注入，不是在线设备验收。
 2. 已完成（待集成验收）：三站真实家庭历史 replay 导入独立 E5 核算库；显式使用 CSV 原始本地日期，不附加虚构时区，不与在线时间戳混合。默认带时区接口仍拒绝无时区输入。来源哈希、已有物理审计、逐行电网/PV 核算复核与逐站 API 查询已记录。
-3. 已完成（待集成签核）：E5 三站演示叙事与界面证据边界，代码冻结 `257bf13`；主基线 `040257d` 的隔离树选择性接入前置核算代码 `8362854`，实际复验应用 96 passed + 49 subtests、前端 15 passed/build、真实 MILP 五类验收、浏览器 7 组检查（errors=[]）。原始 JSONL 哈希一致；SQLite/报告均未跟踪，命令与哈希见 [W2 冻结交接](../../../w2-worktree/explainability-app/docs/w2-freeze-handoff.md)，逐步输入/预期/回退见 [演示讲稿](../../../w2-worktree/explainability-app/docs/e5-demo-runbook.md)。主仓其他 worker 改动保留；E5 不标记已验收。PV 历史核算不包装成 E1–E3 完整决策回放。
+3. 已完成（待集成签核）：E5 三站演示叙事与界面证据边界，代码冻结 `257bf13`；主基线 `040257d` 的隔离树选择性接入前置核算代码 `8362854`，实际复验应用 96 passed + 49 subtests、前端 15 passed/build、真实 MILP 五类验收、浏览器 7 组检查（errors=[]）。原始 JSONL 哈希一致；SQLite/报告均未跟踪，命令与哈希见 [W2 冻结交接](../../explainability-app/docs/w2-freeze-handoff.md)，逐步输入/预期/回退见 [演示讲稿](../../explainability-app/docs/e5-demo-runbook.md)。主仓其他 worker 改动保留；E5 不标记已验收。PV 历史核算不包装成 E1–E3 完整决策回放。
 
 ### 接口/阻塞记录
 
