@@ -91,7 +91,7 @@ python scripts/online/run_shadow_dry_run.py --config local_online_config.json --
 python -m energy_explain import-records --file outputs/shadow-team-run-001/explainability-decisions.jsonl --db explainability-app/data/shared.sqlite
 ```
 
-这两条真实读取命令需要自己的运行凭据和可访问环境，本轮未执行。示例暂不加载预测 pickle；API 路径与未来持久假设仍按实际来源保留。保持 `writes_performed=0`，检查 runner `status` 与 `explainability_export.status`；成功求解但证据失败时，原候选仍保留，但不能当作已导入的解释记录。
+这两条真实读取命令需要自己的运行凭据和可访问环境。现场真实只读及连续采集已分别验收，见下方报告。示例暂不加载预测 pickle；API 路径与未来持久假设仍按实际来源保留。保持 `writes_performed=0`，检查 runner `status` 与 `explainability_export.status`；成功求解但证据失败时，原候选仍保留，但不能当作已导入的解释记录。
 
 ## 交接契约
 
@@ -114,4 +114,6 @@ CI 分别运行策略 unittest、解释 pytest 与前端测试/构建，首次�
 
 随后已完成真实 HA 三站读取、现场输入的本地 shadow、证据导入及反事实验收，详见 [真实环境只读接入验收](../../explainability-app/docs/live-readonly-acceptance.md)。原共同仓库验收文档保留发布前的本地快照；最新远端 CI 状态以协作 PR 的 Checks 为准。
 
-已获得同次完整现场导出，并在解释服务核对费用。下一步是接入持续采集、提交/回读和官方结算事件；真实预测精度、HA 控制闭环、云部署与比赛收益尚未验收。
+现已支持持续只读采集和可恢复 outbox；前端展示采集心跳、双时钟和记录新鲜度。外部执行回执与遥测通过完整指令身份、控制语义及物理约束校验后追加确认，直接导入外部 `confirmed` 断言会拒绝。启动命令、队列恢复、真实三站持续读取和接口示例见 [连续采集与执行证据接入](explainability-app/docs/continuous-readonly-integration.md)。
+
+上一轮集成 PR 已合并 main，后续功能继续走独立分支评审。现已增加独立的 [有限 MILP 控制接入](explainability-app/docs/milp-control-integration.md)：同次候选留档后，通过 HA 逐服务提交、真实源时间遥测校验及追加执行证据串联；默认只读，显式开启才允许活动 mock 或自由运行场景的三站有限控制，逐站恢复自发自用。新入口不改变既有规则 runner，也不启动正式赛。长场持续控制、预测精度、云部署和官方结算仍需各自验收；模型费用与模拟器结果分别保留，不用影子目标冒充实际收益。

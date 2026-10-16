@@ -8,7 +8,7 @@ export interface Cost {
 export interface Action { kind: string; power_kw: number; control_semantics: string }
 export interface Snapshot {
   device_time: string;
-  observed_at: string;
+  observed_at?: string | null;
   soc_percent: number;
   pv_kw: number;
   load_kw: number;
@@ -37,6 +37,27 @@ export interface ExecutionEvent {
   note: string;
   observed_mode: string | null;
   observed_power_kw: number | null;
+  verification_status?: 'verified' | 'unverified' | null;
+}
+export interface ReadbackEvidence {
+  observation: {
+    observation_id?: string;
+    instruction_id?: string;
+    observed_at?: string | null;
+    device_time?: string | null;
+  };
+  verification: {
+    status: 'verified' | 'pending' | 'mismatch' | 'unsupported';
+    reasons?: string[] | null;
+    checked_at?: string | null;
+    evidence_scope?: 'post_submission_telemetry_match' | 'asynchronous_ha_state';
+    control_attribute_match?: boolean | null;
+    target_measurement_match?: boolean | null;
+    fresh_target_measurement?: boolean;
+    partial_evidence_scope?: 'none' | 'fresh_target_measurement_only';
+    unverified_source_fields?: string[];
+  };
+  received_at?: string | null;
 }
 export interface Settlement { [key: string]: unknown }
 export interface Provenance {
@@ -45,6 +66,17 @@ export interface Provenance {
   references: string[];
   note?: string;
 }
+export type RecordFreshness = 'fresh' | 'stale' | 'unknown' | 'clock_unverified';
+export interface CollectionStatus {
+  state: 'running' | 'stopped' | 'degraded' | 'unknown';
+  reason?: string | null;
+  last_success_at?: string | null;
+  last_error_at?: string | null;
+  last_error?: string | null;
+  updated_at?: string | null;
+  poll_interval_seconds?: number | null;
+  freshness_threshold_seconds?: number | null;
+}
 export interface Station {
   id: string; run_id: string; site_id: string; decision_id: string;
   device_time: string; source_kind: string; soc_percent: number;
@@ -52,12 +84,25 @@ export interface Station {
   execution_status: string; solver_status: string; reason_summary: string;
   sources?: Record<string, string>;
   provenance?: Provenance | null;
+  observed_at?: string | null;
+  created_at?: string | null;
+  record_freshness?: RecordFreshness | null;
+  last_submission?: {
+    decision_key: string;
+    instruction_id: string;
+    submitted_at: string;
+    device_time: string;
+    action: Action;
+    execution_status: string;
+  } | null;
 }
 export interface Overview {
   run_id: string | null;
   runs: { run_id: string; source_kind: string; created_at: string }[];
   stations: Station[];
   settlement: Settlement | null;
+  server_time?: string | null;
+  collection?: CollectionStatus | null;
 }
 export interface Decision {
   id: string; run_id: string; site_id: string; decision_id: string;
@@ -65,9 +110,12 @@ export interface Decision {
   action: Action; model_version: string; policy_version: string;
   solver_status: string; cost: Cost | null; execution_status: string;
   execution_events: ExecutionEvent[]; created_at: string;
+  execution_evidence?: { readbacks?: ReadbackEvidence[]; submission_receipts?: unknown[] } | null;
   capabilities: { counterfactual: boolean; supported_interventions: string[] };
   settlement: Settlement | null;
   provenance?: Provenance | null;
+  server_time?: string | null;
+  collection?: CollectionStatus | null;
 }
 export interface Explanation {
   title: string; summary: string;
@@ -113,9 +161,9 @@ export interface PVDaily {
 export interface OfflineReplaySummary { site_id: string; arms: string[]; hours_per_arm: number; time_basis: string; start_local_hour: string; end_local_hour: string; source_sha256: string; source_kind: string; official_score_claim: boolean; negative_price_rows: number; weather_source: string; scope: string }
 export interface OfflineReplayStep { record: Record<string, string | number | boolean | null>; facts: { text: string; evidence_refs: string[] }[]; source_sha256: string; source_kind: string; time_basis: string; capabilities: { counterfactual: boolean; plan_feasibility: boolean }; execution_status: string; settlement: null; scope: string }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, body === undefined ? undefined : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, body === undefined ? (signal ? { signal } : undefined) : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
   });
   if (!response.ok) {
     let detail = `请求失败（${response.status}）`;
@@ -129,7 +177,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 export const api = {
-  stations: (runId?: string) => request<Overview>(`/api/stations${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`),
+  stations: (runId?: string, signal?: AbortSignal) => request<Overview>(`/api/stations${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`, undefined, signal),
   decision: (id: string) => request<Decision>(`/api/decisions/${encodeURIComponent(id)}`),
   explanation: (id: string) => request<Explanation>(`/api/decisions/${encodeURIComponent(id)}/explanation`),
   compare: (id: string, power: number) => request<Job>(`/api/decisions/${encodeURIComponent(id)}/counterfactuals`, { first_charge_kw: power }),

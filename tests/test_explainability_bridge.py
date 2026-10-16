@@ -20,6 +20,10 @@ PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / "src"))
 
 from energy_lab.shadow import daily_points, evaluate_snapshot, make_candidate
+from energy_lab.explainability_evidence import (EvidenceExportError,
+    SOLVER_ZERO_TOLERANCE_W, build_explainability_record)
+from energy_lab.interface_contract import map_battery_action
+from energy_lab.rolling import optimize_window
 
 
 def fixture_snapshot():
@@ -161,6 +165,26 @@ class ExplainabilityBridgeTests(unittest.TestCase):
         self.assertEqual(error, {"status": "failed", "error_type": "RuntimeError"})
         self.assertNotIn("PRIVATE-SINK-EXCEPTION-CONTENT", json.dumps(result | {"error": error}))
 
+    def test_export_validation_reports_fixed_code_without_input_text(self):
+        records = []
+        result = make_candidate(self.state, self.prices, solver_seconds=10,
+            evidence_sink=records.append,
+            evidence_identity={"run_id": "PRIVATE-INVALID-IDENTIFIER/SECRET", "site_id": "1"},
+            evidence_observed_at=self.snapshot["received_at"])
+        self.assertEqual(result["explainability_export"], {"status": "failed",
+            "error_type": "EvidenceExportError", "failure_code": "invalid_identifier"})
+        self.assertEqual(records, [])
+        self.assertNotIn("PRIVATE-", json.dumps(result))
+
+    def test_sink_cannot_supply_export_failure_code_or_expose_error_text(self):
+        def fail(record):
+            raise EvidenceExportError("PRIVATE-SINK-EXCEPTION-CONTENT")
+        result = make_candidate(self.state, self.prices, solver_seconds=10, evidence_sink=fail,
+            evidence_identity=self.identity, evidence_observed_at=self.snapshot["received_at"])
+        self.assertEqual(result["explainability_export"], {"status": "failed",
+            "error_type": "EvidenceExportError"})
+        self.assertNotIn("PRIVATE-", json.dumps(result))
+
     def test_solver_failure_never_exports_evidence(self):
         records = []
         with patch("energy_lab.shadow.optimize_window", return_value=SimpleNamespace(status="infeasible")):
@@ -196,6 +220,98 @@ class ExplainabilityBridgeTests(unittest.TestCase):
             self.assertEqual(record["run_id"], "offline-unit")
             self.assertEqual(record["provenance"]["input_kind"], "synthetic")
             self.assertNotIn("PRIVATE-", lines[0])
+
+
+class SolverRoundoffExportTests(unittest.TestCase):
+    """Artificial replay fixture; it is not the lost site-3 live snapshot."""
+
+    @classmethod
+    def setUpClass(cls):
+        # A low SOC and a persistent 862 W deficit exercise a zero energy bound.
+        # The final prices are deliberately extended fixture values; no live
+        # identity or claim about the original failed input is embedded here.
+        buy = [.29462, .23532, .19338, .14078, .13293, .13638, .17914,
+               .22341, .26213, .29903, .37722, .37167, .31374, .29721,
+               .28448, .27826, .29048, .28469, .28072, .2838, .28145,
+               .30007, .34064, .35548]
+        sell = [.17854, .11799, .07517, .02146, .01343, .01696, .06063,
+                .10583, .14537, .18305, .26289, .25723, .19807, .18119,
+                .16819, .16184, .17432, .16841, .16435, .1675, .1651,
+                .18411, .22554, .24069]
+        cls.buy = [buy[0]] + [x for x in buy[1:-1] for _ in range(4)] + [buy[-1]]
+        cls.sell = [sell[0]] + [x for x in sell[1:-1] for _ in range(4)] + [sell[-1]]
+        cls.buy += [buy[-3]] + [buy[-2]] * 4 + [buy[-1]]
+        cls.sell += [sell[-3]] + [sell[-2]] * 4 + [sell[-1]]
+        cls.times = pd.Series(pd.date_range("2031-01-01T08:45:00Z", periods=96, freq="15min"))
+        cls.pv = np.full(96, 113.)
+        cls.load = np.full(96, 975.)
+        cls.state = {"soc": 4., "solar_power": 113., "home_load": 975.}
+        cls.result = optimize_window(cls.times, cls.pv, cls.load, np.array(cls.buy),
+            np.array(cls.sell), 4., capacity_kwh=14., max_power_w=5000.,
+            terminal_price=None, degradation_cost_eur_kwh=.02, solver="milp",
+            step_hours=.25, command_contract="sop", time_limit_seconds=10.)
+        if cls.result.status != "optimal":
+            raise AssertionError("artificial low-SOC fixture must solve optimally")
+        first = cls.result.plan.iloc[0]
+        cls.mapping = map_battery_action(str(first.flow), float(first.discharge_w), 113., 975.)
+
+    def export(self, **overrides):
+        options = {"identity": {"run_id": "unit-low-soc", "site_id": "3", "input_kind": "synthetic"},
+            "observed_at": "2026-10-15T00:00:00Z", "state": self.state,
+            "times": self.times, "pv_w": self.pv, "load_w": self.load,
+            "import_price": self.buy, "export_price": self.sell,
+            "result": self.result, "mapping": self.mapping, "forecast_mode": "artificial-persistence",
+            "capacity_kwh": 14., "max_power_w": 5000., "soc_min": 0., "soc_max": 100.}
+        options.update(overrides)
+        return build_explainability_record(**options)
+
+    def test_actual_optimizer_zero_bound_roundoff_exports_with_cost_reconciliation(self):
+        record = self.export()
+        self.assertAlmostEqual(self.result.plan.iloc[0].discharge_w, 862., places=6)
+        self.assertAlmostEqual(self.result.plan.iloc[0].soc_end, 2.460714285714286, places=8)
+        for value in record["replay_context"]["first_step"].values():
+            self.assertGreaterEqual(value, 0.)
+        cost = record["cost"]
+        self.assertAlmostEqual(cost["purchase_eur"] - cost["export_revenue_eur"]
+            + cost["degradation_eur"] - cost["terminal_credit_eur"],
+            self.result.objective, places=6)
+        self.assertEqual(record["provenance"]["input_kind"], "synthetic")
+
+    def test_only_solver_zero_tails_are_normalized_and_original_plan_is_unchanged(self):
+        result = copy.deepcopy(self.result)
+        result.plan.loc[0, "grid_import_w"] = -7.456035788777626e-9
+        original = result.plan.copy(deep=True)
+        record = self.export(result=result)
+        self.assertEqual(record["replay_context"]["first_step"]["grid_import_kw"], 0.)
+        self.assertIn("0.000001 W", record["provenance"]["note"])
+        pd.testing.assert_frame_equal(result.plan, original)
+
+    def test_material_negative_solver_power_still_rejects(self):
+        result = copy.deepcopy(self.result)
+        result.plan.loc[5, "grid_import_w"] = -2 * SOLVER_ZERO_TOLERANCE_W
+        with self.assertRaises(EvidenceExportError) as caught:
+            self.export(result=result)
+        self.assertEqual(caught.exception.code, "negative_solver_power")
+
+    def test_previously_accepted_zero_tails_keep_identical_record_bytes(self):
+        result = copy.deepcopy(self.result)
+        columns = ["charge_w", "discharge_w", "grid_import_w", "grid_export_w"]
+        result.plan[columns] = result.plan[columns].clip(lower=0.)
+        baseline = self.export(result=result)
+        result.plan.loc[0, "grid_import_w"] = -1e-10
+        self.assertEqual(self.export(result=result), baseline)
+
+    def test_input_observations_do_not_use_the_solver_tolerance(self):
+        with self.assertRaises(EvidenceExportError) as caught:
+            self.export(state={**self.state, "solar_power": -7.456035788777626e-9})
+        self.assertEqual(caught.exception.code, "negative_input_value")
+
+    def test_cost_error_is_not_hidden_by_roundoff_normalization(self):
+        result = copy.deepcopy(self.result)
+        result.objective += .01
+        with self.assertRaises(EvidenceExportError) as caught:
+            self.export(result=result)
+        self.assertEqual(caught.exception.code, "solver_cost_mismatch")
 
 
 if __name__ == "__main__":

@@ -88,9 +88,11 @@ def fetch_snapshot_from_config(cfg, *, include_prices=True):
                 weather_jobs[(site, day)] = pool.submit(fetch_weather, site, day)
         # Fetch HA while forecast requests are in flight.
         states = get(cfg["ha_base"], "/api/states", token)
+        # Capture time belongs to HA observations. Slow weather requests must
+        # not relabel an older device snapshot as a newly observed one.
+        received_at = utcnow()
         for (site, day), future in weather_jobs.items():
             weather[site][day] = future.result()
-    received_at = utcnow()
     entities = {s["entity_id"]: s for s in states}
     for site, spec in cfg["stations"].items():
         suffix = spec["suffix"]

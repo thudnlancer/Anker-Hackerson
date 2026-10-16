@@ -187,7 +187,7 @@ class ExecutionEvent(Contract):
 class SettlementIn(Contract):
     event_id: Identifier
     status: Literal["pending", "complete"]
-    source_kind: Literal["demo", "official"]
+    source_kind: Literal["demo", "official", "simulator_mock"]
     captured_at: datetime
     window_start: datetime
     window_end: datetime

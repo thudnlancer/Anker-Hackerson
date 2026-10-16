@@ -28,7 +28,7 @@ const path = require('node:path');
       imported.push(d);
     }
     checks.push('same-solve shared strategy import; matching model available; no execution/settlement invented');
-    await page.goto(base, {waitUntil: 'networkidle'});
+    await page.goto(base + '/#/evidence', {waitUntil: 'networkidle'});
     await page.locator('#run-select').selectOption(records[0].run_id);
     await page.locator('.station-card').nth(2).waitFor();
     assert.equal(await page.locator('.station-card').count(), 3);
