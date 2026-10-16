@@ -18,6 +18,8 @@
 
 当前主要结构与后续归档方向：
 
+迁移文档后运行 `python scripts/maintenance/check_doc_links.py`；它只检查 Git 跟踪的 Markdown 文件中的本地相对链接，不访问外网或 `outputs/`。兼容入口可保留旧路径，但新引用应指向 `docs/` 中的正文。
+
 ```text
 docs/architecture/   架构与接口
 docs/operations/     运行、恢复、部署
