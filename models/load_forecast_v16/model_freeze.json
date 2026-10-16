@@ -1,0 +1,59 @@
+{
+  "candidate": "V12_bolt25",
+  "config": {
+    "family": "hybrid",
+    "kind": "hybrid",
+    "expert": "bolt",
+    "alpha": 0.25,
+    "follow": true,
+    "features": 18
+  },
+  "bundle": "models/final/bundle.joblib",
+  "bundle_sha256": "a4e527170586602ba50ce633594997843480838c7e67fdb3eb6e7e4651bbb929",
+  "heads": {
+    "head1.safetensors": "6898763f0df8b96c6b4cfd42f7edd5c8095446fed41bd4f72f1ea76f734dc63b",
+    "head3.safetensors": "3cb78971f374569609906270f821d8692e4722e83d7d7fa341ae35ca34d595f2"
+  },
+  "pretrained_manifest": {
+    "bolt_small": {
+      "repo": "amazon/chronos-bolt-small",
+      "revision": "772f3d25d38aec6d914c8949dab4462e2d46f5d8",
+      "complete": true,
+      "path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/foundation-model-benchmark/models/bolt_small",
+      "download_seconds": 60.32918120827526,
+      "original_download_path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/experiments/foundation_models_v15/models/bolt_small"
+    },
+    "chronos2": {
+      "repo": "amazon/chronos-2",
+      "revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+      "complete": true,
+      "path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/foundation-model-benchmark/models/chronos2",
+      "download_seconds": 145.2017169171013,
+      "original_download_path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/experiments/foundation_models_v15/models/chronos2"
+    },
+    "timesfm25": {
+      "repo": "google/timesfm-2.5-200m-pytorch",
+      "revision": "1d952420fba87f3c6dee4f240de0f1a0fbc790e3",
+      "complete": true,
+      "path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/foundation-model-benchmark/models/timesfm25",
+      "download_seconds": 282.43159262510017,
+      "original_download_path": "/Users/zhonghuanhuang/Desktop/Opencode/负荷预测/experiments/foundation_models_v15/models/timesfm25"
+    }
+  },
+  "input_features": 18,
+  "history_loads": 18,
+  "outputs_per_call": 1,
+  "recursive_calls": 12,
+  "selection": {
+    "frozen_at": "2026-10-16T20:20:45.618497+00:00",
+    "candidate": "V12_bolt25",
+    "cv_pass": false,
+    "validation_flags": [
+      "one/MAE_W"
+    ],
+    "development_pass": false,
+    "active_default": "V12 unchanged",
+    "no_reselection": true,
+    "formal_acceptance": false
+  }
+}

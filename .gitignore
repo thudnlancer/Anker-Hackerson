@@ -6,6 +6,11 @@ remote_runtime_config.json
 config/local/
 # throwaway AWS/debug helper scripts (recreated ad hoc, never committed)
 scripts/analysis/_*
+# 182MB chronos-bolt-small weights exceed GitHub's 100MB file limit; provision
+# models/load_forecast_v16/bolt_small/model.safetensors manually (see its README)
+models/load_forecast_v16/bolt_small/model.safetensors
+# local isolated env for the heavy forecast deps (torch/chronos)
+.venv-forecast/
 .pinned_commit
 .runtime_venv
 policy.pid
