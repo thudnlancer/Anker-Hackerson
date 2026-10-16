@@ -7,6 +7,7 @@ for the formal contest.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -69,6 +70,10 @@ def main() -> None:
     (args.output_dir / "runtime_meta.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"event": "started", **metadata}), flush=True)
     carry: dict = {}
+    # Reuse one executor across rounds so delivery worker threads (and their
+    # thread-local HA Sessions) keep their connections warm via keep-alive.
+    delivery_executor = ThreadPoolExecutor(max_workers=max(1, len(cfg["stations"])),
+                                           thread_name_prefix="delivery")
     started_contest = False
     consecutive_stage_errors = 0
     while True:
@@ -105,7 +110,9 @@ def main() -> None:
                     print(json.dumps({"event": "ha_token_refresh_failed_writes_halted",
                                       "at": now(), "error_type": type(exc).__name__}), flush=True)
             rows = run_once_milp(cfg, ha, sim, write_enabled=True, carry=carry,
-                                 audit_csv=args.output_dir / "audit.csv", reconciliation_store=store)
+                                 audit_csv=args.output_dir / "audit.csv", reconciliation_store=store,
+                                 delivery_executor=delivery_executor,
+                                 price_log=args.output_dir / "price_series.jsonl")
             for row in rows:
                 print(json.dumps({"event": "site_result", **row}, ensure_ascii=False, default=str), flush=True)
         elif mode != "waiting" or track != "mock":

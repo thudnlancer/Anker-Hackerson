@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.execute import execute_candidate
 from energy_lab.ha_client import HAClient
 
+# ``exercise`` mocks ``energy_lab.write_transaction.time.sleep``, which is the
+# same ``time`` module object imported here. Save the real sleep up front so a
+# fault can still consume real wall-clock budget (a slow POST) while the SOP
+# mode-gap sleep stays mocked.
+_REAL_SLEEP = time.sleep
+
 
 def candidate():
     return {"status": "candidate_only", "battery_flow": "charge",
@@ -80,16 +86,21 @@ class WriteFaultTests(unittest.TestCase):
             self.assertFalse(row["requires_reconciliation"])
 
     def test_gap_budget_stops_after_mode_ack(self):
-        row, post = self.exercise([Response()], seconds=0.5)
+        # Reserve passes (>=2s), but a slow mode ack leaves under 1s for the
+        # SOP gap, so the grid_flow POST is never attempted.
+        def slow_first(*args, **kwargs):
+            _REAL_SLEEP(1.2)
+            return Response()
+        row, post = self.exercise(slow_first, seconds=2.1)
         self.assertEqual(post.call_count, 1)
         self.assertEqual(row["write_requests_acknowledged"], 1)
         self.assertTrue(row["requires_reconciliation"])
 
     def test_slow_first_response_expires_round_without_second_post(self):
         def slow(*args, **kwargs):
-            time.sleep(0.03)
+            _REAL_SLEEP(2.2)
             return Response()
-        row, post = self.exercise(slow, seconds=0.01)
+        row, post = self.exercise(slow, seconds=2.1)
         self.assertEqual(post.call_count, 1)
         self.assertEqual(row["write_requests_acknowledged"], 1)
         self.assertTrue(row["requires_reconciliation"])

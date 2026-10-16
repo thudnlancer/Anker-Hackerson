@@ -120,8 +120,18 @@ class PriceAnchorTests(unittest.TestCase):
         self.assertEqual(row["alignment_attempts"], 2)
         self.assertEqual(sim.reads, 4)
 
-    def test_persistent_cross_slot_race_rejected_after_three_attempts(self):
-        sim = SequenceSim([slot(), slot("2031-01-01T01:00:00Z")] * 3)
+    def test_hour_boundary_straddle_anchors_to_before_slot(self):
+        # before = 09:00-10:00, after = 10:00-11:00 (forward single-hour crossing),
+        # device clock still 09:45 -> anchor to `before` and accept, no retry.
+        sim = SequenceSim([slot("2031-01-01T09:00:00Z"), slot("2031-01-01T10:00:00Z")])
+        row = self.execute(sim, raw="2031-01-01 09:45:00")
+        self.assertEqual(row["resolved_device_time"], "2031-01-01T09:45:00+00:00")
+        self.assertEqual(row["alignment_attempts"], 1)
+        self.assertEqual(sim.reads, 2)
+
+    def test_non_boundary_slot_jump_still_rejected(self):
+        # A +2h jump is not a single-hour boundary crossing; keep rejecting.
+        sim = SequenceSim([slot(), slot("2031-01-01T02:00:00Z")] * 3)
         self.execute(sim, expected="current_slot_changed_during_read")
         self.assertEqual(sim.reads, 6)
 

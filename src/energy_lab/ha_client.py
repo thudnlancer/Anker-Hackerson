@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 import requests
+import threading
 import time
 from .config import canonical_suffix, proxy_mode
 from .read_budget import timed_read
@@ -21,6 +22,24 @@ class HAClient:
         self.base = self.base.rstrip("/")
         self.session = requests.Session()
         self.session.trust_env = proxy_mode(self.proxy_mode) == "environment"
+        # ``requests.Session`` is not documented thread-safe. The read path
+        # (state/snapshot) runs serialized in the ``bounded-read`` worker and
+        # keeps the shared ``self.session``; only parallel delivery workers call
+        # ``call()`` concurrently, and each lazily gets its own Session via
+        # ``_session()``. The constructing thread seeds its local with the
+        # shared ``self.session`` so single-threaded callers and tests that
+        # patch ``ha.session.post`` behave exactly as before.
+        self._local = threading.local()
+        self._local.session = self.session
+
+    def _session(self) -> requests.Session:
+        """Thread-local Session for concurrent ``call()`` delivery workers."""
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.trust_env = self.session.trust_env
+            self._local.session = session
+        return session
 
     @property
     def headers(self) -> dict[str, str]:
@@ -101,7 +120,7 @@ class HAClient:
             transaction.steps.append(step)
         started = time.monotonic()
         try:
-            r = self.session.post(
+            r = self._session().post(
             f"{self.base}/api/services/{domain}/{service}",
             headers=self.headers,
             json={"entity_id": entity_id, **data},

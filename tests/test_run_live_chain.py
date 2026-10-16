@@ -127,7 +127,7 @@ class DryRunChainTests(unittest.TestCase):
         self.assertEqual(second[0]["writes_performed"], 0)
         self.assertTrue(second[0]["read_only_state_observed"])
 
-    def test_unknown_delivery_halts_other_sites_in_same_runner(self):
+    def test_parallel_delivery_failure_quarantines_all_attempting_sites(self):
         ha = StubHA({"1502": state(), "1503": state()})
         carry = {}
         def fail(*args, **kwargs):
@@ -145,9 +145,73 @@ class DryRunChainTests(unittest.TestCase):
                                    "2": {"suffix": "1503", "zero_flow_verified": True}}
             rows = run_once_milp(config, ha, StubSim(make_prices()),
                                  write_enabled=True, carry=carry)
+        # Parallel delivery fires both sites concurrently before any halt is
+        # observed, so a shared HA outage quarantines every site that touched
+        # the degraded path (not just the first to fail).
         self.assertEqual([row["status"] for row in rows],
-                         ["delivery_failed", "write_suspended"])
+                         ["delivery_failed", "delivery_failed"])
+        self.assertTrue(carry["global_delivery_halt"])
+        self.assertEqual(set(carry["delivery_unknown"]), {"1", "2"})
         self.assertEqual(ha.calls, [])
+
+    def test_global_delivery_halt_recovers_after_two_clean_rounds(self):
+        ha = StubHA({"1502": state(), "1503": state()})
+        carry = {}
+
+        def partial_fail(suffix, flow, watts, live=False):
+            if suffix == "1502":
+                from energy_lab.write_transaction import ACTIVE_WRITE
+                ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
+                                                 "status": "attempted_unknown"})
+                raise TimeoutError("mock_post_timeout")
+            ha.calls.append(("set_dispatch", suffix, flow, watts, live))
+
+        config = cfg(verified=True)
+        config["stations"] = {"1": {"suffix": "1502", "zero_flow_verified": True},
+                               "2": {"suffix": "1503", "zero_flow_verified": True}}
+        candidate = {"status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                     "battery_flow": "charge", "battery_power_w": 100,
+                     "candidate": {"target_w": 100}}
+        with patch("scripts.online.run_live.make_candidate", return_value=candidate), \
+             patch.object(ha, "set_dispatch", side_effect=partial_fail):
+            first = run_once_milp(config, ha, StubSim(make_prices()),
+                                  write_enabled=True, carry=carry)
+        self.assertTrue(carry["global_delivery_halt"])
+        self.assertEqual([row["status"] for row in first],
+                         ["delivery_failed", "dispatched"])
+
+        # One clean round: not yet enough to lift the halt; the healthy site is
+        # write-suspended while the quarantined site stays reconciliation-required.
+        with patch("scripts.online.run_live.make_candidate", return_value=candidate):
+            run_once_milp(config, ha, StubSim(make_prices()), write_enabled=True, carry=carry)
+        self.assertTrue(carry["global_delivery_halt"])
+
+        # Second clean round lifts the halt; the quarantined site stays
+        # reconciliation-required while the healthy site resumes writing.
+        with patch("scripts.online.run_live.make_candidate", return_value=candidate):
+            rows = run_once_milp(config, ha, StubSim(make_prices()),
+                                 write_enabled=True, carry=carry)
+        self.assertFalse(carry["global_delivery_halt"])
+        self.assertEqual([row["status"] for row in rows],
+                         ["reconciliation_required", "dispatched"])
+
+    def test_three_sites_dispatch_concurrently_in_one_round(self):
+        ha = StubHA({"1502": state(), "1503": state(), "1504": state()})
+        candidate = {"status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                     "battery_flow": "charge", "battery_power_w": 100,
+                     "candidate": {"target_w": 100}}
+        config = cfg(verified=True)
+        config["stations"] = {str(i): {"suffix": f"150{i}", "zero_flow_verified": True}
+                              for i in (2, 3, 4)}
+        with patch("scripts.online.run_live.make_candidate", return_value=candidate):
+            rows = run_once_milp(config, ha, StubSim(make_prices()),
+                                 write_enabled=True, carry={})
+        # Results keep the sorted site order; all three deliveries happened.
+        self.assertEqual([row["site"] for row in rows], ["2", "3", "4"])
+        self.assertEqual([row["status"] for row in rows], ["dispatched"] * 3)
+        self.assertEqual(sorted(c[1] for c in ha.calls), ["1502", "1503", "1504"])
+        self.assertTrue(all(c[2] == "charge" and c[3] == 100.0 and c[4] is True
+                            for c in ha.calls))
 
     def test_dry_run_verified_site_full_chain_zero_writes(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -168,10 +232,10 @@ class DryRunChainTests(unittest.TestCase):
                           "readback_verdict", "realized_soc"):
                 self.assertIn(field, logged.columns)
 
-    def test_dry_run_unverified_site_idle_refused_without_writes(self):
+    def test_dry_run_unverified_site_idle_self_use_without_writes(self):
         ha = StubHA({"1502": state()})
         results, _ = self.run_chain(ha, cfg(), StubSim(make_prices()))
-        self.assertEqual(results[0]["status"], "idle_unverified_noop")
+        self.assertEqual(results[0]["status"], "idle_self_use_mode")
         self.assertEqual(results[0]["writes_performed"], 0)
         self.assertEqual(ha.calls, [])
 
@@ -336,12 +400,12 @@ class FourSafetySwitchTests(unittest.TestCase):
             return run_once_milp(config, ha, StubSim(make_prices()), write_enabled=True,
                                  carry=carry if carry is not None else {})
 
-    def test_live_idle_refused_when_site_unverified(self):
+    def test_live_idle_uses_explicit_self_use_when_site_unverified(self):
         ha = StubHA({"1502": state()})
         results = self.run_live(ha, cfg(), plan())
-        self.assertEqual(results[0]["status"], "idle_unverified_noop")
-        self.assertEqual(results[0]["writes_performed"], 0)
-        self.assertEqual(ha.calls, [])
+        self.assertEqual(results[0]["status"], "idle_self_use_mode")
+        self.assertEqual(results[0]["writes_performed"], 1)
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
 
     def test_live_idle_sends_zero_charge_when_verified(self):
         ha = StubHA({"1502": state()})
@@ -385,7 +449,7 @@ class FourSafetySwitchTests(unittest.TestCase):
 
 
 class NextTickReadbackAndGuardTests(unittest.TestCase):
-    def test_guard_revokes_verification_and_blocks_the_next_idle(self):
+    def test_guard_revokes_verification_and_self_uses_the_next_idle(self):
         ha = StubHA({"1502": [state(soc="45"),
                               lambda: state(device_time="2031-01-01T00:30:00+00:00", soc="50")]})
         carry: dict = {}
@@ -397,11 +461,13 @@ class NextTickReadbackAndGuardTests(unittest.TestCase):
         self.assertEqual(first[0]["status"], "zero_flow_dispatched")
         self.assertEqual(second[0]["previous_readback_verdict"], "verified")
         self.assertEqual(second[0]["guard_action"], "revoke_zero_flow_verified")
-        # The revoked site is refused on the very next idle, no silent downgrade.
-        self.assertEqual(second[0]["status"], "idle_unverified_noop")
+        # The revoked site switches to explicit self-use on the next idle,
+        # never a stale-command refusal.
+        self.assertEqual(second[0]["status"], "idle_self_use_mode")
         self.assertFalse(carry["verified"]["1"])
-        # Exactly one write happened across both ticks: the first zero-flow command.
-        self.assertEqual(ha.calls, [("set_dispatch", "1502", "charge", 0.0, True)])
+        # Two writes: the first zero-flow command, then the self-use switch.
+        self.assertEqual(ha.calls, [("set_dispatch", "1502", "charge", 0.0, True),
+                                    ("set_self_consumption", "1502", True)])
 
     def test_dispatch_divergence_is_record_only_and_never_revokes(self):
         ha = StubHA({"1502": [state(soc="45"),

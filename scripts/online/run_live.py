@@ -13,9 +13,11 @@ rule-based ``dispatch`` entry is kept unchanged for one release cycle (§7).
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
+import json
 import math
 import sys
 import threading
@@ -234,9 +236,17 @@ def _append_audit(path: Path, rows: list[dict]) -> None:
                               encoding="utf-8")
 
 
+def _append_price_log(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
 def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool,
                   carry: dict, audit_csv: Path | None = None,
-                  reconciliation_store: ReconciliationStore | None = None) -> list[dict]:
+                  reconciliation_store: ReconciliationStore | None = None,
+                  delivery_executor: ThreadPoolExecutor | None = None,
+                  price_log: Path | None = None) -> list[dict]:
     """One step-4 chain tick per station. ``carry`` persists across ticks:
     ``carry["verified"]`` holds the in-memory site verification flags (seeded
     from config, revocable by the SOC guard); ``carry["previous"]`` keeps each
@@ -257,16 +267,44 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
     batch = read_anchored_tick(cfg, ha, sim, price_window,
                                price_validator=validate_milp_price_window)
     points = batch["points"]
-    results: list[dict] = []
+    if price_log is not None and points:
+        # Persist the full price window once per round (shared by all three
+        # sites) so post-match analysis can reconstruct the complete contest
+        # price series and compute the theoretical optimum at finer granularity.
+        _append_price_log(price_log, {
+            "received_at": _utcnow_iso(),
+            "round_generation": generation,
+            "api_current_start": batch["metadata"].get("api_current_start"),
+            "api_current_end": batch["metadata"].get("api_current_end"),
+            "selected_price_slot": batch["metadata"].get("selected_price_slot"),
+            "points": points,
+        })
+    # A delivery halt is a shared HA-path concern, not a permanent judgement on
+    # the unaffected sites. Observe a couple of clean acquisition rounds (every
+    # site read fresh, no read errors) and then resume writes to those sites.
+    # The site whose delivery was uncertain stays write-quarantined in
+    # ``delivery_unknown`` until explicit operator reconciliation.
+    if carry.get("global_delivery_halt"):
+        stations = set(cfg["stations"])
+        ha_healthy = (set(batch["states"]) == stations
+                      and all(not batch["errors"].get(site) for site in stations))
+        clean = carry.get("halt_clean_observations", 0)
+        clean = clean + 1 if ha_healthy else 0
+        carry["halt_clean_observations"] = clean
+        if clean >= 2:
+            carry["global_delivery_halt"] = False
+            carry["halt_clean_observations"] = 0
+    results_by_site: dict = {}
     audit_rows: list[dict] = []
+    plans: list[dict] = []
     for site, item in sorted(cfg["stations"].items(), key=lambda pair: str(pair[0])):
         suffix = str(item["suffix"])
         try:
             if site not in batch["states"] and (
                     site not in batch["errors"] or
                     batch["errors"][site].startswith(("ha_read_error:", "ha_snapshot_error:"))):
-                results.append({"site": site, "status": "station_error",
-                                "error": batch["errors"].get(site), "writes_performed": 0})
+                results_by_site[site] = {"site": site, "status": "station_error",
+                                         "error": batch["errors"].get(site), "writes_performed": 0}
                 continue
             state = batch["states"].get(site, {})
             stamp = state.get("device_time")
@@ -274,10 +312,10 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
             if (batch["errors"].get(site) == "stale_or_unavailable" or
                     not batch["errors"].get(site) and
                     (not stamp or not freshness or "unavailable" in str(stamp).lower())):
-                results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
+                results_by_site[site] = {"site": site, "status": "stale_or_unavailable", "device_time": stamp}
                 continue
             if not batch["errors"].get(site) and not state_is_fresh(freshness, max_age_seconds=float(cfg.get("stale_after_seconds", 15.))):
-                results.append({"site": site, "status": "stale_or_unavailable", "device_time": stamp})
+                results_by_site[site] = {"site": site, "status": "stale_or_unavailable", "device_time": stamp}
                 continue
 
             verified = carry.setdefault("verified", {}).setdefault(
@@ -291,20 +329,20 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                 # applied a prefix of the command; sensor state alone cannot
                 # prove its mode/flow/value. Keep the site write-quarantined
                 # until a separate, explicit reconciliation clears this flag.
-                results.append({"site": site, "status": "reconciliation_required",
-                                "device_time": stamp, "write_enabled": False,
-                                "writes_performed": 0, "optimizer_attributed": False,
-                                "attribution": "non-optimizer-attributed",
-                                "reason": "previous_delivery_unknown",
-                                "read_only_state_observed": True,
-                                "previous_delivery": carry["delivery_unknown"][site]})
+                results_by_site[site] = {"site": site, "status": "reconciliation_required",
+                                         "device_time": stamp, "write_enabled": False,
+                                         "writes_performed": 0, "optimizer_attributed": False,
+                                         "attribution": "non-optimizer-attributed",
+                                         "reason": "previous_delivery_unknown",
+                                         "read_only_state_observed": True,
+                                         "previous_delivery": carry["delivery_unknown"][site]}
                 continue
             if write_enabled and carry.get("global_delivery_halt"):
-                results.append({"site": site, "status": "write_suspended",
-                                "device_time": stamp, "write_enabled": False,
-                                "writes_performed": 0, "optimizer_attributed": False,
-                                "reason": "another_site_delivery_failed_in_this_runner",
-                                "read_only_state_observed": True})
+                results_by_site[site] = {"site": site, "status": "write_suspended",
+                                         "device_time": stamp, "write_enabled": False,
+                                         "writes_performed": 0, "optimizer_attributed": False,
+                                         "reason": "another_site_delivery_failed_in_this_runner",
+                                         "read_only_state_observed": True}
                 continue
             if previous is not None:
                 prev_candidate, prev_record = previous["candidate"], previous["record"]
@@ -352,8 +390,9 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                 except Exception as exc:
                     # Keep failures outside the explicitly classified price
                     # policy on the existing fail-closed path.
-                    results.append({"site": site, "status": "candidate_error", "device_time": stamp,
-                                    "error": str(exc), "write_enabled": False})
+                    results_by_site[site] = {"site": site, "status": "candidate_error",
+                                             "device_time": stamp, "error": str(exc),
+                                             "write_enabled": False}
                     continue
             issued_at = _utcnow_iso()
             with generation_lock:
@@ -365,57 +404,95 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                 if safety_error:
                     candidate = {"status": "blocked", "solver_status": "not_run",
                                  "device_time": stamp, "fallback": safety_error}
-                record = execute_candidate(candidate, suffix=suffix, ha=ha, site=site,
-                                           zero_flow_verified=verified,
-                                           reconciliation_store=reconciliation_store,
-                                           deadline=round_deadline,
-                                           current=lambda: carry.get("round_generation") == generation,
-                                           live=write_enabled and safety_error is None and
-                                                candidate.get("fallback") not in (
-                                                    "solver_deadline_exceeded",
-                                                    "previous_solver_still_running",
-                                                    "round_deadline_exceeded"),
-                                           readback_state=None, issued_at=issued_at, now=issued_at)
-                if carry.get("round_generation") == generation:
-                    carry["previous"][site] = {"candidate": candidate, "record": record,
-                                               "issued_at": issued_at}
-                    if record["requires_reconciliation"]:
-                        # One uncertain POST is a shared HA-path incident.
-                        # Keep observing, but send no more commands from this
-                        # runner, including to other sites in the same round.
-                        carry["global_delivery_halt"] = True
-                        carry["delivery_unknown"][site] = (
-                            reconciliation_store.pending()[site] if reconciliation_store is not None
-                            else {"device_time": stamp, "delivery_steps": record["delivery_steps"],
-                                  "reason": record["reason"]})
-            row = {"received_at": _utcnow_iso(), "site": site,
-                   "observed_soc": state.get("soc"), "observed_pv": state.get("solar_power"),
-                   "observed_load": state.get("home_load"), "write_enabled": write_enabled,
-                   **record,
-                   "ha_device_time_raw": stamp,
-                   "ha_entity_diagnostics": state.get("entity_diagnostics"),
-                   "ha_missing_entities": state.get("missing_entities"),
-                   "resolved_device_time": None if resolved is None else resolved.isoformat(),
-                   **batch["metadata"],
-                   "alignment_attempts": batch["alignment_attempts"],
-                   "alignment_rejection_reason": price_error,
-                   "solve_elapsed_seconds": solve_elapsed,
-                   "round_deadline_seconds": round_limit,
-                   "round_generation": generation,
-                   "execution_safety_rejection": safety_error or candidate.get("fallback") if
-                       candidate.get("fallback") in ("solver_deadline_exceeded",
-                                                     "previous_solver_still_running",
-                                                     "round_deadline_exceeded") else safety_error,
-                   "attribution": ("optimizer-attributed" if record["optimizer_attributed"] else
-                                   "non-optimizer-attributed"),
-                   "previous_readback_verdict": previous_verdict,
-                   "guard_action": None if guard is None else guard["guard_action"],
-                   "guard_reason": None if guard is None else guard["reason"],
-                   "soc_divergence_percent": None if guard is None else guard["soc_divergence_percent"]}
-            audit_rows.append(row)
-            results.append(row)
+            plans.append({"site": site, "suffix": suffix, "candidate": candidate,
+                          "verified": verified, "issued_at": issued_at,
+                          "state": state, "stamp": stamp, "resolved": resolved,
+                          "previous_verdict": previous_verdict, "guard": guard,
+                          "safety_error": safety_error, "price_error": price_error,
+                          "solve_elapsed": solve_elapsed,
+                          "live": write_enabled and safety_error is None and
+                              candidate.get("fallback") not in (
+                                  "solver_deadline_exceeded",
+                                  "previous_solver_still_running",
+                                  "round_deadline_exceeded")})
         except Exception as exc:  # isolate one failed station from the other two
-            results.append({"site": site, "status": "station_error", "error": str(exc)})
+            results_by_site[site] = {"site": site, "status": "station_error", "error": str(exc)}
+
+    # Phase 2 (parallel): deliver each site's candidate concurrently. The write
+    # path (fail-closed journal, SOP mode-gap) is per-site; workers never share
+    # the read-path ``ha.session`` (HAClient hands each thread its own Session).
+    def _deliver(plan: dict):
+        try:
+            record = execute_candidate(
+                plan["candidate"], suffix=plan["suffix"], ha=ha, site=plan["site"],
+                zero_flow_verified=plan["verified"],
+                reconciliation_store=reconciliation_store, deadline=round_deadline,
+                current=lambda: carry.get("round_generation") == generation,
+                live=plan["live"], readback_state=None,
+                issued_at=plan["issued_at"], now=plan["issued_at"])
+            return plan, record, None
+        except Exception as exc:
+            return plan, None, exc
+
+    deliveries: list[tuple] = []
+    if plans:
+        if delivery_executor is not None:
+            # Reused across rounds so worker threads (and their thread-local
+            # HA Sessions) keep their connections warm via keep-alive.
+            futures = [delivery_executor.submit(_deliver, p) for p in plans]
+            deliveries = [f.result() for f in futures]
+        else:
+            with ThreadPoolExecutor(max_workers=len(plans), thread_name_prefix="delivery") as ex:
+                futures = [ex.submit(_deliver, p) for p in plans]
+                deliveries = [f.result() for f in futures]
+
+    # Phase 3 (serial, original site order): fold results back into the audit
+    # stream and the shared ``carry`` state (previous + halt + quarantine).
+    for plan, record, exc in deliveries:
+        site = plan["site"]
+        if exc is not None:
+            results_by_site[site] = {"site": site, "status": "station_error", "error": str(exc)}
+            continue
+        if carry.get("round_generation") == generation:
+            carry["previous"][site] = {"candidate": plan["candidate"], "record": record,
+                                       "issued_at": plan["issued_at"]}
+            if record["requires_reconciliation"]:
+                # One uncertain POST is a shared HA-path incident. Keep
+                # observing, but send no more commands from this runner; the
+                # next round's other sites halt until two clean reads.
+                carry["global_delivery_halt"] = True
+                carry.setdefault("delivery_unknown", {})[site] = (
+                    reconciliation_store.pending()[site] if reconciliation_store is not None
+                    else {"device_time": plan["stamp"], "delivery_steps": record["delivery_steps"],
+                          "reason": record["reason"]})
+        row = {"received_at": _utcnow_iso(), "site": site,
+               "observed_soc": plan["state"].get("soc"), "observed_pv": plan["state"].get("solar_power"),
+               "observed_load": plan["state"].get("home_load"), "write_enabled": write_enabled,
+               **record,
+               "ha_device_time_raw": plan["stamp"],
+               "ha_entity_diagnostics": plan["state"].get("entity_diagnostics"),
+               "ha_missing_entities": plan["state"].get("missing_entities"),
+               "resolved_device_time": None if plan["resolved"] is None else plan["resolved"].isoformat(),
+               **batch["metadata"],
+               "alignment_attempts": batch["alignment_attempts"],
+               "alignment_rejection_reason": plan["price_error"],
+               "solve_elapsed_seconds": plan["solve_elapsed"],
+               "round_deadline_seconds": round_limit,
+               "round_generation": generation,
+               "execution_safety_rejection": plan["safety_error"] or plan["candidate"].get("fallback") if
+                   plan["candidate"].get("fallback") in ("solver_deadline_exceeded",
+                                                         "previous_solver_still_running",
+                                                         "round_deadline_exceeded") else plan["safety_error"],
+               "attribution": ("optimizer-attributed" if record["optimizer_attributed"] else
+                               "non-optimizer-attributed"),
+               "previous_readback_verdict": plan["previous_verdict"],
+               "guard_action": None if plan["guard"] is None else plan["guard"]["guard_action"],
+               "guard_reason": None if plan["guard"] is None else plan["guard"]["reason"],
+               "soc_divergence_percent": None if plan["guard"] is None else plan["guard"]["soc_divergence_percent"]}
+        audit_rows.append(row)
+        results_by_site[site] = row
+
+    results = [results_by_site[site] for site in sorted(results_by_site, key=str)]
     round_elapsed = time.monotonic() - round_started
     for row in results:
         row["round_elapsed_seconds"] = round_elapsed
@@ -464,6 +541,11 @@ def main() -> None:
     carry: dict = {}
     reconciliation_store = (ReconciliationStore(args.reconciliation_state)
                             if write_enabled and args.strategy == "milp" else None)
+    # Reuse one executor across rounds so the delivery worker threads (and their
+    # thread-local HA Sessions) keep their connections warm via keep-alive.
+    delivery_executor = (ThreadPoolExecutor(max_workers=max(1, len(cfg["stations"])),
+                                            thread_name_prefix="delivery")
+                         if args.strategy == "milp" else None)
     while True:
         loop_started = time.monotonic()
         if refresh_at is not None and loop_started >= refresh_at:
@@ -478,7 +560,8 @@ def main() -> None:
         if args.strategy == "milp":
             tick_results = run_once_milp(cfg, ha, sim, write_enabled=write_enabled,
                                          carry=carry, audit_csv=args.audit_csv,
-                                         reconciliation_store=reconciliation_store)
+                                         reconciliation_store=reconciliation_store,
+                                         delivery_executor=delivery_executor)
         else:
             tick_results = run_once(cfg, ha, sim, write_enabled=write_enabled)
         for result in tick_results:

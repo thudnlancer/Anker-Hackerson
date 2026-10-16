@@ -8,9 +8,12 @@ import threading
 from urllib3.util import Timeout
 
 ACTIVE_READ_BUDGET = ContextVar("active_read_budget", default=None)
-# At most one bounded HTTP worker in flight in this process. A timed-out read
-# cannot pile up more background reads on subsequent ticks.
-_READ_SLOT = threading.BoundedSemaphore(1)
+# At most this many bounded HTTP workers in flight in this process. Two slots
+# let the acquisition round overlap the simulator read (sim.current + sim.prices,
+# one shared SimulatorClient Session) with the HA snapshot read (a separate
+# HAClient Session) without ever racing a single Session from two threads.
+# A timed-out read still cannot pile up more background reads than this bound.
+_READ_SLOT = threading.BoundedSemaphore(2)
 
 
 @dataclass

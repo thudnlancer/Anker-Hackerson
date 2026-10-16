@@ -1,5 +1,6 @@
 """One HA GET feeds all stations; missing entities remain site-local."""
 import sys
+import threading
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -53,6 +54,28 @@ class BulkSnapshotTests(unittest.TestCase):
         self.assertEqual(failed["entity_diagnostics"]["device_time"]["reason"], "missing")
         self.assertEqual(healthy["missing_entities"], [])
         self.assertIn("last_changed", healthy["entity_diagnostics"]["soc"])
+
+    def test_session_is_thread_local_for_delivery_workers(self):
+        # The constructing thread keeps the shared ``session`` (read path and
+        # single-threaded callers); a delivery worker gets its own Session so
+        # concurrent ``call()`` POSTs never share a requests.Session.
+        self.assertIs(self.client._session(), self.client.session)
+
+        def run_in_thread(fn):
+            box = []
+            t = threading.Thread(target=lambda: box.append(fn()))
+            t.start()
+            t.join()
+            return box[0]
+
+        worker_session = run_in_thread(self.client._session)
+        self.assertIsNot(worker_session, self.client.session)
+        # The same worker thread reuses its Session across calls, while a
+        # different worker thread gets a fresh one.
+        same_worker_again = run_in_thread(lambda: (
+            self.client._session(), self.client._session()))
+        self.assertIs(same_worker_again[0], same_worker_again[1])
+        self.assertIsNot(same_worker_again[0], worker_session)
 
 
 if __name__ == "__main__":

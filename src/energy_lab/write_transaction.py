@@ -28,6 +28,20 @@ class WriteTransaction:
             raise TimeoutError("write_deadline_exceeded")
         return value
 
+    def reserve(self, seconds):
+        """Raise TimeoutError unless at least ``seconds`` remain before the deadline.
+
+        Used to refuse a delivery *before* its first POST: starting a multi-step
+        write with an insufficiently small budget would otherwise time out part
+        way through and leave an uncertain (partially applied) command that has
+        to be quarantined. Refusing up front is fail-closed and leaves no
+        uncertainty.
+        """
+        remaining = self.remaining()
+        if remaining < seconds:
+            raise TimeoutError("insufficient_budget_for_delivery")
+        return remaining
+
     def gap(self, seconds):
         remaining = self.remaining()
         if remaining <= seconds:

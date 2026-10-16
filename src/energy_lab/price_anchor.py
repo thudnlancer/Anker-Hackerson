@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 import time
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 
@@ -154,19 +155,44 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
             errors = {s: config_error for s in cfg["stations"]}
             stop_reason = "deterministic_rejection"
             break
-        try:
-            before = read("sim.current.before", sim.current_price)
-            slot(before)  # Invalid payload is deterministic.
-            if isinstance(before, dict):
-                metadata = {"api_current_start": before.get("start"), "api_current_end": before.get("end"),
-                            "selected_price_slot": None, "alignment_source": None}
-            points = price_window(read("sim.prices", sim.prices))
-        except Exception as exc:
-            reason = f"price_anchor_rejected:{exc}"
+        # Parallel acquisition: overlap the simulator read (current.before then
+        # prices, one shared SimulatorClient Session) with the HA snapshot read
+        # (a separate HAClient Session). The two branches never race a single
+        # Session, but their network round-trips overlap. Each branch keeps its
+        # own error so the per-source rejection/retry semantics are preserved.
+        def _read_sim():
+            before_value = read("sim.current.before", sim.current_price)
+            slot(before_value)  # Invalid payload is deterministic.
+            points_value = price_window(read("sim.prices", sim.prices))
+            return before_value, points_value
+
+        def _read_snapshot():
+            return read("ha.snapshot", ha.snapshot)
+
+        need_snapshot = hasattr(ha, "snapshot") and len(permanent) < len(cfg["stations"])
+        sim_outcome = None
+        sim_error = None
+        snapshot_outcome = None
+        snapshot_error = None
+        with ThreadPoolExecutor(max_workers=2) as _executor:
+            sim_future = _executor.submit(_read_sim)
+            snapshot_future = _executor.submit(_read_snapshot) if need_snapshot else None
+            try:
+                sim_outcome = sim_future.result()
+            except Exception as exc:
+                sim_error = exc
+            if snapshot_future is not None:
+                try:
+                    snapshot_outcome = snapshot_future.result()
+                except Exception as exc:
+                    snapshot_error = exc
+
+        if sim_error is not None:
+            reason = f"price_anchor_rejected:{sim_error}"
             errors.update({s: reason for s in cfg["stations"] if s not in permanent})
-            if _retryable(reason) or isinstance(exc, (TimeoutError, ConnectionError,
-                                                      requests.exceptions.Timeout,
-                                                      requests.exceptions.ConnectionError)):
+            if _retryable(reason) or isinstance(sim_error, (TimeoutError, ConnectionError,
+                                                            requests.exceptions.Timeout,
+                                                            requests.exceptions.ConnectionError)):
                 if time.monotonic() - started >= seconds:
                     stop_reason = "deadline_exceeded"
                     break
@@ -174,10 +200,9 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
                 continue
             stop_reason = "deterministic_rejection"
             if time.monotonic() - started < seconds:
-                try:
-                    bad_price_snapshot = read("ha.snapshot", ha.snapshot) if hasattr(ha, "snapshot") else None
-                except Exception:
-                    bad_price_snapshot = None
+                # The parallel HA read (if it succeeded) doubles as the
+                # bad-price diagnostic snapshot; otherwise fall back per-station.
+                bad_price_snapshot = snapshot_outcome if snapshot_error is None else None
                 for site, item in cfg["stations"].items():
                     try:
                         if bad_price_snapshot is not None:
@@ -188,12 +213,15 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
                     except Exception as ha_exc:
                         errors[site] = f"ha_read_error:{type(ha_exc).__name__}:{ha_exc}"
             break
+
+        before, points = sim_outcome
+        if isinstance(before, dict):
+            metadata = {"api_current_start": before.get("start"), "api_current_end": before.get("end"),
+                        "selected_price_slot": None, "alignment_source": None}
         snapshot = None
-        if hasattr(ha, "snapshot") and len(permanent) < len(cfg["stations"]):
-            try:
-                snapshot = read("ha.snapshot", ha.snapshot)
-            except Exception as exc:
-                reason = f"ha_snapshot_error:{type(exc).__name__}:{exc}"
+        if need_snapshot:
+            if snapshot_error is not None:
+                reason = f"ha_snapshot_error:{type(snapshot_error).__name__}:{snapshot_error}"
                 errors.update({s: reason for s in cfg["stations"] if s not in permanent})
                 if not _retryable(reason):
                     permanent.update({s: reason for s in cfg["stations"] if s not in permanent})
@@ -201,6 +229,7 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
                 if not _retryable(reason):
                     break
                 continue
+            snapshot = snapshot_outcome
         for site, item in cfg["stations"].items():
             if site in permanent:
                 continue
@@ -228,7 +257,21 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
             break
         try:
             after = read("sim.current.after", sim.current_price)
-            start, metadata = anchor_prices(points, before, after)
+            try:
+                start, metadata = anchor_prices(points, before, after)
+            except Exception as exc:
+                if "current_slot_changed_during_read" not in str(exc):
+                    raise
+                # Hour-boundary straddle: `after` landed in the next hour because the
+                # simulator's continuous clock crossed the boundary mid-read, while the
+                # device's own discrete clock (device_time, read in between) is still in
+                # `before`'s hour. Accept only a forward single-hour crossing; the
+                # per-site anchor_device_time check below still enforces device-vs-slot
+                # hour consistency, so a genuine misalignment is still rejected/retried.
+                b_start, b_end = slot(before)
+                if slot(after) != (b_start + pd.Timedelta(hours=1), b_end + pd.Timedelta(hours=1)):
+                    raise
+                start, metadata = anchor_prices(points, before, before)
             for site, state in states.items():
                 if site in errors:
                     continue

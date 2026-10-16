@@ -1,6 +1,7 @@
 """V1 step-2 execute_candidate decision table + V4 frozen-snapshot end-to-end."""
 from pathlib import Path
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -108,22 +109,24 @@ class IdleBranchTests(unittest.TestCase):
             self.assertEqual(record["readback_verdict"], "verified")
             self.assertTrue(record["optimizer_attributed"])
 
-    def test_unverified_site_refuses_without_silent_downgrade(self):
+    def test_unverified_site_uses_explicit_self_use_not_stale_refusal(self):
         ha = StubHA()
         record = execute_candidate(idle_candidate(), suffix="1502", ha=ha,
                                    zero_flow_verified=False, live=True,
-                                   readback_state=readback_state("charge", 0.), **SENT)
-        self.assertEqual(ha.calls, [])
-        self.assertEqual(record["status"], "idle_unverified_noop")
-        self.assertEqual(record["writes_performed"], 0)
-        self.assertIsNone(record["command_flow"])
-        self.assertIsNone(record["command_mode"])
-        self.assertEqual(record["readback_verdict"], "not_applicable_no_command")
+                                   readback_state=readback_state(mode="self_consumption"), **SENT)
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        self.assertEqual(record["status"], "idle_self_use_mode")
+        self.assertEqual(record["writes_performed"], 1)
+        self.assertEqual(record["command_mode"], "self_use_mode")
+        self.assertEqual(record["command_flow"], "self_consumption")
+        self.assertEqual(record["readback_verdict"], "mode_echo_verified")
         self.assertFalse(record["optimizer_attributed"])
+        self.assertEqual(record["planned_flow"], "idle")
 
-    def test_unverified_refusal_is_the_default(self):
+    def test_unverified_self_use_is_the_default(self):
         record = execute_candidate(idle_candidate(), suffix="1502", ha=StubHA(), live=True)
-        self.assertEqual(record["status"], "idle_unverified_noop")
+        self.assertEqual(record["status"], "idle_self_use_mode")
+        self.assertEqual(record["command_mode"], "self_use_mode")
 
 
 class FallbackBranchTests(unittest.TestCase):
@@ -302,6 +305,60 @@ class SocDivergenceGuardTests(unittest.TestCase):
                                       zero_flow_verified=True)
         self.assertEqual(result["guard_action"], "revoke_zero_flow_verified")
         self.assertFalse(result["zero_flow_verified_after"])
+
+
+class DeliveryBudgetTests(unittest.TestCase):
+    """A delivery that would exceed the round deadline is refused *before* the
+    first POST (no partial write, no quarantine); a mid-write timeout is still
+    an uncertain delivery and stays quarantined."""
+
+    def test_expired_deadline_is_blocked_before_any_write(self):
+        ha = StubHA()
+        record = execute_candidate(dispatch_candidate(), suffix="1502", ha=ha, live=True,
+                                   deadline=time.monotonic() - 0.1,
+                                   readback_state=readback_state(), **SENT)
+        self.assertEqual(ha.calls, [])
+        self.assertEqual(record["status"], "delivery_blocked")
+        self.assertEqual(record["writes_performed"], 0)
+        self.assertEqual(record["write_requests_attempted"], 0)
+        self.assertEqual(record["requires_reconciliation"], False)
+        self.assertEqual(record["readback_verdict"], "not_sent")
+
+    def test_dispatch_refused_when_budget_below_dispatch_reserve(self):
+        ha = StubHA()
+        record = execute_candidate(dispatch_candidate(), suffix="1502", ha=ha, live=True,
+                                   deadline=time.monotonic() + 0.5,
+                                   readback_state=readback_state(), **SENT)
+        self.assertEqual(ha.calls, [])
+        self.assertEqual(record["status"], "delivery_blocked")
+        self.assertEqual(record["requires_reconciliation"], False)
+        self.assertEqual(record["write_requests_attempted"], 0)
+
+    def test_self_use_fallback_still_writes_when_budget_sufficient(self):
+        ha = StubHA()
+        record = execute_candidate(fallback_candidate(), suffix="1502", ha=ha, live=True,
+                                   deadline=time.monotonic() + 5.0,
+                                   readback_state=readback_state(), **SENT)
+        self.assertEqual(record["status"], "fallback_self_use_mode")
+        self.assertEqual(ha.calls, [("set_self_consumption", "1502", True)])
+        self.assertEqual(record["requires_reconciliation"], False)
+
+    def test_mid_write_timeout_still_requires_reconciliation(self):
+        ha = StubHA()
+
+        def fail(*args, **kwargs):
+            from energy_lab.write_transaction import ACTIVE_WRITE
+            ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
+                                             "status": "attempted_unknown"})
+            raise TimeoutError("mock_post_timeout")
+
+        with patch.object(ha, "set_dispatch", side_effect=fail):
+            record = execute_candidate(dispatch_candidate(), suffix="1502", ha=ha, live=True,
+                                       deadline=time.monotonic() + 5.0,
+                                       readback_state=readback_state(), **SENT)
+        self.assertEqual(record["status"], "delivery_failed")
+        self.assertEqual(record["requires_reconciliation"], True)
+        self.assertEqual(record["write_requests_attempted"], 1)
 
 
 if __name__ == "__main__":

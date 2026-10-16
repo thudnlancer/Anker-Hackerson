@@ -5,7 +5,7 @@ Decision table (HOLD_SEMANTICS_DESIGN §4 step 2):
 | candidate            | zero_flow_verified=True           | zero_flow_verified=False |
 |----------------------|-----------------------------------|--------------------------|
 | charge / discharge   | set_dispatch + next-tick readback | same                     |
-| idle                 | third-party charge=0 + readback   | refuse: idle_unverified_noop; never silently downgraded |
+| idle                 | third-party charge=0 + readback   | explicit self_use_mode (idle_self_use_mode); never a stale-command refusal |
 | non-optimal fallback | explicit self_use_mode (Q1), marked non-optimizer-attributed | same |
 
 Step 3 adds the per-tick SOC divergence guard (``check_soc_divergence``): a
@@ -37,6 +37,21 @@ FALLBACK_COMMAND_MODE = "self_use_mode"
 # the threshold leaves ample room for forecast error while still catching a
 # device that actively works during a commanded zero-flow idle step.
 SOC_DIVERGENCE_THRESHOLD_PERCENT = 2.0
+
+# Minimum round budget reserved before a delivery begins, by delivery shape.
+# A self-use switch is one select_option POST; a dispatch is operating_mode +
+# the SOP mode-gap + grid_flow + power_control. Reserving up front keeps a
+# late-round delivery from timing out part way through (partial write ->
+# uncertain delivery -> quarantine). See run_live.py round-deadline overflow.
+SELF_USE_DELIVERY_BUDGET = 0.5
+DISPATCH_DELIVERY_BUDGET = 2.0
+
+
+def _reserve_delivery_budget(seconds: float) -> None:
+    """Refuse a live delivery unless ``seconds`` remain before the round deadline."""
+    transaction = ACTIVE_WRITE.get()
+    if transaction is not None:
+        transaction.reserve(seconds)
 
 AUDIT_FIELDS = ("site", "device_time", "status", "solver_status",
                 "accepted_incumbent", "mip_gap",
@@ -114,14 +129,26 @@ def execute_candidate(candidate, *, deadline=None, current=None, reconciliation_
     except Exception as exc:
         if not kwargs.get("live") or not transaction.steps and not isinstance(exc, TimeoutError):
             raise
-        record = _record(site=str(kwargs.get("site", kwargs.get("suffix"))),
-                         device_time=candidate.get("device_time"), status="delivery_failed",
-                         solver_status=candidate.get("solver_status"),
-                         writes_performed=0, optimizer_attributed=False,
-                         readback_verdict="required_delivery_unknown",
-                         reason=f"delivery_error:{type(exc).__name__}")
-        record["delivery_error"] = str(exc) if isinstance(exc, TimeoutError) else type(exc).__name__
-        record["requires_reconciliation"] = bool(transaction.steps)
+        if not transaction.steps:
+            # Refused before any write (round deadline / delivery budget): the
+            # device is untouched, so there is nothing to reconcile and no
+            # quarantine. Distinct from a mid-write failure, which may have
+            # applied a prefix of the command.
+            record = _record(site=str(kwargs.get("site", kwargs.get("suffix"))),
+                             device_time=candidate.get("device_time"), status="delivery_blocked",
+                             solver_status=candidate.get("solver_status"),
+                             writes_performed=0, optimizer_attributed=False,
+                             readback_verdict="not_sent",
+                             reason=f"delivery_blocked:{type(exc).__name__}")
+        else:
+            record = _record(site=str(kwargs.get("site", kwargs.get("suffix"))),
+                             device_time=candidate.get("device_time"), status="delivery_failed",
+                             solver_status=candidate.get("solver_status"),
+                             writes_performed=0, optimizer_attributed=False,
+                             readback_verdict="required_delivery_unknown",
+                             reason=f"delivery_error:{type(exc).__name__}")
+            record["delivery_error"] = str(exc) if isinstance(exc, TimeoutError) else type(exc).__name__
+            record["requires_reconciliation"] = bool(transaction.steps)
     finally:
         ACTIVE_WRITE.reset(token)
     record["delivery_steps"] = transaction.steps
@@ -156,6 +183,7 @@ def _execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verif
         # Fallback branch (Q1): explicit self-use mode switch. The step is
         # never optimizer-attributed, whatever the device does afterwards.
         if live:
+            _reserve_delivery_budget(SELF_USE_DELIVERY_BUDGET)
             ha.set_self_consumption(suffix, live=True)
         return _record(site=site, device_time=device_time, status="fallback_self_use_mode",
                        solver_status=solver_status, accepted_incumbent=False, mip_gap=None,
@@ -175,23 +203,31 @@ def _execute_candidate(candidate, *, suffix, ha=None, site=None, zero_flow_verif
         command_flow, target_w, command_mode = planned_flow, float(mapping["target_w"]), "dispatch"
     elif planned_flow == "idle":
         if not zero_flow_verified:
-            # Hard refusal: an unplanned self-use downgrade would silently
-            # change semantics, so no write happens on this path at all.
-            return _record(site=site, device_time=device_time, status="idle_unverified_noop",
+            # Zero-flow (charge=0W) is unverified on this device: mock evidence
+            # shows charge=0W still self-consumes PV surplus, so it is not a
+            # valid "hold". A planned idle is therefore executed as the device's
+            # explicit self-use mode (HOLD_SEMANTICS_DESIGN Q1 decision B,
+            # SOP-compliant), never as a stale-command refusal (rejected
+            # option A) and never as an unverifiable charge=0.
+            if live:
+                _reserve_delivery_budget(SELF_USE_DELIVERY_BUDGET)
+                ha.set_self_consumption(suffix, live=True)
+            return _record(site=site, device_time=device_time, status="idle_self_use_mode",
                            solver_status=solver_status, accepted_incumbent=False, mip_gap=None,
                            planned_flow="idle",
-                           planned_power_w=planned_power, command_mode=None, command_flow=None,
-                           target_w=None, readback_verdict="not_applicable_no_command",
+                           planned_power_w=planned_power, command_mode=FALLBACK_COMMAND_MODE,
+                           command_flow="self_consumption", target_w=None,
+                           readback_verdict=_fallback_readback(readback_state, live=live),
                            realized_soc=_soc(readback_state), optimizer_attributed=False,
-                           writes_performed=0, reason="zero_flow_unverified_site_refusal")
-        # The decision table is authoritative: a verified idle is executed as
-        # the third-party charge=0 command, whatever mapping policy produced
-        # the candidate.
+                           writes_performed=int(live), reason="zero_flow_unverified_explicit_self_use")
+        # A verified idle is executed as the third-party charge=0 command,
+        # whatever mapping policy produced the candidate.
         command_flow, target_w, command_mode = "charge", 0.0, "zero_flow_command"
     else:
         raise ValueError(f"unknown planned flow {planned_flow!r}; refusing implicit handling")
 
     if live:
+        _reserve_delivery_budget(DISPATCH_DELIVERY_BUDGET)
         ha.set_dispatch(suffix, command_flow, target_w, live=True)
     status = "dispatched" if command_mode == "dispatch" else "zero_flow_dispatched"
     return _record(site=site, device_time=device_time, status=status, solver_status=solver_status,

@@ -50,10 +50,14 @@ class SolverSecondsMappingTests(unittest.TestCase):
 
     def test_contest_config_file_loads_frozen_value(self):
         # The gitignored live contest config must carry the frozen value explicitly.
+        # run6 profiling: hard MILP instances reach their final incumbent within
+        # 0.1s and never improve before the 2.0s limit; the serial single-slot
+        # solve then starves the write budget (38 delivery_blocked). 0.5s keeps
+        # identical incumbent quality while preserving the delivery reserve.
         contest = Path(__file__).resolve().parents[1] / "config/local/local_online_config.json"
         if contest.exists():
             cfg = load_runtime_config(contest)
-            self.assertEqual(cfg["solver_seconds"], 2.0)
+            self.assertEqual(cfg["solver_seconds"], 0.5)
             self.assertLess(cfg["solver_seconds"], cfg["poll_seconds"])
 
     def test_environment_timezone_is_exposed_for_device_time_alignment(self):

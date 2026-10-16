@@ -1,6 +1,10 @@
 # Hold 语义对齐改造设计（评审稿）
 
 > 状态：评审稿，未实施。本文档不授权任何真实 HA 写入；所有涉及设备写入的步骤需单独授权后执行。
+>
+> **实施记录（2026-10-16）**：步骤 1（`charge=0W` 受监管验证）未执行即被模拟赛实测证伪——2026-10-16 mock 中站点 1 在 `verified=true` 下对 `idle` 下发 `charge=0W`，设备仍自耗光伏余电充电（SOC 89→93，+4%），触发 SOC 发散护栏 `revoke_zero_flow_verified`。据此按 §7 回退计划关闭零流量主线：`config/local/local_online_config.json` 三站 `zero_flow_verified` 置为 `false`；`src/energy_lab/execute.py` 将「idle + 未验证」从**拒绝下发（`idle_unverified_noop`，即被否决的方案 A「保留上一条指令」）**改为**显式 `self_consumption` 切换（`idle_self_use_mode`，Q1 方案 B + SOP 合规）**。对应决策表 §4 步骤 2 的 idle/未验证单元格已更新。步骤 1 若日后重新验证通过，可再把 `zero_flow_verified` 置回 `true`。
+>
+> **实施记录（2026-10-16，并行下发）**：将 `run_once_milp` 的逐站串行下发改为三阶段——①串行（读回/护栏/求解）②并行（三站 `execute_candidate` 用 `ThreadPoolExecutor` 并发下发）③串行（回填 audit 与 `carry` 状态）。依据：三站是独立设备，SOP 的 1s gap 是**逐设备**的「切换 `operating_mode` 后约 1 秒再发流向/功率」处理间隔（见 §8.1 B3），而非「每次求解/下发后都等 1s」；三站 gap 可重叠，串行 ~5.25s 下发降为 ~1.75s。配套：`ha_client.py` 写路径 `call()` 用线程本地 `Session`（`requests.Session` 非线程安全；读路径仍在 `bounded-read` 工作线程串行使用共享 `self.session`）；`reconciliation.py` 日志读写加锁。**语义变化**：并行后「同一轮内首站失败不再能中止其他在途站」，共享 HA 故障会同时隔离所有触达的站（全部 `delivery_unknown`），下一轮才 halt；`test_run_live_chain.py` 相应更新。**追加（executor 复用）**：把 `ThreadPoolExecutor` 提到 `main()` 循环外建 `ThreadPoolExecutor(max_workers=len(cfg["stations"]))`（仅 milp 策略）跨轮复用，`run_once_milp` 新增可选 keyword-only 参数 `delivery_executor`；3 个 worker 线程跨轮常驻、各自线程本地 `Session` 靠 HTTP keep-alive 保温，省去每轮新建 Session 的 ~100–300ms 握手；未传入时回退每轮新建。
 > 范围：线上路径（`run_live.py`、`shadow.py`、HA 写入层）与离线 replay 口径统一。
 > 关联文档：[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[SOP_RECONCILIATION.md](../operations/SOP_RECONCILIATION.md)（SOP 控制语义）、[NEXT_STAGE_RESULTS.md](../experiments/NEXT_STAGE_RESULTS.md)（2026-10-13 hold 语义隔离实验）。
 
