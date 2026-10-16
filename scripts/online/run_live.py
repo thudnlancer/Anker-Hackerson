@@ -148,7 +148,7 @@ def run_once(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bo
         try:
             if site not in batch["states"] and (
                     site not in batch["errors"] or
-                    batch["errors"][site].startswith("ha_read_error:")):
+                    batch["errors"][site].startswith(("ha_read_error:", "ha_snapshot_error:"))):
                 results.append({"site": site, "status": "station_error",
                                 "error": batch["errors"].get(site), "writes_performed": 0})
                 continue
@@ -264,7 +264,7 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
         try:
             if site not in batch["states"] and (
                     site not in batch["errors"] or
-                    batch["errors"][site].startswith("ha_read_error:")):
+                    batch["errors"][site].startswith(("ha_read_error:", "ha_snapshot_error:"))):
                 results.append({"site": site, "status": "station_error",
                                 "error": batch["errors"].get(site), "writes_performed": 0})
                 continue

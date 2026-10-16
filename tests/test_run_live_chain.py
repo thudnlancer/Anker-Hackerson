@@ -90,6 +90,18 @@ class DryRunChainTests(unittest.TestCase):
         with patch("energy_lab.shadow.optimize_window", return_value=kwargs.pop("mock_plan", plan())):
             return run_once_milp(config, ha, sim, **kwargs), kwargs["carry"]
 
+    def test_ha_snapshot_401_does_not_attempt_fallback_write(self):
+        ha = StubHA({"1502": state()})
+        failed_batch = {"points": None, "states": {},
+                        "errors": {"1": "ha_snapshot_error:HTTPError:401 Unauthorized"},
+                        "times": {}, "metadata": {}, "alignment_attempts": 1}
+        with patch("scripts.online.run_live.read_anchored_tick", return_value=failed_batch):
+            rows = run_once_milp(cfg(verified=True), ha, StubSim(make_prices()),
+                                 write_enabled=True, carry={})
+        self.assertEqual(rows[0]["status"], "station_error")
+        self.assertEqual(rows[0]["writes_performed"], 0)
+        self.assertEqual(ha.calls, [])
+
     def test_unknown_delivery_quarantines_next_round_without_more_writes(self):
         ha = StubHA({"1502": state()})
         carry = {}
