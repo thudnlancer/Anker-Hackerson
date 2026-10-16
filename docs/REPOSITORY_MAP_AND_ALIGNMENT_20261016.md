@@ -26,7 +26,7 @@ W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心�
 
 产物清单：`archive/OUTPUT_INVENTORY_20261016.json` 是较早时间点的 161 项快照；`archive/OUTPUT_INVENTORY_20261016_POSTREFACTOR.json` 是本轮 162 项复核清单，包含只读复核目录。run3 压缩包在两份清单之间由既有分析/打包流程重建，旧哈希保留作历史对照，新清单记录当前 SHA；不能把两份清单的 SHA 差异解释为重构代码改写比赛证据。
 
-## 当前权威快照（2026-10-16）
+## 历史快照（2026-10-16，`1b1c9f7`）
 
 此快照优先于上面的历史状态段落：主工作区 `D:/Anker黑客松/实验环境`（`feat/explainability-integration`）与 `D:/Anker黑客松/integration-worktree`（`integration/online-milestone`）现均为 `1b1c9f7` 且工作区干净；核心测试均 373 passed。`outputs/deployment_preflight_20261016/report.json` 对该固定提交给出本地 browser-terminal dry-run 准备通过。它不代表远端已部署或在线运行。
 
@@ -38,8 +38,12 @@ W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心�
 
 随后完成一项安全迁移：`audit_strategy_results.py` 的实现现位于 `scripts/analysis/audit_strategy_results.py`，根目录文件为兼容入口；旧 import 和 CLI 已有定向测试覆盖。当前主线与集成 worktree 基线为 `1624803`，核心测试 377 passed，Markdown 链接检查 0 条断链。
 
-## 当前权威快照（归档后）
+## 历史快照（归档后，`4089b491`）
 
-主工作区 `feat/explainability-integration` 与 `integration/online-milestone` 已同步至 `4089b491`，均无未提交改动；核心测试为 **378 passed**，Markdown 本地链接检查为 **0**。本轮仅将用户确认无关的模型使用说明原样归档至 `archive/docs/`，并以 `archive/docs/archive-manifest-20261016.json` 记录来源和 SHA；未改写任何 outputs、HA reconciliation pending 或比赛证据。
+该阶段主工作区与 `integration/online-milestone` 已同步至 `4089b491`，均无未提交改动；核心测试为 **378 passed**，Markdown 本地链接检查为 **0**。当时仅将用户确认无关的模型使用说明原样归档至 `archive/docs/`，并以 `archive/docs/archive-manifest-20261016.json` 记录来源和 SHA；未改写任何 outputs、HA reconciliation pending 或比赛证据。
 
 参考 worktree 仍保持独立以供追溯：E4 `f6ff5df`（有未提交测试改动与 `.agents/`）、W2 `a228f4b`（其已交付提交已在主线祖先中）、W3 `7cd64c4`、W2 E5 detached `8362854`。当前没有证据支持将 W3/E4/E5 整分支覆盖主线；需逐文件审查后再决定是否摘取。O7 三站 pending、O9 远程部署和完整在线流程仍未通过。
+
+## 当前权威快照（2026-10-16）
+
+主工作区 `feat/explainability-integration` 与 `integration/online-milestone` 当前均为 `32c4905`，工作区干净。核心测试 **378 passed**；产品锁定环境 **99 passed + 49 subtests**、`pip check` 通过；前端 **18 passed** 且 production build 通过；Markdown 本地链接检查为 **0**。E4、W3 和 E5 参考 worktree 仍独立保留；W2 的已交付提交已在主线祖先中。三站 HA reconciliation pending、O7 和 O9 仍未通过，未执行比赛机或正式比赛操作。

@@ -67,4 +67,6 @@
 
 产品后端需在 `explainability-app/` 中使用其 `.venv` 安装锁定依赖和 editable package，并将仓库根目录 `src/` 加入 `PYTHONPATH`，然后运行 `python -m pytest tests -q`；本次结果为 **99 passed + 49 subtests**，`pip check` 无损坏依赖。直接从仓库根目录用系统 Python 跑产品测试会因缺少 FastAPI/包安装而在收集阶段失败，不能视作代码回归。前端在 `explainability-app/frontend/` 执行 `npm test` 与 `npm run build`，本次分别为 **18 passed** 与构建成功。
 
+CI 门禁已同步采用同一安装顺序：先安装两个 lock 文件，再执行 `pip install --no-deps -e explainability-app`，避免工作流遗漏产品包安装而在测试收集阶段失败。
+
 这些是 O8 的本地代码门禁证据，不替代 O7 的人工安全复核、HA 真机回读或 O9 的实际部署运行。

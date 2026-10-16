@@ -18,6 +18,7 @@ jobs:
             explainability-app/requirements.lock
             explainability-app/requirements.shared.lock
       - run: python -m pip install -r explainability-app/requirements.lock -r explainability-app/requirements.shared.lock
+      - run: python -m pip install --no-deps -e explainability-app
       - name: Existing strategy and evidence bridge
         run: python -m unittest discover -s tests -v
         env:
