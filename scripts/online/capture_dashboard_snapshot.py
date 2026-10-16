@@ -150,7 +150,7 @@ def capture(config_path: Path, output_dir: Path, local_run_id: str, phase: str,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=Path("local_online_config.json"))
+    parser.add_argument("--config", type=Path, default=Path("config/local/local_online_config.json"))
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--local-run-id", required=True)
     parser.add_argument("--phase", choices=("prestart", "end"), required=True)

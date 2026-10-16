@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run_online_inference_dry_run import (tail_is_contiguous, history_at_snapshot,
+from scripts.online.run_online_inference_dry_run import (tail_is_contiguous, history_at_snapshot,
                                           select_history_window, OnlineContractError)
 
 

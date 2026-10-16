@@ -8,7 +8,7 @@ from scripts.online.run_zero_flow_verification import pending_reconciliation_jou
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "run_zero_flow_verification.py"
+SCRIPT = ROOT / "scripts" / "online" / "run_zero_flow_verification.py"
 
 
 def _run(*args):

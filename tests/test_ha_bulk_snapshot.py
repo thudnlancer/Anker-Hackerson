@@ -9,7 +9,7 @@ from energy_lab.ha_client import HAClient
 from energy_lab.config import canonical_suffix
 from energy_lab.price_anchor import read_anchored_tick
 from test_run_live_chain import StubSim, make_prices, state
-from run_live import price_window
+from scripts.online.run_live import price_window
 
 
 class BulkSnapshotTests(unittest.TestCase):

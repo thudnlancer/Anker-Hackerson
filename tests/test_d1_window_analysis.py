@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from analyze_d1_window import analyze
+from scripts.analysis.analyze_d1_window import analyze
 
 
 class D1WindowAnalysisTests(unittest.TestCase):

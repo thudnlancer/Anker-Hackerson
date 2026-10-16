@@ -13,7 +13,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.rolling import RollingPlan
-from run_live import run_once, run_once_milp
+from scripts.online.run_live import run_once, run_once_milp
 
 
 class StubHA:
@@ -98,7 +98,7 @@ class DryRunChainTests(unittest.TestCase):
             ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
                                              "status": "attempted_unknown"})
             raise TimeoutError("mock_post_timeout")
-        with patch("run_live.make_candidate", return_value={
+        with patch("scripts.online.run_live.make_candidate", return_value={
                 "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
                 "battery_flow": "charge", "battery_power_w": 100,
                 "candidate": {"target_w": 100}}), \
@@ -123,7 +123,7 @@ class DryRunChainTests(unittest.TestCase):
             ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
                                              "status": "attempted_unknown"})
             raise TimeoutError("mock_post_timeout")
-        with patch("run_live.make_candidate", return_value={
+        with patch("scripts.online.run_live.make_candidate", return_value={
                 "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
                 "battery_flow": "charge", "battery_power_w": 100,
                 "candidate": {"target_w": 100}}), \
@@ -176,7 +176,7 @@ class DryRunChainTests(unittest.TestCase):
 
     def test_late_solver_candidate_is_never_written(self):
         ha = StubHA({"1502": state()})
-        with patch("run_live.make_candidate", side_effect=lambda *a, **k: (time.sleep(.08), {
+        with patch("scripts.online.run_live.make_candidate", side_effect=lambda *a, **k: (time.sleep(.08), {
                 "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
                 "battery_flow": "charge", "battery_power_w": 100,
                 "candidate": {"target_w": 100}})[1]):
@@ -203,7 +203,7 @@ class DryRunChainTests(unittest.TestCase):
             release.wait(1)
             return candidate
         config = {**cfg(verified=True), "round_deadline_seconds": .5}
-        with patch("run_live.make_candidate", side_effect=slow):
+        with patch("scripts.online.run_live.make_candidate", side_effect=slow):
             previous = threading.Thread(target=lambda: previous_rows.extend(run_once_milp(
                 config, ha, StubSim(make_prices()), write_enabled=True, carry=carry)))
             previous.start()
@@ -308,7 +308,7 @@ class DryRunChainTests(unittest.TestCase):
         del config["device_timezone"]
         sim = StubSim(make_prices())
         sim.current_price = lambda: {}
-        with patch("run_live.dispatch") as dispatch:
+        with patch("scripts.online.run_live.dispatch") as dispatch:
             rows = run_once(config, ha, sim, write_enabled=True)
         self.assertEqual(rows[0]["status"], "economic_action_blocked")
         self.assertEqual(rows[0]["writes_performed"], 0)

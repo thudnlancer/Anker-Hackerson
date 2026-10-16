@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from capture_dashboard_snapshot import capture
+from scripts.online.capture_dashboard_snapshot import capture
 
 
 class _Response:
@@ -35,8 +35,8 @@ class CaptureDashboardSnapshotTests(unittest.TestCase):
             old = {"ended_at": "old", "track": "mock", "days": 7}
             new = {"ended_at": "new", "track": "mock", "days": 7,
                    "sites": [{"site_id": str(i), "metrics": {}} for i in (1, 2, 3)]}
-            with patch("capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "test-token"})), \
-                 patch("capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
+            with patch("scripts.online.capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "test-token"})), \
+                 patch("scripts.online.capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
                                                                                 _Response(_dashboard([old, new]))]):
                 pre = capture(config, root / "out", "run-1", "prestart")
                 end = capture(config, root / "out", "run-1", "end")
@@ -55,8 +55,8 @@ class CaptureDashboardSnapshotTests(unittest.TestCase):
             config.write_text(json.dumps({"sim_base": "https://example.invalid", "sim_username": "u",
                                           "sim_password": "p"}))
             old = {"ended_at": "old", "track": "mock", "days": 7}
-            with patch("capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "t"})), \
-                 patch("capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
+            with patch("scripts.online.capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "t"})), \
+                 patch("scripts.online.capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
                                                                                 _Response(_dashboard([old]))]):
                 capture(config, root / "out", "run-1", "prestart")
                 with self.assertRaisesRegex(ValueError, "no new settled run"):
@@ -74,8 +74,8 @@ class CaptureDashboardSnapshotTests(unittest.TestCase):
             old = {"ended_at": "old", "track": "mock", "days": 7}
             first = {"ended_at": "first", "track": "mock", "days": 7}
             second = {"ended_at": "second", "track": "mock", "days": 7}
-            with patch("capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "t"})), \
-                 patch("capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
+            with patch("scripts.online.capture_dashboard_snapshot.requests.post", return_value=_Response({"token": "t"})), \
+                 patch("scripts.online.capture_dashboard_snapshot.requests.get", side_effect=[_Response(_dashboard([old])),
                                                                                 _Response(_dashboard([old, first, second])),
                                                                                 _Response(_dashboard([old, first, second]))]):
                 capture(config, root / "out", "run-2", "prestart")

@@ -18,7 +18,7 @@ def command(config: Path, cache_dir: Path, health_dir: Path, node_id: str,
         raise ValueError("iterations must be nonnegative and interval positive")
     if not node_id.replace("_", "").replace("-", "").isalnum():
         raise ValueError("node-id must be filename-safe")
-    args = [sys.executable, "-u", str(ROOT / "collect_online_history.py"),
+    args = [sys.executable, "-u", str(ROOT / "scripts/online/collect_online_history.py"),
             "--config", str(config.resolve()), "--cache-dir", str(cache_dir.resolve()),
             "--health-dir", str(health_dir.resolve()), "--node-id", node_id,
             "--iterations", str(iterations), "--interval-seconds", str(interval_seconds),

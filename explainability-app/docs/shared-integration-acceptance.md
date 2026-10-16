@@ -2,7 +2,7 @@
 
 验收日期：2026-10-13。共同仓库基线：`8ac78e5dafadebb9909f3b3760760df74dc2e844`。本轮接入在本地 `feat/explainability-integration` 分支完成；本文件记录本地实际执行结果，GitHub CI 尚未运行。
 
-安装与接入命令见 [协作说明](../../EXPLAINABILITY_COLLABORATION.md)。使用 Python 3.12.14、Node 24.18.0、npm 11.16.0；运行与测试依赖记录在 `requirements.lock`、`requirements.shared.lock` 和 `frontend/package-lock.json`。本轮复用已有 Python 环境提供依赖，但显式设置共同仓库的 `PYTHONPATH`；测试验证了实际加载的解释包和策略源码均来自共同仓库。
+安装与接入命令见 [协作说明](../../docs/integration/EXPLAINABILITY_COLLABORATION.md)。使用 Python 3.12.14、Node 24.18.0、npm 11.16.0；运行与测试依赖记录在 `requirements.lock`、`requirements.shared.lock` 和 `frontend/package-lock.json`。本轮复用已有 Python 环境提供依赖，但显式设置共同仓库的 `PYTHONPATH`；测试验证了实际加载的解释包和策略源码均来自共同仓库。
 
 ## 实际结果
 

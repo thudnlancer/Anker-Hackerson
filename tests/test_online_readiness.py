@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from check_online_readiness import check, check_control_config
+from scripts.online.check_online_readiness import check, check_control_config
 
 
 class OnlineReadinessTests(unittest.TestCase):

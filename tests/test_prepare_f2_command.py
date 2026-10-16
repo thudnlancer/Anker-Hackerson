@@ -4,7 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from prepare_f2_command import command_from_manifest
+from scripts.experiments.prepare_f2_command import command_from_manifest
 
 
 class F2CommandTests(unittest.TestCase):

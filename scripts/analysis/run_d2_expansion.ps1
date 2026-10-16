@@ -21,7 +21,7 @@ if (-not $target.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'OutputDir must be a new child directory under workspace outputs'
 }
 if (Test-Path -LiteralPath $target) { throw 'OutputDir already exists; refusing overwrite' }
-$runner = Join-Path $repoRoot 'run_irradiance_shadow.py'
+$runner = Join-Path $repoRoot 'scripts/online/run_irradiance_shadow.py'
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw 'read-only pilot runner missing' }
 $plan = [ordered]@{mode='plan_only'; runner=$runner; output=$target; batches=$Batches;
                    iterations_per_batch=$Iterations; interval_seconds=$IntervalSeconds;

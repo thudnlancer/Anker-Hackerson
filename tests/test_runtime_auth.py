@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.config import exchange_ha_token, require_runtime_fields, load_runtime_config
 from energy_lab.ha_client import HAClient
 from energy_lab.sim_client import SimulatorClient
-import run_shadow_dry_run as shadow_runner
+import scripts.online.run_shadow_dry_run as shadow_runner
 
 
 def configuration():
@@ -56,9 +56,9 @@ class RuntimeAuthenticationTests(unittest.TestCase):
 
     def test_local_and_remote_example_proxy_modes(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertEqual(load_runtime_config(root / "local_online_config.example.json")["proxy_mode"],
+        self.assertEqual(load_runtime_config(root / "config/templates/local_online_config.example.json")["proxy_mode"],
                          "environment")
-        self.assertEqual(load_runtime_config(root / "remote_runtime_config.example.json")["proxy_mode"],
+        self.assertEqual(load_runtime_config(root / "config/templates/remote_runtime_config.example.json")["proxy_mode"],
                          "direct")
 
     def test_absent_or_null_token_uses_account_exchange_instead_of_bearer_none(self):

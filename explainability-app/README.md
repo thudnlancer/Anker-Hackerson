@@ -36,7 +36,7 @@ python -m pip install --no-deps -e .
 
 已从提供的历史日志恢复并接入实际 MILP 源码。运行 `python -m energy_explain verify-model` 可验证 4、24、96 步模型记录；这些记录使用人工输入并明确标记来源。源码版本、启动方式与真实决策重放所需字段见 [恢复模型接入说明](docs/recovered-model-integration.md)。
 
-本目录现在位于共同策略仓库。使用 `shared-milp-603de45c-cf1` 的记录直接调用上层 `energy_lab.rolling`，从同一次 shadow 求解导出输入与费用。共同源码、Python 路径和团队交接步骤见 [共同仓库协作接入说明](../EXPLAINABILITY_COLLABORATION.md)。历史提供器仅服务其明确匹配的旧模型版本，不作为共享模型缺失时的替代。
+本目录现在位于共同策略仓库。使用 `shared-milp-603de45c-cf1` 的记录直接调用上层 `energy_lab.rolling`，从同一次 shadow 求解导出输入与费用。共同源码、Python 路径和团队交接步骤见 [共同仓库协作接入说明](../docs/integration/EXPLAINABILITY_COLLABORATION.md)。历史提供器仅服务其明确匹配的旧模型版本，不作为共享模型缺失时的替代。
 
 已完成真实 HA 三站读取、现场输入的本地 shadow、证据导入及反事实验收；未来功率仍明确使用持久假设。实际结果与复现方式见 [真实环境只读接入验收](docs/live-readonly-acceptance.md)。
 

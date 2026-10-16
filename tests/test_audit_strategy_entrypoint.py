@@ -1,6 +1,6 @@
 """The legacy import and CLI both resolve to the structured analysis module."""
 
-import audit_strategy_results
+import scripts.analysis.audit_strategy_results as audit_strategy_results
 from scripts.analysis.audit_strategy_results import audit
 
 

@@ -176,11 +176,11 @@ class ExplainabilityBridgeTests(unittest.TestCase):
             snapshot_path = path / "snapshot.json"
             snapshot_path.write_text(json.dumps(self.snapshot), encoding="utf-8")
             def run(output, extra):
-                argv = [str(PROJECT / "run_shadow_dry_run.py"), "--snapshot", str(snapshot_path),
+                argv = [str(PROJECT / "scripts/online/run_shadow_dry_run.py"), "--snapshot", str(snapshot_path),
                     "--replay-at-capture", "--config", str(path / "unused-config.json"),
                     "--model-directory", str(path / "missing-models"), "--output", str(output), *extra]
                 with patch.object(sys, "argv", argv), patch("requests.Session", side_effect=AssertionError("offline runner used network")), redirect_stdout(io.StringIO()):
-                    runpy.run_path(str(PROJECT / "run_shadow_dry_run.py"), run_name="__main__")
+                    runpy.run_path(str(PROJECT / "scripts/online/run_shadow_dry_run.py"), run_name="__main__")
                 return json.loads((output / "result.json").read_text())
             baseline = run(path / "without-hook", [])
             self.assertNotIn("explainability_export", baseline)

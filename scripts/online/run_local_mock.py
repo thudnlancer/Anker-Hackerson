@@ -22,7 +22,8 @@ from energy_lab.config import exchange_ha_access, load_runtime_config, require_r
 from energy_lab.ha_client import HAClient
 from energy_lab.reconciliation import ReconciliationStore
 from energy_lab.sim_client import SimulatorClient
-from run_live import run_once_milp
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.online.run_live import run_once_milp
 
 
 def now() -> str:

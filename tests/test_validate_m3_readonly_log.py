@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from validate_m3_readonly_log import validate
+from scripts.maintenance.validate_m3_readonly_log import validate
 
 
 class M3ReadonlyLogTests(unittest.TestCase):

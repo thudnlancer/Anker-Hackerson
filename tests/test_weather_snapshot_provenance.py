@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from capture_api_weather_snapshot import capture
+from scripts.online.capture_api_weather_snapshot import capture
 
 
 def test_each_response_is_bracketed_and_raw_payload_preserved(tmp_path):
@@ -29,10 +29,10 @@ def test_each_response_is_bracketed_and_raw_payload_preserved(tmp_path):
             calls.append(url.rsplit('/', 1)[-1])
             return Response({'time': next(times)} if url.endswith('/health') else payload)
 
-    with patch('capture_api_weather_snapshot.load_runtime_config', return_value={
+    with patch('scripts.online.capture_api_weather_snapshot.load_runtime_config', return_value={
         'sim_base': 'http://offline.invalid', 'sim_username': 'test',
         'sim_password': 'test', 'stations': {'1': {}}}), \
-            patch('capture_api_weather_snapshot.requests.Session', return_value=Session()):
+            patch('scripts.online.capture_api_weather_snapshot.requests.Session', return_value=Session()):
         result = capture(Path('unused.json'), tmp_path / 'snapshot.json', epoch_id='new-window')
     assert calls == ['health', 'health', 'today', 'health', 'health', 'tomorrow', 'health']
     today = result['sites']['1']['today']

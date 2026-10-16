@@ -8,7 +8,7 @@ import unittest
 
 class LoggedRunnerTests(unittest.TestCase):
     def test_parser_failure_keeps_true_exit_code_and_log(self):
-        script = Path(__file__).resolve().parents[1] / "run_logged_experiment.py"
+        script = Path(__file__).resolve().parents[1] / "scripts/experiments/run_logged_experiment.py"
         with tempfile.TemporaryDirectory() as folder:
             result = subprocess.run([sys.executable, str(script), "--output", folder,
                                      "--solver", "invalid"], capture_output=True)

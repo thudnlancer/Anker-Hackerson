@@ -50,7 +50,7 @@ class SolverSecondsMappingTests(unittest.TestCase):
 
     def test_contest_config_file_loads_frozen_value(self):
         # The gitignored live contest config must carry the frozen value explicitly.
-        contest = Path(__file__).resolve().parents[1] / "local_online_config.json"
+        contest = Path(__file__).resolve().parents[1] / "config/local/local_online_config.json"
         if contest.exists():
             cfg = load_runtime_config(contest)
             self.assertEqual(cfg["solver_seconds"], 2.0)
@@ -88,7 +88,7 @@ class SolverSecondsMappingTests(unittest.TestCase):
         self.assertEqual(cfg["device_timezone_source"], "environment_machine.device_timezone")
 
     def test_local_timezone_only_is_rejected_by_online_price_guard(self):
-        from run_live import validate_milp_price_window
+        from scripts.online.run_live import validate_milp_price_window
         cfg = load_runtime_config(write_config(env_config(local={"timezone": "Asia/Shanghai"})))
         self.assertEqual(validate_milp_price_window([], "2031-01-01 08:15:00", cfg["device_timezone"]),
                          "device_time_misaligned:missing_trusted_device_timezone")

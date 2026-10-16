@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyze_dayblock_bootstrap import (ALPHAS, analyze_lead, assign_day, bootstrap_ratio,
+from scripts.analysis.analyze_dayblock_bootstrap import (ALPHAS, analyze_lead, assign_day, bootstrap_ratio,
                                         is_daylight, load_rows, mae_ratio, mixed_mae, run, verdict)
 
 

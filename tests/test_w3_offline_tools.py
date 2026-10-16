@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / f"{name}.py")
+    category = "analysis" if name in {"audit_w3_cache", "run_w3_offline_drill"} else "online"
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / category / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

@@ -118,7 +118,7 @@ def write_json(path: Path, payload: object) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="B1 supervised zero-flow hardware verification (single site)")
-    parser.add_argument("--config", type=Path, default=Path("local_online_config.json"))
+    parser.add_argument("--config", type=Path, default=Path("config/local/local_online_config.json"))
     parser.add_argument("--site", required=True, help="single site id from the config stations mapping")
     parser.add_argument("--mode", choices=("dry-run", "live"), default="dry-run",
                         help="dry-run is the default; live must be explicitly requested")

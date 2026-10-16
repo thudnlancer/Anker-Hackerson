@@ -15,7 +15,7 @@ from energy_lab.contest_replay import (
 )
 from energy_lab.model import Battery
 from energy_lab.rolling import optimize_window
-from run_contest_strategy_replay import accepted_plan, evaluate, pv_forecast, visible_window
+from scripts.online.run_contest_strategy_replay import accepted_plan, evaluate, pv_forecast, visible_window
 
 
 class ContestReplayTests(unittest.TestCase):
@@ -78,7 +78,7 @@ class ContestReplayTests(unittest.TestCase):
             directory = Path(temp)
             path = directory / "1.csv"
             raw.to_csv(path, index=False)
-            with patch("run_contest_strategy_replay.optimize_window",
+            with patch("scripts.online.run_contest_strategy_replay.optimize_window",
                        return_value=SimpleNamespace(status="limit_reached")) as mocked:
                 result = evaluate(path, directory, 1, 0, .02, .02, 5., "zero_flow")
             self.assertEqual(mocked.call_count, 168)
@@ -101,7 +101,7 @@ class ContestReplayTests(unittest.TestCase):
             incumbent = SimpleNamespace(status="limit_reached", suboptimal=True, mip_gap=.125,
                                         plan=pd.DataFrame([{"flow": "idle", "charge_w": 0.,
                                                             "discharge_w": 0.}]))
-            with patch("run_contest_strategy_replay.optimize_window", return_value=incumbent):
+            with patch("scripts.online.run_contest_strategy_replay.optimize_window", return_value=incumbent):
                 result = evaluate(path, directory, 1, 0, .02, .02, 2., "zero_flow")
             trace = pd.read_csv(directory / "site_1_trace.csv")
             candidate = trace.loc[trace.arm.eq("persistence")]
@@ -128,7 +128,7 @@ class ContestReplayTests(unittest.TestCase):
             directory = Path(temp)
             path = directory / "1.csv"
             raw.to_csv(path, index=False)
-            with patch("run_contest_strategy_replay.optimize_window",
+            with patch("scripts.online.run_contest_strategy_replay.optimize_window",
                        return_value=SimpleNamespace(status="infeasible", suboptimal=False)):
                 report = evaluate(path, directory, 1, 0, .02, .02, 2., "zero_flow")
             trace = pd.read_csv(directory / "site_1_trace.csv")

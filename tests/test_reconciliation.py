@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from energy_lab.execute import execute_candidate
 from energy_lab.ha_client import HAClient
 from energy_lab.reconciliation import ReconciliationStore
-from run_live import run_once_milp
+from scripts.online.run_live import run_once_milp
 from test_run_live_chain import StubHA, StubSim, cfg, make_prices, state
 
 

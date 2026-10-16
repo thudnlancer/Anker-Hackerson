@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import collect_online_history
-from collect_online_history import capture
-from collect_online_history import configured_device_timezone
+import scripts.online.collect_online_history as collect_online_history
+from scripts.online.collect_online_history import capture
+from scripts.online.collect_online_history import configured_device_timezone
 
 
 class HistoryCollectorTests(unittest.TestCase):
@@ -42,7 +42,7 @@ class HistoryCollectorTests(unittest.TestCase):
                 patch.object(collect_online_history, "fetch_snapshot", return_value=snapshot) as fetch, \
                 redirect_stdout(io.StringIO()) as output:
             collect_online_history.main()
-        fetch.assert_called_once_with(Path("local_online_config.json"), include_prices=False)
+        fetch.assert_called_once_with(Path("config/local/local_online_config.json"), include_prices=False)
         report = json.loads(output.getvalue())
         self.assertEqual(report["target_interval_seconds"], 5)
         self.assertEqual(report["writes_performed"], 0)

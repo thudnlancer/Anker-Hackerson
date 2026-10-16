@@ -2,7 +2,7 @@
 
 > 状态：评审稿，未实施。本文档不授权任何真实 HA 写入；所有涉及设备写入的步骤需单独授权后执行。
 > 范围：线上路径（`run_live.py`、`shadow.py`、HA 写入层）与离线 replay 口径统一。
-> 关联文档：[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[SOP_RECONCILIATION.md](../operations/SOP_RECONCILIATION.md)（SOP 控制语义）、[NEXT_STAGE_RESULTS.md](../../NEXT_STAGE_RESULTS.md)（2026-10-13 hold 语义隔离实验）。
+> 关联文档：[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[SOP_RECONCILIATION.md](../operations/SOP_RECONCILIATION.md)（SOP 控制语义）、[NEXT_STAGE_RESULTS.md](../experiments/NEXT_STAGE_RESULTS.md)（2026-10-13 hold 语义隔离实验）。
 
 ## 1. 背景与问题
 

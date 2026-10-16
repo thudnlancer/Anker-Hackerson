@@ -13,7 +13,7 @@ def test_command_uses_explicit_absolute_paths(tmp_path):
     cache = tmp_path / "cache"
     health = tmp_path / "health"
     args = command(config, cache, health, "nodeA", 4, 5.0, None)
-    assert args[2] == str(ROOT / "collect_online_history.py")
+    assert args[2] == str(ROOT / "scripts/online/collect_online_history.py")
     assert args[args.index("--config") + 1] == str(config.resolve())
     assert args[args.index("--cache-dir") + 1] == str(cache.resolve())
     assert args[args.index("--health-dir") + 1] == str(health.resolve())

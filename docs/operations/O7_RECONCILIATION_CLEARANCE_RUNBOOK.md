@@ -33,7 +33,7 @@ python scripts/online/review_ha_reconciliation.py `
 使用 review 输出中的当前 incident ID，逐站调用根目录兼容入口 `clear_ha_reconciliation.py`，并提供真实证据文件和明确 operator/reason：
 
 ```powershell
-python clear_ha_reconciliation.py `
+python scripts/maintenance/clear_ha_reconciliation.py `
   --state outputs/local_mock_20261016_run2/ha_reconciliation_state.json `
   --site <site> --incident-id <current-incident-id> `
   --operator <operator> --evidence <readback-evidence.json> `

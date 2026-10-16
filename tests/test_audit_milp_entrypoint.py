@@ -1,4 +1,4 @@
-import audit_milp_batch
+import scripts.analysis.audit_milp_batch as audit_milp_batch
 from scripts.analysis.audit_milp_batch import audit
 
 

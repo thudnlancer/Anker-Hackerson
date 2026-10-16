@@ -6,13 +6,17 @@ from scripts.maintenance.deployment_preflight import build_report
 def test_preflight_is_read_only_and_reports_expected_commit(monkeypatch, tmp_path):
     import scripts.maintenance.deployment_preflight as module
     monkeypatch.setattr(module, "ROOT", tmp_path)
-    required = ("src", "run_live.py", "requirements.txt", "remote_dry_run_ctl.sh",
-                "install_remote_dry_run_recovery.sh", "remote_runtime_config.example.json")
+    required = ("src", "scripts/online/run_live.py", "config/requirements.txt", "scripts/maintenance/remote_dry_run_ctl.sh",
+                "scripts/maintenance/install_remote_dry_run_recovery.sh", "config/templates/remote_runtime_config.example.json")
     (tmp_path / "src").mkdir()
+    (tmp_path / "scripts/online").mkdir(parents=True)
+    (tmp_path / "scripts/maintenance").mkdir(parents=True)
+    (tmp_path / "config/templates").mkdir(parents=True)
     (tmp_path / "src" / "module.py").write_text("x", encoding="utf-8")
     for name in required[1:5]:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text("x", encoding="utf-8")
-    (tmp_path / "remote_runtime_config.example.json").write_text(json.dumps({
+    (tmp_path / "config/templates/remote_runtime_config.example.json").write_text(json.dumps({
         "mode": "dry-run", "live_enabled": False, "allow_ha_write": False,
         "allow_formal_contest": False}), encoding="utf-8")
     monkeypatch.setattr(module, "git", lambda *args: (
@@ -33,6 +37,7 @@ def test_preflight_rejects_tracked_credentials_and_untracked_required_file(monke
     monkeypatch.setattr(module, "ROOT", tmp_path)
     (tmp_path / "src").mkdir()
     for name in module.REQUIRED[1:]:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text("{}", encoding="utf-8")
     monkeypatch.setattr(module, "git", lambda *args: (
         "abc123" if args[0] == "rev-parse" else
@@ -40,13 +45,14 @@ def test_preflight_rejects_tracked_credentials_and_untracked_required_file(monke
     report = build_report("abc123")
     assert report["ready_for_browser_terminal_dry_run"] is False
     assert report["credential_files_tracked"] == ["remote_runtime_config.json"]
-    assert report["required_tracked"]["run_live.py"] is False
+    assert report["required_tracked"]["scripts/online/run_live.py"] is False
 
 
 def test_preflight_rejects_dirty_tree_or_live_template(monkeypatch, tmp_path):
     import scripts.maintenance.deployment_preflight as module
     monkeypatch.setattr(module, "ROOT", tmp_path)
-    (tmp_path / "remote_runtime_config.example.json").write_text(json.dumps({
+    (tmp_path / "config/templates/remote_runtime_config.example.json").parent.mkdir(parents=True)
+    (tmp_path / "config/templates/remote_runtime_config.example.json").write_text(json.dumps({
         "mode": "live", "live_enabled": True, "allow_ha_write": True,
         "allow_formal_contest": True}), encoding="utf-8")
     monkeypatch.setattr(module, "git", lambda *args: "abc123" if args[0] == "rev-parse" else "modified")

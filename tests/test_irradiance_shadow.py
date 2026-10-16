@@ -8,8 +8,8 @@ from unittest.mock import patch
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run_irradiance_shadow import causal_calibration, evaluate_pair_snapshot
-from analyze_irradiance_shadow import analyze
+from scripts.online.run_irradiance_shadow import causal_calibration, evaluate_pair_snapshot
+from scripts.analysis.analyze_irradiance_shadow import analyze
 from energy_lab.shadow import make_candidate
 from energy_lab.rolling import RollingPlan
 
@@ -48,7 +48,7 @@ class IrradianceShadowTests(unittest.TestCase):
 
     def test_missing_history_still_produces_candidate_and_pair(self):
         snapshot = self.snapshot()
-        with patch("run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}) as mocked:
+        with patch("scripts.online.run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}) as mocked:
             results, additions = evaluate_pair_snapshot(snapshot, [], now=snapshot["received_at"])
         self.assertEqual(results["1"]["calibration_status"], "insufficient_pairs_persistence")
         self.assertEqual(len(additions), 1)
@@ -56,14 +56,14 @@ class IrradianceShadowTests(unittest.TestCase):
 
     def test_nowcast_scored_before_current_observation_override(self):
         snapshot = self.snapshot()
-        with patch("run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
+        with patch("scripts.online.run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
             results, _ = evaluate_pair_snapshot(snapshot, self.pairs(), now=snapshot["received_at"])
         self.assertEqual(results["1"]["calibrated_nowcast_w"], 1000.)
         self.assertEqual(results["1"]["concurrent_pair_abs_error_w"], 200.)
 
     def test_solver_budget_is_explicit_without_changing_idle_semantics(self):
         snapshot = self.snapshot()
-        with patch("run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}) as mocked:
+        with patch("scripts.online.run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}) as mocked:
             evaluate_pair_snapshot(snapshot, self.pairs(), now=snapshot["received_at"], solver_seconds=.2)
         self.assertEqual(mocked.call_args.kwargs["solver_seconds"], .2)
         self.assertEqual(mocked.call_args.kwargs["idle_candidate"], "zero_charge_unverified")
@@ -92,7 +92,7 @@ class IrradianceShadowTests(unittest.TestCase):
 
     def test_future_scoring_freezes_earlier_weather_and_scale(self):
         snapshot = self.snapshot()
-        with patch("run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
+        with patch("scripts.online.run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
             results, current = evaluate_pair_snapshot(snapshot, self.pairs(), now=snapshot["received_at"])
         future = {**current[0], "device_time": "2032-01-01T12:00:00Z",
                   "received_at": "2026-10-13T00:02:00Z", "pv_w": 1200.}
@@ -112,7 +112,7 @@ class IrradianceShadowTests(unittest.TestCase):
 
     def test_future_evaluation_rejects_tampered_calibration(self):
         snapshot = self.snapshot()
-        with patch("run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
+        with patch("scripts.online.run_irradiance_shadow.make_candidate", return_value={"status": "candidate_only"}):
             results, current = evaluate_pair_snapshot(snapshot, self.pairs(), now=snapshot["received_at"])
         results["1"]["calibration"]["scale_w_per_wm2"] = 99.
         report = {"pairs": self.pairs()+current, "cycles": [{"iteration": 1, "stations": results}]}

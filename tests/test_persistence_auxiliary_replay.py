@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run_persistence_vs_auxiliary_replay import forecast_paths, execute, decompose_saving
+from scripts.experiments.run_persistence_vs_auxiliary_replay import forecast_paths, execute, decompose_saving
 from energy_lab.model import Battery
 
 

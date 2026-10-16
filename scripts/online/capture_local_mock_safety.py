@@ -8,13 +8,15 @@ import json
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from energy_lab.config import exchange_ha_token, load_runtime_config, require_runtime_fields
 from energy_lab.ha_client import HAClient
 from energy_lab.sim_client import SimulatorClient
-from recover_local_mock import read_controls
+from scripts.online.recover_local_mock import read_controls
 
 
 def main() -> None:

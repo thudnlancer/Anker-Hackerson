@@ -77,7 +77,7 @@ def _spread_seconds(last_changed: list[str]) -> float | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="B3 read-only HA physical calibration audit")
-    parser.add_argument("--config", type=Path, default=Path("local_online_config.json"))
+    parser.add_argument("--config", type=Path, default=Path("config/local/local_online_config.json"))
     parser.add_argument("--samples", type=int, default=12)
     parser.add_argument("--interval-seconds", type=float, default=5.0)
     parser.add_argument("--pv-rating-w", type=float, default=None,

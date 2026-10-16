@@ -3,7 +3,7 @@
 > 用途：线 B 评审演示材料。用两份离线 fixture 演示 B1 验证流程的判定逻辑、失败识别能力与证据留档格式。
 > 本文档所有输出均为 dry-run 离线演练实录，**未发生任何真实 HA 写入**。
 > 当前 runner 已纳入 `scripts/online/`；live 模式必须显式选择并检查 HA reconciliation journal。当前 run2 三站仍 pending，live 会在联网前拒绝。下文 live 命令只作历史格式示例，禁止在 pending 未人工核验关闭时执行。
-> 关联文档：[HOLD_SEMANTICS_DESIGN.md](../decisions/HOLD_SEMANTICS_DESIGN.md) §4 步骤 1、§6 V3（判定标准来源）；[PROJECT_STATUS_AND_WORKSTREAMS.md](../../PROJECT_STATUS_AND_WORKSTREAMS.md) 线 B（任务定义）。
+> 关联文档：[HOLD_SEMANTICS_DESIGN.md](../decisions/HOLD_SEMANTICS_DESIGN.md) §4 步骤 1、§6 V3（判定标准来源）；[PROJECT_STATUS_AND_WORKSTREAMS.md](../project-management/PROJECT_STATUS_AND_WORKSTREAMS.md) 线 B（任务定义）。
 > 演示日期：2026-10-13。
 
 ## 1. 演示目的
@@ -33,12 +33,12 @@ B1 是线 B 的第一个真实写入动作：单站第三方模式下发 `charge
 
 ```powershell
 # 场景 A：零流量生效
-python run_zero_flow_verification.py --site 1 --config local_online_config.json `
+python scripts/online/run_zero_flow_verification.py --site 1 --config local_online_config.json `
   --snapshot outputs/zero_flow_verification/mock_snapshot_site1.json `
   --output outputs/zero_flow_verification/mock_rehearsal_site1
 
 # 场景 B：设备不遵守（R1）
-python run_zero_flow_verification.py --site 1 --config local_online_config.json `
+python scripts/online/run_zero_flow_verification.py --site 1 --config local_online_config.json `
   --snapshot outputs/zero_flow_verification/mock_snapshot_site1_fail.json `
   --output outputs/zero_flow_verification/mock_rehearsal_site1_fail
 ```
@@ -119,7 +119,7 @@ python run_zero_flow_verification.py --site 1 --config local_online_config.json 
 4. live 执行命令（授权后）：
 
 ```powershell
-python run_zero_flow_verification.py --site 1 --config local_online_config.json --mode live `
+python scripts/online/run_zero_flow_verification.py --site 1 --config local_online_config.json --mode live `
   --authorization-note "评审会授权记录引用" --write-config
 ```
 
@@ -140,6 +140,6 @@ python run_zero_flow_verification.py --site 1 --config local_online_config.json 
 
 ## 附录 B：文件索引
 
-- 判定逻辑：[src/energy_lab/zero_flow.py](../../src/energy_lab/zero_flow.py)；runner：[run_zero_flow_verification.py](../../run_zero_flow_verification.py)；测试：[tests/test_zero_flow.py](../../tests/test_zero_flow.py)（19 用例）
+- 判定逻辑：[src/energy_lab/zero_flow.py](../../src/energy_lab/zero_flow.py)；runner：[run_zero_flow_verification.py](../../scripts/online/run_zero_flow_verification.py)；测试：[tests/test_zero_flow.py](../../tests/test_zero_flow.py)（19 用例）
 - fixture：[成功](../../outputs/zero_flow_verification/mock_snapshot_site1.json) / [失败](../../outputs/zero_flow_verification/mock_snapshot_site1_fail.json)
 - 产物目录：[场景 A](../../outputs/zero_flow_verification/mock_rehearsal_site1) / [场景 B](../../outputs/zero_flow_verification/mock_rehearsal_site1_fail)

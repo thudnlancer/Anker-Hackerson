@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run_live import current_price_and_future, price_window
+from scripts.online.run_live import current_price_and_future, price_window
 
 
 class RunLiveTimeTests(unittest.TestCase):

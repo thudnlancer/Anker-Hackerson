@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from validate_f2_output import ARMS, COUNT_FIELDS, validate
+from scripts.maintenance.validate_f2_output import ARMS, COUNT_FIELDS, validate
 
 
 class F2OutputValidationTests(unittest.TestCase):
@@ -77,7 +77,7 @@ class F2OutputValidationTests(unittest.TestCase):
     def test_single_site_counts_and_physical_audit(self):
         with tempfile.TemporaryDirectory() as root:
             f1, sha, data, output, raw = self.fixture(root)
-            with patch("validate_f2_output.load_csv", return_value=raw):
+            with patch("scripts.maintenance.validate_f2_output.load_csv", return_value=raw):
                 result = validate(output, manifest_path=f1, expected_manifest_sha256=sha,
                                   data=data, allow_smoke=True)
             self.assertTrue(result["valid"])
@@ -94,7 +94,7 @@ class F2OutputValidationTests(unittest.TestCase):
             trace = pd.read_csv(path)
             trace.loc[trace.arm.eq("persistence"), "attribution"] = "non-optimizer-attributed"
             trace.to_csv(path, index=False)
-            with patch("validate_f2_output.load_csv", return_value=raw):
+            with patch("scripts.maintenance.validate_f2_output.load_csv", return_value=raw):
                 with self.assertRaisesRegex(ValueError, "attribution/fallback label"):
                     validate(output, manifest_path=f1, expected_manifest_sha256=sha,
                              data=data, allow_smoke=True)

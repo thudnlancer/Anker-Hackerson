@@ -15,8 +15,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 REQUIRED = (
-    "src", "run_live.py", "requirements.txt", "remote_dry_run_ctl.sh",
-    "install_remote_dry_run_recovery.sh", "remote_runtime_config.example.json",
+    "src", "scripts/online/run_live.py", "config/requirements.txt", "scripts/maintenance/remote_dry_run_ctl.sh",
+    "scripts/maintenance/install_remote_dry_run_recovery.sh", "config/templates/remote_runtime_config.example.json",
 )
 SECRET_NAMES = {"remote_runtime_config.json", "local_online_config.json", "config.json"}
 
@@ -44,7 +44,7 @@ def build_report(expected_commit: str | None = None) -> dict:
                else any(p.startswith(name + "/") for p in tracked))
         for name in REQUIRED
     }
-    template = ROOT / "remote_runtime_config.example.json"
+    template = ROOT / "config/templates/remote_runtime_config.example.json"
     raw = json.loads(template.read_text(encoding="utf-8")) if template.is_file() else {}
     safety = {key: raw.get(key) for key in ("mode", "live_enabled", "allow_ha_write", "allow_formal_contest")}
     forbidden_tracked = sorted(SECRET_NAMES & tracked)

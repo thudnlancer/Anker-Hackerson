@@ -12,7 +12,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_run_live_chain import StubHA, StubSim, make_prices, plan, state
-from run_live import run_once_milp
+from scripts.online.run_live import run_once_milp
 
 
 def three_site_config():

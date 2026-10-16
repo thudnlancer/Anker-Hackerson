@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from energy_lab.collector_health import NodeHealth, classify_cluster, evaluate_node
-from collector_monitor import run_round
+from scripts.online.collector_monitor import run_round
 import json
 from datetime import datetime, timezone
 import tempfile

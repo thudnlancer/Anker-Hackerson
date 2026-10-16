@@ -10,7 +10,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_run_live_chain import StubHA, StubSim, cfg, make_prices, plan, state
-from run_live import run_once, run_once_milp, price_window, validate_milp_price_window
+from scripts.online.run_live import run_once, run_once_milp, price_window, validate_milp_price_window
 from energy_lab.price_anchor import anchor_prices, anchor_device_time
 from energy_lab.price_anchor import read_anchored_tick
 from energy_lab.read_budget import ACTIVE_READ_BUDGET, ReadBudget, timed_read
