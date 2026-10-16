@@ -5,6 +5,12 @@ B4.1: every instance runs under a --node-id and writes per-node shard files
 collectors never share a write target and the monitor can detect stalls.
 After --max-consecutive-errors failed cycles the process exits non-zero and
 leaves restart to the watchdog (crash-loop supervision lives there).
+
+With --include-prices each tick also carries the hourly import/export price
+covering its device hour (contest price API serves today/tomorrow only, so
+prices must be captured live), and --price-log keeps a deduplicated raw copy
+of every price window for later audit. A manifest.json records the epoch,
+stations, timezone source, collector version and code revision.
 """
 
 from pathlib import Path
@@ -13,6 +19,7 @@ from time import perf_counter
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -22,7 +29,7 @@ from energy_lab.online_contract import (append_observation, normalize_station_ob
                                         normalize_weather_payload, infer_payload_timezone)
 from scripts.online.run_shadow_dry_run import fetch_snapshot
 
-COLLECTOR_VERSION = "collector/1.2-weather-degraded"
+COLLECTOR_VERSION = "collector/1.3-price-capture"
 
 
 def configured_device_timezone(path: Path) -> str | None:
@@ -73,13 +80,95 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def price_hour_lookup(prices: dict) -> dict:
+    """Hour-start -> (import_price, export_price) from the today/tomorrow windows."""
+    import pandas as pd
+    lookup = {}
+    for day in ("today", "tomorrow"):
+        for point in (prices.get(day) or {}).get("points", []):
+            try:
+                hour = pd.Timestamp(point["start"])
+                lookup[hour] = (float(point["import_price"]), float(point["export_price"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    return lookup
+
+
+def attach_tick_price(observation: dict, lookup: dict) -> None:
+    """Map a tick to the hourly price covering its device hour.
+
+    A tick is never rejected for a missing price: the columns stay None and
+    the reason is recorded, mirroring the weather degradation contract.
+    """
+    import pandas as pd
+    observation["import_price"] = None
+    observation["export_price"] = None
+    observation["price_status"] = "missing"
+    observation["price_missing_reason"] = None
+    if not lookup:
+        observation["price_missing_reason"] = "price window not captured"
+        return
+    try:
+        hour = pd.Timestamp(observation["device_time"]).floor("h")
+    except (ValueError, TypeError) as exc:
+        observation["price_missing_reason"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        return
+    found = lookup.get(hour)
+    if found is None:
+        observation["price_missing_reason"] = f"no price point for device hour {hour.isoformat()}"
+        return
+    observation["import_price"], observation["export_price"] = found
+    observation["price_status"] = "ok"
+
+
+def append_price_window(path: Path, snapshot: dict, state: dict) -> bool:
+    """Append the raw price window only when its content changed (dedup)."""
+    prices = snapshot.get("prices")
+    if not prices:
+        return False
+    blob = json.dumps(prices, sort_keys=True, ensure_ascii=False)
+    if blob == state.get("last_blob"):
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"received_at": utcnow(), "prices": prices}, ensure_ascii=False) + "\n")
+    state["last_blob"] = blob
+    return True
+
+
+def code_revision() -> str | None:
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, timeout=10,
+                             cwd=Path(__file__).resolve().parents[2])
+        return out.stdout.decode().strip() or None if out.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def write_manifest(cache_dir: Path, *, node_id: str, epoch_id: str, started_at: str,
+                   device_timezone: str | None, configured_timezone: str | None,
+                   include_prices: bool, price_log: Path | None) -> Path:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"node_id": node_id, "epoch_id": epoch_id, "started_at": started_at,
+               "collector_version": COLLECTOR_VERSION, "code_sha256": code_revision(),
+               "device_timezone": device_timezone, "configured_timezone": configured_timezone,
+               "include_prices": include_prices,
+               "price_log": str(price_log) if price_log else None,
+               "shard_pattern": f"site_{{site}}.{node_id}.jsonl"}
+    destination = cache_dir / "manifest.json"
+    destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return destination
+
+
 def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
             node_id: str | None = None, diagnostics: dict | None = None,
-            configured_timezone: str | None = None, epoch_id: str | None = None) -> int:
+            configured_timezone: str | None = None, epoch_id: str | None = None,
+            with_prices: bool = False) -> int:
     # HA state is a hard contract.  Weather is an optional forecast input: a
     # malformed/missing forecast must not discard an otherwise valid HA tick.
     prepared = []
     rejected = {}
+    lookup = price_hour_lookup(snapshot.get("prices") or {}) if with_prices else {}
     for site, item in snapshot["stations"].items():
         try:
             timezone_name = device_timezone or configured_timezone
@@ -117,12 +206,17 @@ def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
         except Exception as exc:
             # Deliberately do not carry forward or interpolate weather values.
             observation["weather_missing_reason"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        if with_prices:
+            attach_tick_price(observation, lookup)
         prepared.append(observation)
 
     if diagnostics is not None:
         diagnostics.update({"rejected_stations": rejected,
             "weather_missing": {row["site"]: row["weather_missing_reason"]
                                 for row in prepared if row["weather_status"] == "missing"}})
+        if with_prices:
+            diagnostics["price_missing"] = {row["site"]: row["price_missing_reason"]
+                                            for row in prepared if row["price_status"] != "ok"}
     if not prepared:
         raise ValueError(f"no valid HA stations: {rejected}")
 
@@ -176,6 +270,10 @@ def main() -> None:
     parser.add_argument("--node-id", default="nodeA",
                         help="shard/heartbeat identity of this collector instance (B4)")
     parser.add_argument("--epoch-id", help="independent simulator epoch/cache identity")
+    parser.add_argument("--include-prices", action="store_true",
+                        help="fetch the contest price window and attach hourly import/export prices to each tick")
+    parser.add_argument("--price-log", type=Path,
+                        help="append every changed raw price window to this JSONL file (requires --include-prices)")
     parser.add_argument("--health-dir", type=Path, default=Path("outputs/collector_health"))
     parser.add_argument("--max-consecutive-errors", type=int, default=12,
                         help="exit non-zero after this many failed cycles; 0 disables")
@@ -195,6 +293,13 @@ def main() -> None:
     # Generic local.timezone is a display/location setting, not confirmed HA
     # device-clock evidence. Never silently use it for a naive HA timestamp.
     confirmed_timezone = configured_device_timezone(args.config)
+    if args.price_log and not args.include_prices:
+        parser.error("--price-log requires --include-prices")
+    write_manifest(args.cache_dir, node_id=args.node_id, epoch_id=epoch_id,
+                   started_at=started_at, device_timezone=args.device_timezone,
+                   configured_timezone=confirmed_timezone,
+                   include_prices=args.include_prices, price_log=args.price_log)
+    price_state: dict = {}
     iteration = 0
     consecutive_errors = 0
     last_success_at: str | None = None
@@ -207,10 +312,12 @@ def main() -> None:
         diagnostics = {}
         try:
             snapshot = (json.loads(args.snapshot.read_text(encoding="utf-8")) if args.snapshot
-                        else fetch_snapshot(args.config, include_prices=False))
+                        else fetch_snapshot(args.config, include_prices=args.include_prices))
             count = capture(snapshot, args.cache_dir, args.device_timezone, node_id=args.node_id,
                             diagnostics=diagnostics, configured_timezone=confirmed_timezone,
-                            epoch_id=epoch_id)
+                            epoch_id=epoch_id, with_prices=args.include_prices)
+            if args.include_prices and args.price_log:
+                append_price_window(args.price_log, snapshot, price_state)
         except Exception as exc:
             count = 0
             error_type = type(exc).__name__

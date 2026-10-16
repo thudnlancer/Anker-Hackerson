@@ -281,5 +281,84 @@ class HistoryCollectorTests(unittest.TestCase):
         self.assertEqual(result["eligible_device_hours"], 2)
 
 
+class PriceCaptureTests(unittest.TestCase):
+    def snapshot(self, device_time="2032-04-02 00:15:00", prices=None):
+        point = {"timestamp": "2032-04-02T00:00:00Z", "condition": "clear",
+                 "temperature_c": 20, "cloud_cover_percent": 0, "solar_irradiance_wm2": 0}
+        snapshot = {"stations": {"1": {"received_at": "2026-10-10T06:00:00Z",
+            "state": {"soc": "50", "solar_power": "100", "home_load": "200", "device_time": device_time},
+            "weather": {"today": {"points": [point]}, "tomorrow": {"points": [
+                {**point, "timestamp": "2032-04-03T00:00:00Z"}]}}}}}
+        if prices is not None:
+            snapshot["prices"] = prices
+        return snapshot
+
+    def prices(self):
+        return {"today": {"date": "2032-04-02", "points": [
+                    {"start": "2032-04-02T00:00:00Z", "import_price": 0.31, "export_price": 0.11},
+                    {"start": "2032-04-02T01:00:00Z", "import_price": 0.32, "export_price": 0.12}]},
+                "tomorrow": {"date": "2032-04-03", "points": [
+                    {"start": "2032-04-03T00:00:00Z", "import_price": 0.33, "export_price": 0.13}]}}
+
+    def test_capture_with_prices_attaches_hourly_price_to_tick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            written = capture(self.snapshot(prices=self.prices()), Path(temp), with_prices=True)
+            self.assertEqual(written, 1)
+            row = json.loads((Path(temp) / "site_1.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(row["price_status"], "ok")
+        self.assertEqual(row["import_price"], 0.31)
+        self.assertEqual(row["export_price"], 0.11)
+
+    def test_tick_maps_to_its_own_hour_and_next_day_window(self):
+        with tempfile.TemporaryDirectory() as temp:
+            capture(self.snapshot(device_time="2032-04-02 01:45:00", prices=self.prices()),
+                    Path(temp), with_prices=True)
+            capture(self.snapshot(device_time="2032-04-03 00:00:00", prices=self.prices()),
+                    Path(temp), with_prices=True)
+            rows = [json.loads(line)
+                    for line in (Path(temp) / "site_1.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["import_price"] for row in rows], [0.32, 0.33])
+
+    def test_tick_outside_price_window_keeps_row_with_missing_price(self):
+        with tempfile.TemporaryDirectory() as temp:
+            written = capture(self.snapshot(device_time="2032-04-04 05:15:00", prices=self.prices()),
+                              Path(temp), with_prices=True)
+            self.assertEqual(written, 1)
+            row = json.loads((Path(temp) / "site_1.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(row["price_status"], "missing")
+        self.assertIsNone(row["import_price"])
+        self.assertIn("no price point", row["price_missing_reason"])
+
+    def test_without_price_flag_rows_have_no_price_columns(self):
+        with tempfile.TemporaryDirectory() as temp:
+            capture(self.snapshot(prices=self.prices()), Path(temp))
+            row = json.loads((Path(temp) / "site_1.jsonl").read_text(encoding="utf-8"))
+        self.assertNotIn("import_price", row)
+        self.assertNotIn("price_status", row)
+
+    def test_cli_include_prices_fetches_window_logs_changes_and_writes_manifest(self):
+        snapshot = self.snapshot(prices=self.prices())
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as health:
+            price_log = Path(temp) / "prices.jsonl"
+            with patch.object(sys, "argv", [
+                    "collect_online_history.py", "--cache-dir", temp, "--health-dir", health,
+                    "--iterations", "2", "--interval-seconds", "0.01",
+                    "--include-prices", "--price-log", str(price_log)]), \
+                    patch.object(collect_online_history, "fetch_snapshot", return_value=snapshot) as fetch, \
+                    redirect_stdout(io.StringIO()):
+                collect_online_history.main()
+            fetch.assert_called_with(Path("config/local/local_online_config.json"), include_prices=True)
+            # unchanged window is logged once across both iterations
+            self.assertEqual(len(price_log.read_text(encoding="utf-8").splitlines()), 1)
+            manifest = json.loads((Path(temp) / "manifest.json").read_text(encoding="utf-8"))
+            self.assertTrue(manifest["include_prices"])
+            self.assertEqual(manifest["collector_version"], collect_online_history.COLLECTOR_VERSION)
+
+    def test_price_log_requires_include_prices(self):
+        with patch.object(sys, "argv", ["collect_online_history.py", "--price-log", "x.jsonl"]):
+            with self.assertRaises(SystemExit):
+                collect_online_history.main()
+
+
 if __name__ == "__main__":
     unittest.main()
