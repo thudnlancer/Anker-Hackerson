@@ -15,7 +15,7 @@
 | O5 | HA 失败不自动重试、不跨站扩散，事故持久化 | journal pending、失败行、事务单元测试 | 修复已测；下一场需真实复验 |
 | O6 | 看板新增本次 mock run，可由前后快照对账 | `prelaunch_snapshot.json`、`ended_snapshot.json`、dashboard SHA | 已通过，runs/mock_count 6→7 |
 | O7 | 三站赛后恢复到安全模式，或未恢复时保留阻塞证据 | `post_end_recovery.json`、post-recovery snapshot、journal | 未通过；三站仍 pending/third_party_control |
-| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；主工作区核心 358、独立锁定环境产品后端 99 + 49 subtests、前端 18 及 build 已过；配置与完整发布门禁仍待复验 |
+| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；集成树核心 365、独立锁定环境产品后端 99 + 49 subtests、前端 18 及 build 已过；配置与完整发布门禁仍待复验 |
 | O9 | 比赛机可部署且不间断运行 | 固定 commit、部署 dry-run、PID/日志/重启证据 | 未验收；当前明确暂停远端控制 |
 
 ## 通过规则
@@ -31,3 +31,5 @@
 `energy_lab.zero_flow` 现提供离线判定与恢复计划，测试覆盖设定回显、电池双侧功率和被动电网结算；这不是硬件验收。没有真实下一设备 tick 的五项回读证据前，O7 和零流量执行资格均保持未通过。
 
 B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 dry-run；live 要求显式参数、授权说明、安全配置和现存 reconciliation journal，并只读扫描 `outputs/` 下全部 journal，任一 pending 时在执行 HA/API 请求前 fail-closed。当前三站 pending 会阻止 live。离线演练及 CLI 门禁测试通过，但没有真实写入或硬件回读，O7 状态不变。
+
+最新代码基线 `b706fd2`：W3 只读 collector launcher 已改为显式路径与次数参数，避免复用旧 mock 缓存或默认无限运行；主工作区与集成 worktree 对齐。该代码门禁不改变 run3 的事故结论：看板 6→7、三站 HA 事务与失败隔离有证据，但赛后模式仍未回显，O7/O9 未通过。下一轮本机模拟赛必须在三站 pending 经人工核验后才可启动，并用新窗口重新验证 O2/O5/O7。
