@@ -79,6 +79,6 @@ class ReconciliationStore:
             raise ValueError("readback_evidence_file_required")
         self._data["clearances"].append({"incident_id": incident_id, "site": site,
                                          "operator": operator, "reason": reason,
-                                         "evidence": str(evidence.resolve()), "cleared_at": _now()})
+                                         "evidence": evidence.as_posix(), "cleared_at": _now()})
         del self._data["pending"][site]
         self._save()

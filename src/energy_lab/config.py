@@ -193,8 +193,13 @@ def require_runtime_fields(cfg: dict[str, Any], *, write_enabled: bool = False) 
 
 
 def exchange_ha_token(cfg: dict[str, Any]) -> str:
+    return exchange_ha_access(cfg)["access_token"]
+
+
+def exchange_ha_access(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Return HA access token and lifetime; never persist either to logs."""
     if not is_placeholder(cfg.get("ha_token")):
-        return str(cfg["ha_token"])
+        return {"access_token": str(cfg["ha_token"]), "expires_in": None}
     if is_placeholder(cfg.get("ha_username")) or is_placeholder(cfg.get("ha_password")):
         raise RuntimeError("HA token is missing and HA username/password are unavailable")
     base = str(cfg["ha_base"]).rstrip("/")
@@ -221,7 +226,15 @@ def exchange_ha_token(cfg: dict[str, Any]) -> str:
         timeout=20,
     )
     token.raise_for_status()
-    access_token = token.json().get("access_token")
+    payload = token.json()
+    access_token = payload.get("access_token")
     if not access_token:
         raise RuntimeError("HA login did not return an access token")
-    return str(access_token)
+    expires_in = payload.get("expires_in", 1800)
+    try:
+        expires_in = float(expires_in)
+    except (TypeError, ValueError):
+        expires_in = 1800.0
+    if expires_in <= 0:
+        raise RuntimeError("HA login returned invalid token lifetime")
+    return {"access_token": str(access_token), "expires_in": expires_in}

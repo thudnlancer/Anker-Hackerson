@@ -26,6 +26,11 @@ class HAClient:
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
+    def replace_token(self, token: str) -> None:
+        if not token:
+            raise ValueError("empty HA token")
+        self.token = token
+
     def state(self, entity_id: str) -> dict[str, Any]:
         def read(timeout):
             r = self.session.get(f"{self.base}/api/states/{entity_id}", headers=self.headers, timeout=timeout)
@@ -103,7 +108,17 @@ class HAClient:
                 timeout=Timeout(total=remaining, connect=min(self.timeout, remaining),
                                 read=min(self.timeout, remaining)),
             )
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except requests.HTTPError:
+                # A rejected HTTP response is not proof that the device did
+                # not apply the command. Preserve the numeric status without
+                # logging the response body or credentials.
+                step["status"] = "http_rejected_not_device_verified"
+                step["http_status"] = r.status_code
+                if transaction:
+                    transaction.checkpoint(transaction.steps)
+                raise
             step["status"] = "http_acknowledged_not_device_verified"
             if transaction:
                 transaction.checkpoint(transaction.steps)

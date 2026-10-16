@@ -4,7 +4,7 @@
 
 ## 代理配置增量（2026-10-16）
 
-- HA 登录、HA 状态读取和模拟器读取现在共用显式 `proxy_mode`：`environment` 使用 `requests` 环境代理，`direct` 明确绕过代理。默认保守取 `environment`；远程比赛机模板取 `direct`，由比赛机网络实际可达性核实后才能使用。代理模式不写入 token，也不通过命令行传凭证。
+- HA 登录、HA 状态读取和模拟器读取现在共用显式 `proxy_mode`：`environment` 使用 `requests` 环境代理，`direct` 明确绕过代理。默认取 `environment` 以保持既有请求行为；远程比赛机模板取 `direct`，由比赛机网络实际可达性核实后才能使用。应用不在命令行或审计中主动写出 token；但当前上游是明文 HTTP，环境代理可以接触 HA 凭证/令牌，其日志策略仍需运维核查，不能声称代理侧零泄露。
 - 代理可达只证明 HTTP/鉴权链路可访问，不代表 current/未来价格完整、三站状态新鲜、价格对齐、求解成功或 10 tick M3 验收通过。
 - 修复后的只读预检（原 `alignment_budget_seconds=2.5`、`round_deadline_seconds=5.0` 未改）在代理下取得 current 档位，但在 `sim/api/price` 请求处于预算内超时：总采集 `2.504s`，三站 `eligible_for_milp_tick=false`，`writes_performed=0`。产物：`outputs/m3_prestart_20261016/preflight_proxy_fixed.json`。这不是 10 tick 证据，也不授权放宽截止时间。
 - 后续本地连续 dry-run 的审计文件 `outputs/m3_proxy_10tick_20261016/audit.csv` 至少包含 37 个完整三站轮次；所有完整轮次都因 `alignment_deadline_exceeded` 走零写入回退，求解器未被调用。文件另有一组轮次编号缺失的 3 行，不计入完整轮次。**因此虽然采样轮次数超过 10，10 tick 有效 M3 仍为 0/10，验收未通过。** 本地进程已停止，未启用 live。

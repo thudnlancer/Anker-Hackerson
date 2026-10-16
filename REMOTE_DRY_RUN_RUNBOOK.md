@@ -65,6 +65,8 @@ LINES=120 ./remote_dry_run_ctl.sh logs
 
 为主机重启恢复安装用户级 systemd。安装后 `start/status/stop` 会委托给 systemd，避免与手动 PID 管理相互冲突：
 
+**不要在现有 `nohup` 进程仍运行时直接执行安装脚本**：安装脚本使用 `systemctl --user enable --now`，可能同时启动第二个 dry-run。先记录现有 PID、启动时间、配置哈希和日志尾部；确认不在比赛窗口后，执行 `./remote_dry_run_ctl.sh stop` 并用 `ps` 确认原 PID 已退出，再安装服务。服务启动后核对仅有一个 `run_live.py --mode dry-run --strategy milp` 进程，并再次确认写入开关关闭。此切换属于受控停止与重新启动，不是浏览器断线存活验收的一部分。
+
 ```bash
 ./install_remote_dry_run_recovery.sh
 systemctl --user --no-pager status solarbank-dry-run.service

@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-from energy_lab.config import exchange_ha_token, load_runtime_config, require_runtime_fields
+from energy_lab.config import exchange_ha_access, load_runtime_config, require_runtime_fields
 from energy_lab.execute import check_soc_divergence, execute_candidate
 from energy_lab.ha_client import HAClient
 from energy_lab.model import dispatch
@@ -299,6 +299,13 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                                 "read_only_state_observed": True,
                                 "previous_delivery": carry["delivery_unknown"][site]})
                 continue
+            if write_enabled and carry.get("global_delivery_halt"):
+                results.append({"site": site, "status": "write_suspended",
+                                "device_time": stamp, "write_enabled": False,
+                                "writes_performed": 0, "optimizer_attributed": False,
+                                "reason": "another_site_delivery_failed_in_this_runner",
+                                "read_only_state_observed": True})
+                continue
             if previous is not None:
                 prev_candidate, prev_record = previous["candidate"], previous["record"]
                 if prev_record["writes_performed"] and prev_record["command_mode"] in (
@@ -373,6 +380,10 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     carry["previous"][site] = {"candidate": candidate, "record": record,
                                                "issued_at": issued_at}
                     if record["requires_reconciliation"]:
+                        # One uncertain POST is a shared HA-path incident.
+                        # Keep observing, but send no more commands from this
+                        # runner, including to other sites in the same round.
+                        carry["global_delivery_halt"] = True
                         carry["delivery_unknown"][site] = (
                             reconciliation_store.pending()[site] if reconciliation_store is not None
                             else {"device_time": stamp, "delivery_steps": record["delivery_steps"],
@@ -435,8 +446,10 @@ def main() -> None:
     mode = str(cfg["mode"]).lower().replace("_", "-")
     write_enabled = mode == "live"
     require_runtime_fields(cfg, write_enabled=write_enabled)
-    token = exchange_ha_token(cfg)
-    ha = HAClient(str(cfg["ha_base"]), token, proxy_mode=cfg["proxy_mode"])
+    access = exchange_ha_access(cfg)
+    ha = HAClient(str(cfg["ha_base"]), access["access_token"], proxy_mode=cfg["proxy_mode"])
+    refresh_at = (time.monotonic() + min(access["expires_in"] * .6, 1200)
+                  if access["expires_in"] is not None else None)
     sim = SimulatorClient(str(cfg["sim_base"]), str(cfg["sim_username"]),
                           str(cfg["sim_password"]), proxy_mode=cfg["proxy_mode"])
     print(f"mode={mode}; write_enabled={write_enabled}; strategy={args.strategy}; "
@@ -453,6 +466,15 @@ def main() -> None:
                             if write_enabled and args.strategy == "milp" else None)
     while True:
         loop_started = time.monotonic()
+        if refresh_at is not None and loop_started >= refresh_at:
+            try:
+                access = exchange_ha_access(cfg)
+                ha.replace_token(access["access_token"])
+                refresh_at = time.monotonic() + min(access["expires_in"] * .6, 1200)
+                print("HA access token refreshed", flush=True)
+            except Exception as exc:
+                carry["global_delivery_halt"] = True
+                print(f"HA token refresh failed; writes halted: {type(exc).__name__}", flush=True)
         if args.strategy == "milp":
             tick_results = run_once_milp(cfg, ha, sim, write_enabled=write_enabled,
                                          carry=carry, audit_csv=args.audit_csv,

@@ -115,6 +115,28 @@ class DryRunChainTests(unittest.TestCase):
         self.assertEqual(second[0]["writes_performed"], 0)
         self.assertTrue(second[0]["read_only_state_observed"])
 
+    def test_unknown_delivery_halts_other_sites_in_same_runner(self):
+        ha = StubHA({"1502": state(), "1503": state()})
+        carry = {}
+        def fail(*args, **kwargs):
+            from energy_lab.write_transaction import ACTIVE_WRITE
+            ACTIVE_WRITE.get().steps.append({"service": "mock/first", "entity_id": "mock",
+                                             "status": "attempted_unknown"})
+            raise TimeoutError("mock_post_timeout")
+        with patch("run_live.make_candidate", return_value={
+                "status": "candidate_only", "device_time": "2031-01-01T00:15:00+00:00",
+                "battery_flow": "charge", "battery_power_w": 100,
+                "candidate": {"target_w": 100}}), \
+             patch.object(ha, "set_dispatch", side_effect=fail):
+            config = cfg(verified=True)
+            config["stations"] = {"1": {"suffix": "1502", "zero_flow_verified": True},
+                                   "2": {"suffix": "1503", "zero_flow_verified": True}}
+            rows = run_once_milp(config, ha, StubSim(make_prices()),
+                                 write_enabled=True, carry=carry)
+        self.assertEqual([row["status"] for row in rows],
+                         ["delivery_failed", "write_suspended"])
+        self.assertEqual(ha.calls, [])
+
     def test_dry_run_verified_site_full_chain_zero_writes(self):
         with tempfile.TemporaryDirectory() as temp:
             audit = Path(temp) / "audit.csv"

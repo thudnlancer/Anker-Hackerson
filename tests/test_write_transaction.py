@@ -54,9 +54,13 @@ class WriteFaultTests(unittest.TestCase):
         self.assertFalse(row["optimizer_attributed"])
 
     def test_first_post_5xx_is_not_retried(self):
-        row, post = self.exercise([Response(requests.HTTPError("500"))])
+        response = Response(requests.HTTPError("500"))
+        response.status_code = 500
+        row, post = self.exercise([response])
         self.assertEqual(post.call_count, 1)
         self.assertTrue(row["requires_reconciliation"])
+        self.assertEqual(row["delivery_steps"][0]["status"], "http_rejected_not_device_verified")
+        self.assertEqual(row["delivery_steps"][0]["http_status"], 500)
 
     def test_second_and_third_post_failures_preserve_prefix(self):
         for failure_index in (1, 2):
