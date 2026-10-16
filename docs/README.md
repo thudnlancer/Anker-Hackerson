@@ -8,7 +8,8 @@
 - `WORKTREE_DIFF_AUDIT_20261016.md`：W3/W2/E4 相对主线的冲突审计。
 - `PROJECT_STATUS_AND_WORKSTREAMS.md`：集成负责人共享状态与当前进度。
 - `SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
-- `SOP_RECONCILIATION.md`：HA 下发事务和人工恢复规范。
+- `operations/SOP_RECONCILIATION.md`：早期 SOP 对齐记录；当前验收以在线流程里程碑为准。
+- `operations/REMOTE_DRY_RUN_RUNBOOK.md`：浏览器终端 + Git 固定提交的远程 dry-run 操作手册。
 - `M3_*`、`F1_*`、`F2_*`：比赛阶段验收材料。
 - `decisions/HOLD_SEMANTICS_DESIGN.md`：hold/idle 与设备执行语义的历史评审稿；根目录保留兼容链接。
 - `milestones/B2_ZERO_FLOW_REVIEW_DEMO.md`：B1 零流量离线演示；不代表硬件验收。

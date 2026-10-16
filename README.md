@@ -119,7 +119,7 @@ MILP 分块入口为 `run_milp_chunk.ps1`，例如：
 
 ## 本地到远程的切换（旧 SSH 私钥方案，当前不适用）
 
-当前只有 EC2 Instance Connect 浏览器终端，没有本地 SSH 私钥。下列 `deploy_remote.ps1` / `run_remote.ps1` 命令保留作历史方案，不用于当前验收；实际部署与常驻 dry-run 只按 [远程 dry-run runbook](REMOTE_DRY_RUN_RUNBOOK.md) 的 Git 固定提交路径执行，且须另行授权远端操作。
+当前只有 EC2 Instance Connect 浏览器终端，没有本地 SSH 私钥。下列 `deploy_remote.ps1` / `run_remote.ps1` 命令保留作历史方案，不用于当前验收；实际部署与常驻 dry-run 只按 [远程 dry-run runbook](docs/operations/REMOTE_DRY_RUN_RUNBOOK.md) 的 Git 固定提交路径执行，且须另行授权远端操作。
 
 本地里程碑完成后，远程参赛机只需要接收代码、模型和自己的运行配置。私钥仍保存在本机，HA 令牌和看板密码不写入命令行，也不随代码同步。
 
@@ -152,7 +152,7 @@ MILP 分块入口为 `run_milp_chunk.ps1`，例如：
 
 ## 仅使用 EC2 Instance Connect 浏览器
 
-比赛机固定提交、只读常驻、断线/重启恢复及 `status/logs/stop` 演练以 [远程 dry-run runbook](REMOTE_DRY_RUN_RUNBOOK.md) 为准。下文旧的裸 `nohup` 示例不含固定提交与显式 `--strategy milp`，不得用于当前验收。
+比赛机固定提交、只读常驻、断线/重启恢复及 `status/logs/stop` 演练以 [远程 dry-run runbook](docs/operations/REMOTE_DRY_RUN_RUNBOOK.md) 为准。下文旧的裸 `nohup` 示例不含固定提交与显式 `--strategy milp`，不得用于当前验收。
 
 当前参赛机连接信息为：实例 `i-0217afcd24bf6e9da`，可用区 `us-west-2a`，区域 `us-west-2`，公网地址 `35.92.220.3`，登录用户 `ec2-user`。浏览器连接路径是 AWS 控制台的 **EC2 → us-west-2 → Instances → Connect → EC2 Instance Connect**。
 
