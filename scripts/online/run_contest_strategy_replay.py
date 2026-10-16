@@ -18,6 +18,7 @@ from energy_lab.contest_replay import (
 )
 from energy_lab.model import Battery
 from energy_lab.rolling import optimize_window
+from energy_lab.strategies import STRATEGIES, StrategyRequest, get_strategy
 from energy_lab.validation import audit_trace
 
 IDLE = pd.Series({"flow": "idle", "charge_w": 0., "discharge_w": 0.})
@@ -76,9 +77,10 @@ def visible_window(raw, index, start, end, terminal_mode="a5_eval_start_mean"):
 def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
              hold_mode="self_consumption", terminal_mode="a5_eval_start_mean",
              capacity_kwh=14.0, max_power_w=5000.0, soc_min=0.0, soc_max=100.0,
-             charge_efficiency=0.95, discharge_efficiency=1.0):
+             charge_efficiency=0.95, discharge_efficiency=1.0, strategy="milp"):
     if discharge_efficiency != 1.0:
         raise ValueError("replay model has no independent discharge-efficiency parameter")
+    optimizer = get_strategy(strategy)
     with threadpool_limits(limits=1):
         started = perf_counter()
         raw = load_csv(path)
@@ -102,13 +104,25 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
             paths = power_inputs(current, raw.iloc[index-168:index], published)
 
             def solve(pv, load, soc):
-                return optimize_window(
+                if strategy == "milp":
+                    # Legacy default path: keep the module-level optimize_window
+                    # call so the established test seam (patching this module's
+                    # optimize_window) keeps working. New strategies integrate
+                    # via the registry.
+                    return optimize_window(
+                        published.time, pv, load, published.buy.to_numpy(), published.sell.to_numpy(),
+                        soc, capacity_kwh=capacity_kwh, max_power_w=max_power_w,
+                        charge_efficiency=charge_efficiency, solver="milp", command_contract="sop",
+                        soc_min=soc_min, soc_max=soc_max, step_hours=1.,
+                        terminal_price=terminal, degradation_cost_eur_kwh=wear,
+                        time_limit_seconds=solver_time_limit)
+                return optimizer.solve(StrategyRequest(
                     published.time, pv, load, published.buy.to_numpy(), published.sell.to_numpy(),
                     soc, capacity_kwh=capacity_kwh, max_power_w=max_power_w,
-                    charge_efficiency=charge_efficiency, solver="milp", command_contract="sop",
+                    charge_efficiency=charge_efficiency,
                     soc_min=soc_min, soc_max=soc_max, step_hours=1.,
                     terminal_price=terminal, degradation_cost_eur_kwh=wear,
-                    time_limit_seconds=solver_time_limit)
+                    time_limit_seconds=solver_time_limit))
 
             for arm, battery in batteries.items():
                 pv = pv_forecast(paths, published, arm) if arm in ("persistence", "irradiance", "hybrid") else paths["irradiance_pv"]
@@ -152,6 +166,7 @@ def evaluate(path, output, stage, offset, wear, threshold, solver_time_limit,
         settlement = float(realized.buy.mean())
         k = float((realized.load / 1000 * realized.buy).sum())
         report = {"site": path.stem, "start_index": start, "hours": 168,
+                  "strategy": strategy,
                   "successful_plan_idle_mode": hold_mode,
                   "accounting_arm": "zero_flow" if hold_mode == "zero_flow" else "self_use_diagnostic",
                   "start_time": str(realized.time.iloc[0]), "end_time": str(realized.time.iloc[-1]),
@@ -182,6 +197,8 @@ def main():
     parser.add_argument("--gate-threshold", type=float, default=.02,
                         help="minimum worst-scenario plan improvement in EUR; exploratory, not tuned")
     parser.add_argument("--solver-time-limit", type=float, default=5.)
+    parser.add_argument("--strategy", choices=sorted(STRATEGIES), default="milp",
+                        help="optimizer strategy used by every non-baseline arm")
     parser.add_argument("--capacity-kwh", type=float, default=14.)
     parser.add_argument("--max-power-w", type=float, default=5000.)
     parser.add_argument("--soc-min", type=float, default=0.)
@@ -223,7 +240,7 @@ def main():
                                args.gate_threshold, args.solver_time_limit, args.hold_mode,
                                args.terminal_price_mode, args.capacity_kwh, args.max_power_w,
                                args.soc_min, args.soc_max, args.charge_efficiency,
-                               args.discharge_efficiency) for p in paths]
+                               args.discharge_efficiency, args.strategy) for p in paths]
         for future in as_completed(futures):
             report = future.result()
             reports.append(report)

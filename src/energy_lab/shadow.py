@@ -5,6 +5,7 @@ import pandas as pd
 
 from .interface_contract import align_hourly_points, map_battery_action, state_is_fresh
 from .rolling import optimize_window
+from .strategies import StrategyRequest, get_strategy
 from .api_policy import build_api_power_path
 
 
@@ -75,7 +76,7 @@ def validate_state(state, received_at, *, now, max_age=15.):
         raise ValueError("invalid_device_observation")
 
 
-def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_seconds=1., capacity=14., max_power=5000., soc_min=0., soc_max=100., device_timezone=None, idle_candidate="legacy_hold", evidence_sink=None, evidence_identity=None, evidence_observed_at=None):
+def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_seconds=1., capacity=14., max_power=5000., soc_min=0., soc_max=100., device_timezone=None, idle_candidate="legacy_hold", evidence_sink=None, evidence_identity=None, evidence_observed_at=None, strategy="milp"):
     """Quarter-hour synthetic discretization; only current power is observed."""
     if idle_candidate not in ("legacy_hold", "zero_charge_unverified"):
         raise ValueError("invalid idle candidate policy")
@@ -113,11 +114,24 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
         pp, ll = f.pv.to_numpy(copy=True), f.load.to_numpy(copy=True)
         pp[0], ll[0] = pv, load
         forecast_mode = forecast_mode or "api_power_path"
-    result = optimize_window(times, pp, ll, lookup.import_price.to_numpy(), lookup.export_price.to_numpy(),
-                             float(state["soc"]), capacity_kwh=capacity, max_power_w=max_power,
-                             soc_min=soc_min, soc_max=soc_max, terminal_price=None, degradation_cost_eur_kwh=.02,
-                             solver="milp", step_hours=.25, command_contract="sop",
-                             time_limit_seconds=solver_seconds)
+    if strategy == "milp":
+        # Legacy default path: keep calling the module-level optimize_window so
+        # the long-standing test seam (patching energy_lab.shadow.optimize_window)
+        # and the frozen parameters stay intact. New strategies integrate via
+        # the registry below.
+        result = optimize_window(times, pp, ll, lookup.import_price.to_numpy(), lookup.export_price.to_numpy(),
+                                 float(state["soc"]), capacity_kwh=capacity, max_power_w=max_power,
+                                 soc_min=soc_min, soc_max=soc_max, terminal_price=None, degradation_cost_eur_kwh=.02,
+                                 solver="milp", step_hours=.25, command_contract="sop",
+                                 time_limit_seconds=solver_seconds)
+    else:
+        request = StrategyRequest(times=times, pv_w=pp, load_w=ll,
+                                  import_price=lookup.import_price.to_numpy(),
+                                  export_price=lookup.export_price.to_numpy(),
+                                  soc_percent=float(state["soc"]), capacity_kwh=capacity,
+                                  max_power_w=max_power, soc_min=soc_min, soc_max=soc_max,
+                                  step_hours=.25, time_limit_seconds=solver_seconds)
+        result = get_strategy(strategy).solve(request)
     if result.status != "optimal" and not getattr(result, "suboptimal", False):
         # Q1 decision: the explicit fallback is self-use mode, always labeled
         # non-optimizer-attributed. Software reserve is not a device reserve;
@@ -139,6 +153,7 @@ def make_candidate(state, prices, *, forecast=None, forecast_mode=None, solver_s
     if not mapping.representable:
         raise ValueError("optimizer_to_command_contract_mismatch")
     candidate = {"status": "candidate_only", "candidate": asdict(mapping), "forecast_mode": forecast_mode,
+            "strategy": strategy,
             "idle_candidate_policy": idle_candidate, "hardware_verified": False,
             "idle_model_consistent_under_zero_charge_assumption": idle_candidate == "zero_charge_unverified",
             "battery_flow": str(first.flow), "battery_power_w": power, "device_time": str(tick),
