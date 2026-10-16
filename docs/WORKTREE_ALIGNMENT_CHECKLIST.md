@@ -54,3 +54,7 @@
 再后续更新：D2 expansion 已移入 `scripts/analysis/`、默认 plan-only；collector restart 已移入 `scripts/maintenance/`、默认只读 PID/heartbeat/命令行预检。只对脚本做了离线测试，没有启动 D2 采集，也没有停止/启动 collector。详见 `WORKER_UNTRACKED_INVENTORY_20261016.md`。
 
 最终结构复验（当前 `2e2f0a2`）：主工作区与 `integration/online-milestone` 同 SHA 且均无未提交文件；全套核心测试 **370 passed**。W2/W3/E4 保持独立原始 worktree 以供追溯，不冒险覆盖主线。run2 journal pending 站点仍为 `1,2,3`，run3 ZIP 当前 SHA `A9E622EEF8C26C6C0D2A2FCAB3364B255B58AE7595D4F5F61C5E56A4C8172656`，未被重构流程改写。本轮没有启动 D2、停止/启动 collector、HA 写入或远程操作。
+
+## 当前权威快照（2026-10-16）
+
+主工作区 `feat/explainability-integration` 与集成 worktree `integration/online-milestone` 已对齐到 `1b1c9f7`，均干净；核心测试均为 373 passed，本地 dry-run 部署预检通过。E4/W2/W3/E5 参考 worktree 仍分别位于 `f6ff5df`、`a228f4b`、`7cd64c4`、`8362854`，不直接覆盖主线。三站 pending 未解除，O7 与完整在线流程均未通过。
