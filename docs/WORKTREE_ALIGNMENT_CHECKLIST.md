@@ -50,3 +50,5 @@
 后续收敛：B1/B3 runner 已在 `7202ff9` 纳入并通过核心测试；B1 默认 dry-run 且 pending journal 会在联网前阻断 live。W3 启动/重启脚本和 D2 批处理仍保留未跟踪状态，不纳入当前发布门禁。
 
 最新复核（2026-10-16）：主工作区 `feat/explainability-integration` 与集成 worktree `integration/online-milestone` 均为 `b706fd2`，集成树干净。核心全套 **365 passed**；产品独立锁定环境 **99 passed + 49 subtests**，`pip check` 通过；前端 **18 passed** 且 build 通过。主工作区只剩未跟踪 `restart_w3_collector.ps1`（进程停止/重启动作）、`run_d2_expansion.ps1`（旧入口依赖）和 `archive/.gitkeep`，状态详见 worker 清单；W2/W3/E4 worktree 仍分别在其原分支，不做无必要的 merge，功能差异审计结论见 `WORKTREE_DIFF_AUDIT_20261016.md`。run2 journal 三站 pending 保留，O7 未通过。
+
+再后续更新：D2 expansion 已移入 `scripts/analysis/`、默认 plan-only；collector restart 已移入 `scripts/maintenance/`、默认只读 PID/heartbeat/命令行预检。只对脚本做了离线测试，没有启动 D2 采集，也没有停止/启动 collector。详见 `WORKER_UNTRACKED_INVENTORY_20261016.md`。
