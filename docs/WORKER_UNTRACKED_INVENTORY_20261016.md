@@ -5,7 +5,7 @@
 | 文件 | 来源/用途 | 当前处置 | 纳入条件 |
 |---|---|---|---|
 | `audit_physical_calibration.py` | B3 只读 HA 物理校准 runner | 已迁入 `scripts/online/`，根目录保留兼容入口；只 GET，不下发 HA 服务 | 需在受控环境重新采集只读校准证据；代码通过 16 项相关测试 |
-| `run_zero_flow_verification.py` | B1 单站零流量验证，带 live 写入选项 | 已迁入 `scripts/online/`，根目录保留兼容入口；默认 dry-run | live 需显式 `--mode live`、人工授权、三项配置开关和现存 journal；任何 pending 会在联网前阻断。当前 run2 有三站 pending，因此 live 必然拒绝 |
+| `run_zero_flow_verification.py` | B1 单站零流量验证，带 live 写入选项 | 已迁入 `scripts/online/`，根目录保留兼容入口；默认 dry-run | live 需显式 `--mode live`、人工授权、三项配置开关和现存 journal；程序还扫描 `outputs/` 下所有 reconciliation journal，任一 pending 会在联网前阻断。当前 run2 有三站 pending，因此 live 必然拒绝 |
 | `launch_w3_collector.py` | W3 采集器启动器 | 保留根目录，未发布 | 固定 cache/health 路径且启动无限循环；需改为显式参数并完成主线采集契约测试 |
 | `restart_w3_collector.ps1` | W3 watchdog 重启演练 | 保留根目录，未发布 | 含 `Stop-Process` 和固定 PID/路径；必须先完成进程归属保护与离线演练，当前禁止运行 |
 | `run_d2_expansion.ps1` | D2 只读跨日采集链 | 保留根目录，未发布 | 依赖未在主线登记的 `run_irradiance_shadow.py`，需补 manifest、路径和零写入门禁 |

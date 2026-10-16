@@ -30,4 +30,4 @@
 
 `energy_lab.zero_flow` 现提供离线判定与恢复计划，测试覆盖设定回显、电池双侧功率和被动电网结算；这不是硬件验收。没有真实下一设备 tick 的五项回读证据前，O7 和零流量执行资格均保持未通过。
 
-B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 dry-run；live 要求显式参数、授权说明、安全配置和现存 reconciliation journal；journal 含 pending 时在执行 HA/API 请求前 fail-closed。当前三站 pending 会阻止 live。离线演练及 CLI 门禁测试通过，但没有真实写入或硬件回读，O7 状态不变。
+B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 dry-run；live 要求显式参数、授权说明、安全配置和现存 reconciliation journal，并只读扫描 `outputs/` 下全部 journal，任一 pending 时在执行 HA/API 请求前 fail-closed。当前三站 pending 会阻止 live。离线演练及 CLI 门禁测试通过，但没有真实写入或硬件回读，O7 状态不变。
