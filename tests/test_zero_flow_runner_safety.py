@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from scripts.online.run_zero_flow_verification import pending_reconciliation_journals
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +38,17 @@ def test_live_rejects_pending_incident_before_any_network(tmp_path):
     assert result.returncode != 0
     assert "blocked by pending HA reconciliation sites" in result.stderr
     assert not (tmp_path / "evidence").exists()
+
+
+def test_clean_alternate_journal_cannot_hide_pending_workspace_incident(tmp_path):
+    clean = tmp_path / "clean.json"
+    clean.write_text(json.dumps({"version": 1, "pending": {}, "clearances": []}), encoding="utf-8")
+    incident = tmp_path / "outputs" / "local_mock_run2" / "ha_reconciliation_state.json"
+    incident.parent.mkdir(parents=True)
+    incident.write_text(json.dumps({"version": 1, "pending": {"2": {"incident_id": "unknown"}},
+                                    "clearances": []}), encoding="utf-8")
+    blocked = pending_reconciliation_journals(tmp_path, clean)
+    assert list(blocked.values()) == [["2"]]
 
 
 def test_default_mode_is_dry_run_even_when_config_says_live(tmp_path):

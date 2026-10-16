@@ -44,6 +44,20 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def pending_reconciliation_journals(root: Path, selected: Path) -> dict[str, list[str]]:
+    """Check the selected journal and every local incident journal, without altering them."""
+    paths = {selected.resolve()}
+    outputs = root / "outputs"
+    if outputs.is_dir():
+        paths.update(path.resolve() for path in outputs.rglob("ha_reconciliation_state.json"))
+    blocked = {}
+    for path in sorted(paths):
+        pending = ReconciliationStore(path).pending()
+        if pending:
+            blocked[str(path)] = sorted(pending)
+    return blocked
+
+
 def read_verification_state(ha: HAClient, suffix: str) -> dict:
     """Read every entity the verification needs. Strictly read-only."""
     raw = ha.station_state(suffix)
@@ -137,9 +151,9 @@ def main() -> None:
     if live:
         if args.reconciliation_state is None or not args.reconciliation_state.is_file():
             raise SystemExit("live mode requires an existing --reconciliation-state journal")
-        pending = ReconciliationStore(args.reconciliation_state).pending()
-        if pending:
-            raise SystemExit(f"live mode blocked by pending HA reconciliation sites: {sorted(pending)}")
+        blocked = pending_reconciliation_journals(ROOT, args.reconciliation_state)
+        if blocked:
+            raise SystemExit(f"live mode blocked by pending HA reconciliation sites: {blocked}")
     if args.write_config and not live:
         raise SystemExit("--write-config only applies to a live verdict; refusing in dry-run")
 
