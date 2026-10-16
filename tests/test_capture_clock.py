@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import run_shadow_dry_run as runner
+import scripts.online.run_shadow_dry_run as runner
 from energy_lab.shadow import validate_state
 
 

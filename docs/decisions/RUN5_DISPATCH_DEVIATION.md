@@ -3,7 +3,7 @@
 > 状态：分析记录，非设计变更。仅回答「策略主动下发的功率指令，比设备自用该给的功率偏在哪、偏多少」，不折价。
 > 数据源：`outputs/local_mock_20261016_run5/audit.csv`（1008 行，三站各 336 轮，30 分钟采样）。
 > 分析脚本：`scripts/analysis/analyze_run5_dispatch_deviation.py`。
-> 关联：[run5 赛后利润归因](../experiments/run5_profit_attribution.md)（若存在）、[HOLD_SEMANTICS_DESIGN.md](./HOLD_SEMANTICS_DESIGN.md)。
+> 关联：run5 赛后利润归因（文档未落盘）、[HOLD_SEMANTICS_DESIGN.md](./HOLD_SEMANTICS_DESIGN.md)。
 
 ## 1. 背景
 

@@ -2,7 +2,7 @@
 
 本入口持续读取三站 HA 状态及公开价格/天气信息，调用共同策略的 shadow 求解，把同次候选证据导入本地解释库。它不调用 HA 控制服务，不加载预测 pickle，也不生成提交凭证、执行确认或官方结算。现场观测与未来预测/持久假设分别保存来源；候选费用和反事实差额均为模型结果。
 
-下面的启动步骤面向本机运行。执行凭证接口的 JSON 是**人工结构示例**，不表示实际下发或设备执行；现场读取不应使用 `synthetic` 标签。既有共同源码与导出契约见[协作说明](../../EXPLAINABILITY_COLLABORATION.md)，此前单次真实只读验收见[现场验收](live-readonly-acceptance.md)。
+下面的启动步骤面向本机运行。执行凭证接口的 JSON 是**人工结构示例**，不表示实际下发或设备执行；现场读取不应使用 `synthetic` 标签。既有共同源码与导出契约见[协作说明](../../docs/integration/EXPLAINABILITY_COLLABORATION.md)，此前单次真实只读验收见[现场验收](live-readonly-acceptance.md)。
 
 ## 启动三站连续采集
 
@@ -18,7 +18,7 @@ npm ci --prefix explainability-app/frontend
 npm run build --prefix explainability-app/frontend
 ```
 
-本工作区也可复用相邻独立框架的既有依赖环境：从共同仓库根目录执行 `source ../explainability-app/.venv/bin/activate`，然后设置上述共同仓库 `PYTHONPATH`。这仅复用依赖，解释包与策略源码仍加载共同仓库文件。Windows PowerShell 的路径分隔符改为 `;`，环境启动与依赖步骤见[协作说明](../../EXPLAINABILITY_COLLABORATION.md#安装与启动)。
+本工作区也可复用相邻独立框架的既有依赖环境：从共同仓库根目录执行 `source ../explainability-app/.venv/bin/activate`，然后设置上述共同仓库 `PYTHONPATH`。这仅复用依赖，解释包与策略源码仍加载共同仓库文件。Windows PowerShell 的路径分隔符改为 `;`，环境启动与依赖步骤见[协作说明](../../docs/integration/EXPLAINABILITY_COLLABORATION.md#安装与启动)。
 
 在三个终端分别运行；每个终端均使用上述环境与 `PYTHONPATH`：
 

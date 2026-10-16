@@ -46,8 +46,9 @@ def snapshot(wall, *, device_time=DEVICE, soc=50, first_hour_cheap=False):
 def forbid_network(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("offline control test attempted an actual network request")
-    for name in ("get", "post", "request", "Session"):
-        monkeypatch.setattr(requests, name, forbidden)
+    # Guard the actual HTTP entry point only: constructing a Session is not a
+    # network request, and HAClient eagerly creates one at construction.
+    monkeypatch.setattr(requests.sessions.Session, "request", forbidden)
 
 
 @pytest.fixture
@@ -98,7 +99,7 @@ def test_same_milp_zero_battery_plan_is_saved_as_explicit_zero_charge_candidate(
     assert env.journal.attempts() == []
     for site, decision in planned["decisions"].items():
         result = planned["stations"][site]
-        assert result["battery_flow"] == "hold"
+        assert result["battery_flow"] == "idle"
         assert result["battery_power_w"] == 0
         assert result["candidate"]["flow"] == "charge"
         assert result["candidate"]["target_w"] == 0

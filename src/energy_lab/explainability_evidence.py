@@ -11,8 +11,9 @@ from pathlib import Path
 import re
 
 
-MODEL_VERSION = "shared-milp-6e2b1ca5-cf1"
-UPSTREAM_SOURCE_SHA256 = "6e2b1ca5e372f9d6a70bc5322ac3f699b417e4ab336df2a25c8a3add84b62d11"
+MODEL_VERSION = "shared-milp-603de45c-cf1"
+# Pinned sha256 of energy_lab/rolling.py, including the optional E4 energy floor.
+UPSTREAM_SOURCE_SHA256 = "603de45ca089b13665abd91fe2f58aa12e576909dfcba2ffb481cff2aedd13a4"
 REPOSITORY_URL = "https://github.com/thudnlancer/Anker-Hackerson"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 _POWER_COLUMNS = {"charge_kw": "charge_w", "discharge_kw": "discharge_w",
@@ -147,10 +148,13 @@ def build_explainability_record(*, identity, observed_at, state, times, pv_w, lo
     if abs(purchase - revenue + degradation - terminal - objective) > 1e-6:
         raise EvidenceExportError("solver_cost_mismatch")
     semantic = {"charge": "battery_charge", "discharge": "grid_export_target",
-                "hold": "self_consumption"}.get(mapping.flow)
+                "self_consumption": "self_consumption"}.get(mapping.flow)
     if semantic is None:
         raise EvidenceExportError("unsupported_command_mapping")
-    action = {"kind": mapping.flow, "power_kw": _nonnegative(mapping.target_w, "target_w") / 1000,
+    # The ingestion contract keeps kind in {charge, discharge, hold}: an
+    # explicit self_consumption mode switch is exported as kind="hold".
+    kind = "hold" if mapping.flow == "self_consumption" else mapping.flow
+    action = {"kind": kind, "power_kw": _nonnegative(mapping.target_w, "target_w") / 1000,
               "control_semantics": semantic}
     synthetic = input_kind == "synthetic"
     forecast_mode = str(forecast_mode or "unspecified")

@@ -42,7 +42,7 @@ export PYTHONPATH=src:explainability-app/src
 
 模板中的三个站点 suffix 要对应 HA 实体前缀，且互不重复。base URL 只填服务地址，禁止用户信息、查询参数及 fragment，不使用 `http://user:password@host/`。运行配置仍支持既有容量等字段，但本控制器实际复用共享 MILP 的模型参数；修改配置数字不能代替模型校准或单位检查。
 
-先构建前端（依赖安装与全新环境步骤见[协作说明](../../EXPLAINABILITY_COLLABORATION.md#安装与启动)）：
+先构建前端（依赖安装与全新环境步骤见[协作说明](../../docs/integration/EXPLAINABILITY_COLLABORATION.md#安装与启动)）：
 
 ```bash
 cd explainability-app/frontend
