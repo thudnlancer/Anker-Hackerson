@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from energy_lab.config import exchange_ha_token, load_runtime_config, require_runtime_fields
 from energy_lab.ha_client import HAClient
 from energy_lab.interface_contract import state_is_fresh
-from energy_lab.reconciliation import ReconciliationStore
+from energy_lab.reconciliation import ReconciliationStore, pending_reconciliation_journals
 from energy_lab.zero_flow import (apply_zero_flow_conclusion, build_zero_flow_command,
                                   confirm_restored, evidence_hash, judge_zero_flow_state,
                                   plan_restore)
@@ -42,20 +42,6 @@ COMMAND_ENTITIES = ("select operating_mode -> third_party_control",
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def pending_reconciliation_journals(root: Path, selected: Path) -> dict[str, list[str]]:
-    """Check the selected journal and every local incident journal, without altering them."""
-    paths = {selected.resolve()}
-    outputs = root / "outputs"
-    if outputs.is_dir():
-        paths.update(path.resolve() for path in outputs.rglob("ha_reconciliation_state.json"))
-    blocked = {}
-    for path in sorted(paths):
-        pending = ReconciliationStore(path).pending()
-        if pending:
-            blocked[str(path)] = sorted(pending)
-    return blocked
 
 
 def read_verification_state(ha: HAClient, suffix: str) -> dict:
