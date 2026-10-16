@@ -15,12 +15,12 @@
 | O5 | HA 失败不自动重试、不跨站扩散，事故持久化 | journal pending、失败行、事务单元测试 | 修复已测；下一场需真实复验 |
 | O6 | 看板新增本次 mock run，可由前后快照对账 | `prelaunch_snapshot.json`、`ended_snapshot.json`、dashboard SHA | 已通过，runs/mock_count 6→7 |
 | O7 | 三站赛后恢复到安全模式，或未恢复时保留阻塞证据 | `post_end_recovery.json`、post-recovery snapshot、journal | 未通过；三站仍 pending/third_party_control |
-| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；集成树核心 365、独立锁定环境产品后端 99 + 49 subtests、前端 18 及 build 已过；配置与完整发布门禁仍待复验 |
+| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；主线核心 378 passed，产品锁定环境 99 passed + 49 subtests、`pip check`、前端 18 passed 和 production build 已通过；O7/O9 仍未通过 |
 | O9 | 比赛机可部署且不间断运行 | 固定 commit、部署 dry-run、PID/日志/重启证据 | 未验收；当前明确暂停远端控制 |
 
 ## 当前仓库状态（2026-10-16 归档后）
 
-主工作区与 `integration/online-milestone` 已对齐到 `4089b491` 且均干净；核心测试 **378 passed**，文档链接检查 **0**。本轮仅完成无关文档的无损归档，不产生新的模拟赛、HA 写入/回读或看板成绩证据。`outputs/local_mock_20261016_run2/ha_reconciliation_state.json` 中三站 pending 仍受保护，O7 仍未通过；O9 仍只具备本地部署预检材料，未进行比赛机控制。
+本次审计起点主工作区与 `integration/online-milestone` 已对齐到 `52370a5` 且均干净；主线核心测试 **378 passed**，文档链接检查 **0**。产品门禁在 `explainability-app/.venv` 安装 editable package、设置共享源码路径后为 **99 passed + 49 subtests**，`pip check` 通过；前端为 **18 passed** 且 production build 通过。本轮未产生新的模拟赛、HA 写入/回读或看板成绩证据。`outputs/local_mock_20261016_run2/ha_reconciliation_state.json` 中三站 pending 仍受保护，O7 仍未通过；O9 仍只具备本地部署预检材料，未进行比赛机控制。
 
 ## 通过规则
 

@@ -55,8 +55,16 @@
 
 最终结构复验（当前 `2e2f0a2`）：主工作区与 `integration/online-milestone` 同 SHA 且均无未提交文件；全套核心测试 **370 passed**。W2/W3/E4 保持独立原始 worktree 以供追溯，不冒险覆盖主线。run2 journal pending 站点仍为 `1,2,3`，run3 ZIP 当前 SHA `A9E622EEF8C26C6C0D2A2FCAB3364B255B58AE7595D4F5F61C5E56A4C8172656`，未被重构流程改写。本轮没有启动 D2、停止/启动 collector、HA 写入或远程操作。
 
-## 当前权威快照（2026-10-16）
+2026-10-16 归档后复核：主工作区与 `integration/online-milestone` 已对齐到 `52370a5`，均无未提交文件；核心测试 **378 passed**，产品锁定环境 **99 passed + 49 subtests**、`pip check` 通过，前端 **18 passed** 且 production build 通过。E4/W2/W3/E5 参考 worktree 仍保持原始状态；run2 三站 pending、run3 证据和受保护 SHA 未改写。本轮未启动模拟赛、collector、HA 写入或远程动作。
+
+## 历史快照（2026-10-16，`1b1c9f7`）
 
 主工作区 `feat/explainability-integration` 与集成 worktree `integration/online-milestone` 已对齐到 `1b1c9f7`，均干净；核心测试均为 373 passed，本地 dry-run 部署预检通过。E4/W2/W3/E5 参考 worktree 仍分别位于 `f6ff5df`、`a228f4b`、`7cd64c4`、`8362854`，不直接覆盖主线。三站 pending 未解除，O7 与完整在线流程均未通过。
 
 产物清单工具现保护 run2/run3、其基线与已完成的赛后只读复核目录。2026-10-16 当前清单记录 165 个 outputs 顶层条目、25 个受保护文件 SHA；保护范围外条目仍需人工审查，不执行批量清理。
+
+## 当前复验入口（2026-10-16）
+
+产品后端需在 `explainability-app/` 中使用其 `.venv` 安装锁定依赖和 editable package，并将仓库根目录 `src/` 加入 `PYTHONPATH`，然后运行 `python -m pytest tests -q`；本次结果为 **99 passed + 49 subtests**，`pip check` 无损坏依赖。直接从仓库根目录用系统 Python 跑产品测试会因缺少 FastAPI/包安装而在收集阶段失败，不能视作代码回归。前端在 `explainability-app/frontend/` 执行 `npm test` 与 `npm run build`，本次分别为 **18 passed** 与构建成功。
+
+这些是 O8 的本地代码门禁证据，不替代 O7 的人工安全复核、HA 真机回读或 O9 的实际部署运行。
