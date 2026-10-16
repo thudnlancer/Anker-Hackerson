@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-10-16T15:56:01+08:00",
+  "entries": [
+    {
+      "source_path": "forecast_run.log",
+      "archive_path": "archive/forecast_run_20261008.log",
+      "sha256": "C853160502EA7F5A0DA494C8E67CF4B2C9AF72FD535FB5EF95C34F6C8DD7400E",
+      "reason": "Ignored, regenerable local forecast training log; no code consumer or running training process found.",
+      "preserved_as_bytes": true
+    }
+  ]
+}
