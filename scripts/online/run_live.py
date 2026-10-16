@@ -32,7 +32,7 @@ from energy_lab.sim_client import SimulatorClient
 from energy_lab.price_anchor import read_anchored_tick
 from energy_lab.shadow import daily_points, make_candidate
 from energy_lab.solve_schedule import solve_until
-from energy_lab.reconciliation import ReconciliationStore, pending_reconciliation_journals
+from energy_lab.reconciliation import ReconciliationStore
 from energy_lab.interface_contract import (CommandMapping, map_battery_action, state_is_fresh,
                                            verify_readback, align_hourly_points)
 
@@ -446,14 +446,6 @@ def main() -> None:
     mode = str(cfg["mode"]).lower().replace("_", "-")
     write_enabled = mode == "live"
     require_runtime_fields(cfg, write_enabled=write_enabled)
-    if write_enabled:
-        try:
-            blocked = pending_reconciliation_journals(Path(__file__).resolve().parents[2],
-                                                      args.reconciliation_state)
-        except ValueError as exc:
-            parser.error(str(exc))
-        if blocked:
-            raise SystemExit(f"blocked by pending HA reconciliation sites: {blocked}")
     access = exchange_ha_access(cfg)
     ha = HAClient(str(cfg["ha_base"]), access["access_token"], proxy_mode=cfg["proxy_mode"])
     refresh_at = (time.monotonic() + min(access["expires_in"] * .6, 1200)

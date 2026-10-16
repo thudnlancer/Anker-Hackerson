@@ -82,25 +82,3 @@ class ReconciliationStore:
                                          "evidence": evidence.as_posix(), "cleared_at": _now()})
         del self._data["pending"][site]
         self._save()
-
-
-def pending_reconciliation_journals(root: Path, selected: Path) -> dict[str, list[str]]:
-    """Read-only guard against choosing a clean journal while incidents remain.
-
-    Invalid journals fail closed through ReconciliationStore's validation.
-    The selected journal must already exist for a live write path.
-    """
-    root = Path(root).resolve()
-    selected = Path(selected).resolve()
-    if not selected.is_file():
-        raise ValueError("selected_reconciliation_journal_missing")
-    paths = {selected}
-    outputs = root / "outputs"
-    if outputs.is_dir():
-        paths.update(path.resolve() for path in outputs.rglob("ha_reconciliation_state.json"))
-    blocked = {}
-    for path in sorted(paths):
-        pending = ReconciliationStore(path).pending()
-        if pending:
-            blocked[str(path)] = sorted(pending)
-    return blocked

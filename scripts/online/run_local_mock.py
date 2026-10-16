@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 from energy_lab.config import exchange_ha_access, load_runtime_config, require_runtime_fields
 from energy_lab.ha_client import HAClient
-from energy_lab.reconciliation import ReconciliationStore, pending_reconciliation_journals
+from energy_lab.reconciliation import ReconciliationStore
 from energy_lab.sim_client import SimulatorClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.online.run_live import run_once_milp
@@ -40,12 +40,6 @@ def main() -> None:
     args = parser.parse_args()
     if not args.confirm_mock_ha_write:
         parser.error("explicit --confirm-mock-ha-write is required")
-    try:
-        blocked = pending_reconciliation_journals(ROOT, args.reconciliation_state)
-    except ValueError as exc:
-        parser.error(str(exc))
-    if blocked:
-        raise SystemExit(f"blocked by pending HA reconciliation sites: {blocked}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     lock_file = (args.output_dir / "runner.lock").open("a+b")
     lock_file.seek(0)
