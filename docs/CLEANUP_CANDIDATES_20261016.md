@@ -16,7 +16,7 @@
 
 | 路径 | 证据与建议 | 状态 |
 |---|---|---|
-| `HAtJdgo45otz2Px31bYcu3PDnRf.md` | 已下载的通用大模型使用说明，正文称图片/超链接附件为 0；未发现仓库内引用。若确认与本项目当前解释服务/比赛交付无关，可原样移至 `archive/docs/` 并记录 SHA。 | 需负责人确认来源文档是否仍有用途；本轮不移动。 |
+| `HAtJdgo45otz2Px31bYcu3PDnRf.md` | 已下载的通用大模型使用说明，正文称图片/超链接附件为 0；未发现仓库内引用。用户已授权原样归档。 | 已归档至 `archive/docs/HAtJdgo45otz2Px31bYcu3PDnRf.md`；原始字节 SHA-256 记录于 `archive/docs/archive-manifest-20261016.json`。 |
 | `B4_COLLECTION_REDUNDANCY_DESIGN.md` | 设计稿标记待实施，正文引用当前采集代码及共享工作流；可能被后续 W3 采集器工作使用。 | 暂不归档，先由 W3 负责人确认是否已替代。 |
 
 ## 可删除候选
