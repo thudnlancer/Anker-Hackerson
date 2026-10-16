@@ -173,7 +173,7 @@ class SharedProviderTests(unittest.TestCase):
             snapshot = directory / "snapshot.json"
             snapshot.write_text(json.dumps(snapshot_fixture()), encoding="utf-8")
             output = directory / "shadow-output"
-            runner = subprocess.run([sys.executable, str(PROJECT / "run_shadow_dry_run.py"),
+            runner = subprocess.run([sys.executable, str(PROJECT / "scripts" / "online" / "run_shadow_dry_run.py"),
                 "--snapshot", str(snapshot), "--replay-at-capture", "--config", str(directory / "unused-config.json"),
                 "--model-directory", str(directory / "missing-models"), "--output", str(output),
                 "--explainability-run-id", "unit-cli-import", "--explainability-input-kind", "synthetic"],
