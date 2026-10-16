@@ -69,4 +69,6 @@
 
 CI 门禁已同步采用同一安装顺序：先安装两个 lock 文件，再执行 `pip install --no-deps -e explainability-app`，避免工作流遗漏产品包安装而在测试收集阶段失败。
 
+CI 进一步覆盖主线 `pytest tests -q`、`pip check`、Markdown 本地链接、产品 pytest 和只读部署预检。此前工作流只跑 `unittest discover`（本机实测 343 tests），少于核心 pytest 的 378 项；现改为 pytest 作为权威核心回归。预检在干净 checkout 上写入被忽略的 `outputs/ci_deployment_preflight.json`，不执行远端动作或 HA 写入。工作流 YAML 本地变更需以 GitHub Actions 实际执行结果作为最终 CI 证据。
+
 这些是 O8 的本地代码门禁证据，不替代 O7 的人工安全复核、HA 真机回读或 O9 的实际部署运行。
