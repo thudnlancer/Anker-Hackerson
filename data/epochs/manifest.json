@@ -1,0 +1,123 @@
+{
+  "source_capture": "outputs\\epoch_capture_sync",
+  "code_sha256": "821875d8edf906d1cec4a921c806eeff3b23a5fa",
+  "reference_site": "1",
+  "segment_ticks": 1415,
+  "segment_start": "2026-10-10T12:00:00+00:00",
+  "segment_end": "2026-10-25T05:30:00+00:00",
+  "epoch_hours": 168.0,
+  "ticks_per_epoch": 672,
+  "overlap": true,
+  "epochs": [
+    {
+      "index": 0,
+      "sites": {
+        "1": {
+          "rows": 672,
+          "filled": 1,
+          "sha256": "cf38f109b56ab9ef531893c27ff1e90e5e05d19895b1d60a4f45691b35b82d5d"
+        },
+        "2": {
+          "rows": 672,
+          "filled": 1,
+          "sha256": "d967fae9bf69f2e011bfaca178b3f2af9735cb35ed92d723c9effe0ac9eb6d68"
+        },
+        "3": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "f5bbde1160131f3b3abf8bd485dc6abd53f9009d9908852bd370b54403fb2fb0"
+        }
+      },
+      "start": "2026-10-10T12:00:00+00:00",
+      "end": "2026-10-17T11:45:00+00:00"
+    },
+    {
+      "index": 1,
+      "sites": {
+        "1": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "05e1d827d55623c1f5163d3099f28451108442be9733ff417594cabd2f93af62"
+        },
+        "2": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "e27b5cf4f8811edf02a8ddadab227fc6dda6908cb4d02b31c2c36ec430789db1"
+        },
+        "3": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "bf910a82d41402e92421d97f42241da93e6f93244963a358062b8e4dfedf1a0e"
+        }
+      },
+      "start": "2026-10-12T10:15:00+00:00",
+      "end": "2026-10-19T10:00:00+00:00"
+    },
+    {
+      "index": 2,
+      "sites": {
+        "1": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "32750b4819ad791dcaacba7f18858d77eb869d48a32acd19d8a5c85eece70806"
+        },
+        "2": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "c8da7c1ce39e2c2f44a542d86bc0946f2cc74c9905cc94c3da2045e673547d5b"
+        },
+        "3": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "52873908a65814b0e33f3d65e364fbb18a812c01e09d23241152774cb83fdcf5"
+        }
+      },
+      "start": "2026-10-14T08:30:00+00:00",
+      "end": "2026-10-21T08:15:00+00:00"
+    },
+    {
+      "index": 3,
+      "sites": {
+        "1": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "7e081ca962302334452afcfdab080499c27d4d862d5d679fed693aa1a78cb580"
+        },
+        "2": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "b412b2bb218d645efd383c1eaf34827e70ae50d350a67401b9ec40af76f92947"
+        },
+        "3": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "d2fb0938a98be49db50978172c6c8155263f749666b415f6de8acbdb7424c93d"
+        }
+      },
+      "start": "2026-10-16T06:45:00+00:00",
+      "end": "2026-10-23T06:30:00+00:00"
+    },
+    {
+      "index": 4,
+      "sites": {
+        "1": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "08fef0b103a88e3f6f517af0c79f4d42e33b1a225fb7ee4722a5dae6cb058c55"
+        },
+        "2": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "bca838a73604dce88868994a16b7598b998a1323c07103580580d39c9b263ef9"
+        },
+        "3": {
+          "rows": 672,
+          "filled": 0,
+          "sha256": "eaf91d76bbd9c4111fdb05511b5f497a371af65a2f20100ac0c0bb00a3218829"
+        }
+      },
+      "start": "2026-10-18T05:45:00+00:00",
+      "end": "2026-10-25T05:30:00+00:00"
+    }
+  ]
+}

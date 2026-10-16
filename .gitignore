@@ -26,7 +26,9 @@ online_dry_run_latest.json
 forecast_metrics.json
 forecast_run.log
 forecast_data/
-data/
+# ignore scratch data contents but keep curated deliverables below
+data/*
+!data/epochs/
 *.zip
 
 # Editor and OS files
