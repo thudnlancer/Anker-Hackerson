@@ -10,6 +10,7 @@
 - `architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
 - `operations/SOP_RECONCILIATION.md`：早期 SOP 对齐记录；当前验收以在线流程里程碑为准。
 - `operations/REMOTE_DRY_RUN_RUNBOOK.md`：浏览器终端 + Git 固定提交的远程 dry-run 操作手册。
+- `operations/O7_RECONCILIATION_CLEARANCE_RUNBOOK.md`：O7 三站 reconciliation 结案前的只读审查与逐站清除门禁。
 - `M3_*`、`F1_*`、`F2_*`：比赛阶段验收材料。
 - `decisions/HOLD_SEMANTICS_DESIGN.md`：hold/idle 与设备执行语义的历史评审稿；根目录保留兼容链接。
 - `milestones/B2_ZERO_FLOW_REVIEW_DEMO.md`：B1 零流量离线演示；不代表硬件验收。
