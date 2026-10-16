@@ -29,3 +29,5 @@
 2026-10-16 05:06:53 UTC 只读复核：`outputs/local_mock_20261016_postmerge_readonly/snapshot.json` 的文件 SHA-256 为 `EA7D287857E2BD9A563113C4F62CF7480B8E14F45C30BD0D7BC5367A6ECD12CA`；比赛仍为 `ended/mock`，看板 `results.count=7`。三站 HA mode 均为 `third_party_control`，设备时间均停在 `2026-10-17 08:15:00`；站 1/2 为 charge 且设定功率 5000/2541 W，站 3 为 discharge 且设定功率 0 W。该复核只有 GET，没有 HA 写入；**O7 继续失败**，run2 journal 三站 pending 不得自动清除。下一个模拟窗口前须由操作者核验安全模式真实回显和事故处理，不能把赛后恢复 POST 的 HTTP 确认当作设备确认。
 
 `energy_lab.zero_flow` 现提供离线判定与恢复计划，测试覆盖设定回显、电池双侧功率和被动电网结算；这不是硬件验收。没有真实下一设备 tick 的五项回读证据前，O7 和零流量执行资格均保持未通过。
+
+B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 dry-run；live 要求显式参数、授权说明、安全配置和现存 reconciliation journal；journal 含 pending 时在执行 HA/API 请求前 fail-closed。当前三站 pending 会阻止 live。离线演练及 CLI 门禁测试通过，但没有真实写入或硬件回读，O7 状态不变。

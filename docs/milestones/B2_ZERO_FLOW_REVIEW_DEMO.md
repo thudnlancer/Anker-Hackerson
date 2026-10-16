@@ -2,7 +2,7 @@
 
 > 用途：线 B 评审演示材料。用两份离线 fixture 演示 B1 验证流程的判定逻辑、失败识别能力与证据留档格式。
 > 本文档所有输出均为 dry-run 离线演练实录，**未发生任何真实 HA 写入**。
-> `run_zero_flow_verification.py` 仍是未纳入发布分支的 worker 候选工具；下文历史命令和链接需在其安全门禁审查完成后才能视为可复现操作说明，绝不可据此启动 live 模式。
+> 当前 runner 已纳入 `scripts/online/`；live 模式必须显式选择并检查 HA reconciliation journal。当前 run2 三站仍 pending，live 会在联网前拒绝。下文 live 命令只作历史格式示例，禁止在 pending 未人工核验关闭时执行。
 > 关联文档：[HOLD_SEMANTICS_DESIGN.md](../decisions/HOLD_SEMANTICS_DESIGN.md) §4 步骤 1、§6 V3（判定标准来源）；[PROJECT_STATUS_AND_WORKSTREAMS.md](../../PROJECT_STATUS_AND_WORKSTREAMS.md) 线 B（任务定义）。
 > 演示日期：2026-10-13。
 
