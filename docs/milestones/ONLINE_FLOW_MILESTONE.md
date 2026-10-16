@@ -25,3 +25,5 @@
 2026-10-16 集成状态：W2 增量已在独立 `integration/online-milestone` 分支的 `bc94545` 合入并通过上述本地回归；主工作区、W3 和 E4 尚未与其完全对齐。run3 的 O7 三站恢复失败仍是阻塞项，本轮只做代码与只读证据集成，未再次执行 HA 写入或开启模拟赛。因此当前结论仍为**未通过完整在线流程里程碑**，不能把测试全绿等同于 O7/O9 通过。
 
 后续对齐：主工作区已快进到 `564cf75`，与当时的集成候选代码一致；W3/E4 尚未收敛，三站 pending 未解除。这里的历史状态段落保留作为审计时间线，不应把“主工作区尚未对齐”理解为当前状态。
+
+2026-10-16 05:06:53 UTC 只读复核：`outputs/local_mock_20261016_postmerge_readonly/snapshot.json` 的文件 SHA-256 为 `EA7D287857E2BD9A563113C4F62CF7480B8E14F45C30BD0D7BC5367A6ECD12CA`；比赛仍为 `ended/mock`，看板 `results.count=7`。三站 HA mode 均为 `third_party_control`，设备时间均停在 `2026-10-17 08:15:00`；站 1/2 为 charge 且设定功率 5000/2541 W，站 3 为 discharge 且设定功率 0 W。该复核只有 GET，没有 HA 写入；**O7 继续失败**，run2 journal 三站 pending 不得自动清除。下一个模拟窗口前须由操作者核验安全模式真实回显和事故处理，不能把赛后恢复 POST 的 HTTP 确认当作设备确认。
