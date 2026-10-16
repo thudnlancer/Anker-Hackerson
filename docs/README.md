@@ -1,0 +1,25 @@
+# 文档入口
+
+文档按用途分层，根目录历史文档在迁移完成前保持原路径可读：
+
+- `REPOSITORY_MAP_AND_ALIGNMENT_20261016.md`：仓库与 worktree 基线。
+- `RESTRUCTURE_AND_ONLINE_MILESTONE_PLAN.md`：重构阶段和在线流程验收条件。
+- `WORKTREE_ALIGNMENT_CHECKLIST.md`：五个 worktree 的合入门禁和测试记录。
+- `WORKTREE_DIFF_AUDIT_20261016.md`：W3/W2/E4 相对主线的冲突审计。
+- `PROJECT_STATUS_AND_WORKSTREAMS.md`：集成负责人共享状态与当前进度。
+- `SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
+- `SOP_RECONCILIATION.md`：HA 下发事务和人工恢复规范。
+- `M3_*`、`F1_*`、`F2_*`：比赛阶段验收材料。
+
+后续迁移目标：
+
+```text
+docs/architecture/   架构与接口
+docs/operations/     运行、恢复、部署
+docs/milestones/     F1/F2/M3/E4/E5 验收
+docs/decisions/      关键决策和取舍
+scripts/online/      在线采集、模拟、回放
+scripts/analysis/    结果分析和审计
+scripts/maintenance/ 清理、manifest、配置检查
+archive/             只读历史资料和旧产物
+```
