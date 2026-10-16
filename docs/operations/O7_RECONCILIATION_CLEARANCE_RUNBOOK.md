@@ -46,3 +46,5 @@ python scripts/maintenance/clear_ha_reconciliation.py `
 ## 当前状态
 
 `outputs/local_mock_20261016_o7_readonly_20261016/review.json` 的三个站点均为 `readback_candidate=false`，模式仍为 `third_party_control` 且设备时间未推进。因此当前不能执行清除命令；run2 journal 的三个 pending incident 是受保护证据。
+
+目录名不等于事故发生轮次：当前 pending ID `666bd879…`、`79fbd223…`、`d46070fe…` 由 run3 在 2026-10-16 03:14:15 UTC 产生，保存在复用的 run2 journal 中；更早的 run2 incident 已清除。run3 当时先遇到 HA 快照 `401 Unauthorized`，随后三站模式 POST 均无 HTTP 确认，故保留 `attempted_unknown`。不能仅凭比赛面板成绩正常或 401 推断设备安全状态；仍以同一 incident 的实际回读证据为准。

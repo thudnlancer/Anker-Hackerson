@@ -51,3 +51,7 @@ B1 runner 已集成到 `scripts/online/run_zero_flow_verification.py`：默认 d
 新增 `scripts/online/review_ha_reconciliation.py` 作为清除前机械审查器：对照当前 journal incident、两次 HA 快照的站点实体、`self_consumption` 回显、模式更新时间和 device_time 推进，输出 `readback_candidate`；它只读且永不清除 journal。对本轮真实证据生成的 `review.json` 显示三个站点均为 `false`，因此 O7 继续保持未通过。
 
 O9 本地准备进一步收紧：`remote_dry_run_ctl.sh start/foreground` 现在要求显式完整 40 位 pinned SHA、HEAD 精确匹配且工作树干净；README 将 SSH 私钥部署段标为当前不适用的历史方案，browser-terminal Git runbook 为准。`bash -n`、核心测试和敏感本机状态的 ignore 检查通过；未连接比赛机，故这只是部署材料与启动门禁准备，不是 O9 远程运行验收。
+
+2026-10-16 重构后主仓基线 `f5d8f4b618c19f9369723ab9106207c1647390e1` 已推送到 `origin/feat/explainability-integration`；根目录仅保留 Git 元数据文件，核心测试 379 passed、文档本地链接 0 断链。该提交的只读部署预检 `outputs/deployment_preflight_f5d8f4b/report.json` 为 `ready_for_browser_terminal_dry_run=true`，远端动作和 HA 写入均为 0；25 个受保护证据文件的 SHA 与 `archive/OUTPUT_INVENTORY_20261016_CURRENT.json` 一致。这些是代码和本地部署准备证据，不构成新模拟赛或 O7/O9 完整验收。
+
+事故归属更正：存于 `outputs/local_mock_20261016_run2/ha_reconciliation_state.json` 的当前三个 pending incident 实际创建于 run3 的 2026-10-16 03:14:15 UTC。run2 原有 incident 已在 02:39 UTC 按各自旧 ID 留痕清除；run3 随后 HA 快照 GET 收到 `401 Unauthorized`，三站 operating-mode POST 各尝试 1 次、确认 0 次，状态记为 `attempted_unknown`。runner 已修复为 HA 快照读取失败时返回 `station_error`、零写入，避免该 401 路径再次触发 fallback 写入。看板正常结束和成绩记录不能证明 HA 安全回读；run3 赛后 `mode_echo_verified=false`，当前三个 incident 仍保持 pending。下一轮有 HA 写入的本机模拟赛须先核实鉴权恢复、逐站取得安全模式及新设备 tick 的只读证据，并按 O7 运行手册处理这些 incident；不得通过换 journal 或删除证据跳过。用户已要求不再审阅其他 worktree，后续里程碑以主仓为准。
