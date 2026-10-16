@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 import pytest
 
@@ -38,14 +39,20 @@ def test_path_outside_outputs_fails_before_pid_lookup(tmp_path):
 
 @pytest.mark.skipif(shutil.which("powershell") is None, reason="requires Windows PowerShell")
 def test_default_preflight_refuses_missing_heartbeat_without_writing():
-    evidence = ROOT / "outputs" / "restart_contract_test"
-    assert not evidence.exists()
-    result = subprocess.run(["powershell", "-NoProfile", "-File", str(SCRIPT),
-                             "-ExpectedPid", "1", "-Config", "local_online_config.example.json",
-                             "-CacheDir", "outputs/local_mock_20261016_run3",
-                             "-HealthDir", "outputs/local_mock_20261016_run3",
-                             "-EvidenceDir", "outputs/restart_contract_test", "-NodeId", "nodeA"],
-                            cwd=ROOT, capture_output=True, text=True)
-    assert result.returncode != 0
-    assert "heartbeat missing" in result.stderr
-    assert not evidence.exists()
+    outputs = ROOT / "outputs"
+    outputs.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=outputs) as directory:
+        folder = Path(directory)
+        cache = folder / "cache"
+        health = folder / "health"
+        evidence = folder / "evidence"
+        cache.mkdir()
+        health.mkdir()
+        result = subprocess.run(["powershell", "-NoProfile", "-File", str(SCRIPT),
+                                 "-ExpectedPid", "1", "-Config", "local_online_config.example.json",
+                                 "-CacheDir", str(cache), "-HealthDir", str(health),
+                                 "-EvidenceDir", str(evidence), "-NodeId", "nodeA"],
+                                cwd=ROOT, capture_output=True, text=True)
+        assert result.returncode != 0
+        assert "heartbeat missing" in result.stderr
+        assert not evidence.exists()
