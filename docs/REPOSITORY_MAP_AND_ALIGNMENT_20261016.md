@@ -31,3 +31,5 @@ W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心�
 此快照优先于上面的历史状态段落：主工作区 `D:/Anker黑客松/实验环境`（`feat/explainability-integration`）与 `D:/Anker黑客松/integration-worktree`（`integration/online-milestone`）现均为 `1b1c9f7` 且工作区干净；核心测试均 373 passed。`outputs/deployment_preflight_20261016/report.json` 对该固定提交给出本地 browser-terminal dry-run 准备通过。它不代表远端已部署或在线运行。
 
 参考 worktree 保持原样：E4 `f6ff5df`（有未提交测试与 `.agents/`）、W2 `a228f4b`、W3 `7cd64c4`、W2 E5 detached `8362854`。不以旧分支覆盖主线；后续若吸收其新工作，须重新审查差异。run2/run3 三站 reconciliation pending 和 O7 失败证据继续保留。
+
+2026-10-16 产物清单复核：`archive/OUTPUT_INVENTORY_20261016_CURRENT.json` 记录 165 个 outputs 顶层条目，其中 5 个在线事故/恢复证据目录保护了 25 个文件 SHA；与上次清单中原有受保护文件的 SHA 全部一致。其余 160 个条目一律标为 `review_required`，不据此自动删除。新开模拟窗口的临时只读快照只作该窗口状态观察，不归入本项目 run2/run3 里程碑证据。

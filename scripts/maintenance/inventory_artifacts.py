@@ -8,7 +8,13 @@ import json
 from pathlib import Path
 
 
-PROTECTED = {"local_mock_20261016_run2", "local_mock_20261016_run3"}
+PROTECTED = {
+    "local_mock_20261016",
+    "local_mock_20261016_run2",
+    "local_mock_20261016_run3",
+    "local_mock_20261016_postmerge_readonly",
+    "local_mock_20261016_o7_readonly_20261016",
+}
 
 
 def digest(path: Path) -> str:
@@ -37,12 +43,12 @@ def main() -> None:
         entries.append({"path": path.relative_to(root).as_posix(), "kind": "directory" if path.is_dir() else "file",
                         "file_count": len(files), "bytes": bytes_total,
                         "latest_modified_utc": datetime.fromtimestamp(latest, timezone.utc).isoformat(),
-                        "retention": "protected_incident_evidence" if protected else "review_required"})
+                        "retention": "protected_online_evidence" if protected else "review_required"})
     manifest = {"generated_at_utc": datetime.now(timezone.utc).isoformat(),
                 "root": str(root), "entry_count": len(entries), "entries": entries,
                 "protected_files": {
                     path.relative_to(root).as_posix(): digest(path)
-                    for name in PROTECTED for path in (output / name).rglob("*") if path.is_file()
+                    for name in sorted(PROTECTED) for path in (output / name).rglob("*") if path.is_file()
                 }}
     target = args.output.resolve()
     if not target.is_relative_to(root / "archive"):

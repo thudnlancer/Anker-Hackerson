@@ -58,3 +58,5 @@
 ## 当前权威快照（2026-10-16）
 
 主工作区 `feat/explainability-integration` 与集成 worktree `integration/online-milestone` 已对齐到 `1b1c9f7`，均干净；核心测试均为 373 passed，本地 dry-run 部署预检通过。E4/W2/W3/E5 参考 worktree 仍分别位于 `f6ff5df`、`a228f4b`、`7cd64c4`、`8362854`，不直接覆盖主线。三站 pending 未解除，O7 与完整在线流程均未通过。
+
+产物清单工具现保护 run2/run3、其基线与已完成的赛后只读复核目录。2026-10-16 当前清单记录 165 个 outputs 顶层条目、25 个受保护文件 SHA；保护范围外条目仍需人工审查，不执行批量清理。
