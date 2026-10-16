@@ -49,3 +49,31 @@ def test_w1_adapter_rejects_source_mismatch_and_missing_configuration(tmp_path):
         OfflineReplay(TRACE, "0" * 64)
     with TestClient(create_app(tmp_path / "empty.sqlite")) as client:
         assert client.get("/api/offline-replay").status_code == 404
+
+
+def test_legacy_trace_missing_diagnostics_is_unknown_without_solver_inference(tmp_path):
+    legacy = tmp_path / "legacy.csv"
+    with TRACE.open(encoding="utf-8", newline="") as source, legacy.open("w", encoding="utf-8", newline="") as target:
+        reader = csv.DictReader(source)
+        fields = [field for field in reader.fieldnames or [] if field not in {"optimizer_attributed", "attribution", "fallback"}]
+        writer = csv.DictWriter(target, fieldnames=fields)
+        writer.writeheader()
+        for row in reader:
+            row.pop("optimizer_attributed", None)
+            row.pop("attribution", None)
+            row.pop("fallback", None)
+            writer.writerow(row)
+    sha = hashlib.sha256(legacy.read_bytes()).hexdigest()
+    replay = OfflineReplay(legacy, sha)
+    for arm in ("irradiance", "self_consumption"):
+        detail = replay.detail(arm, 0)
+        record = detail["record"]
+        assert record["solver_status"] == ("optimal" if arm == "irradiance" else "not_applicable")
+        assert record["optimizer_attributed"] is None
+        assert record["attribution"] is None
+        assert record["fallback"] is None
+        assert "优化器归因 未知" in detail["facts"][3]["text"]
+        assert "归因标签 未知" in detail["facts"][3]["text"]
+        assert "回退 未知" in detail["facts"][3]["text"]
+        assert all(not any(key in ref for key in ("optimizer_attributed", "attribution", "fallback"))
+                   for ref in detail["facts"][3]["evidence_refs"])

@@ -354,6 +354,14 @@ M0 设计评审收尾 ✅（Q1/Q2/Q4 已决策，Q3 待定）
 
 ## 9. 进度交接记录
 
+2026-10-15 W2 新窗口基线：建立 `local_run_id=contest-prestart-20261015-b`，prestart 原始看板响应及 manifest 存于 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015-b/`，SHA-256 `798b8d7101a35eb7f86fd5dc42cae0eff1991e12b8063a133309740207e190f8`。采集时仍为上一场 mock/ended、已有 4 条历史成绩。旧窗口快照保留但不得复用；赛后仅对本次基线之后新增的 run 做暂定关联和三站结算/审计对账。无新增 run 或多条新增未指明索引时工具拒绝 end 关联；详见看板对账契约。未启动/复位比赛，未写 HA。
+
+2026-10-15 W2 开赛前基线：只读捕获工具 `capture_dashboard_snapshot.py` 已交付，实际保存 `local_run_id=contest-prestart-20261015` 的 dashboard 原始响应及 manifest 于 `实验环境/outputs/dashboard_snapshots/contest-prestart-20261015/`（Git 忽略）。原始响应 SHA-256 `999e8cbf83bf78ba8225801b27cfc628ff35239794e31e7ab350a0a47373b588`，复算一致；采集时看板仍为上一次 mock/ended，历史成绩 4 条，**不是新赛已经启动或结算**。赛后须同 ID 捕获新增结果并结合在线审计与明确设备窗口复验；仅新增结果是暂定关联，不等于正式三站收益验收。无 HA 写入、无比赛 start/reset。
+
+2026-10-15 W2 只读看板调查：页面实际使用 GET /api/dashboard；已核实 results.runs 的场次字段、三站 sites[].metrics 和总成绩结构。四场模拟赛总分按 100×Σsaving_settled/Σbaseline_cost 复算一致，不能用 baseline_settled 作分母。交付 [在线成绩对账契约](explainability-app/docs/dashboard-audit-reconciliation.md)，暂停离线页面扩展。未找到本地对应 run_live_audit.csv，远程日志未读取；场次关联、日志覆盖、执行回读仍为 unknown，尚未完成线上闭环或正式排名验收。本轮没有启动/复位比赛、HA 写入或数据库变更。
+
+2026-10-15 W2 增量：旧 trace 的 solver_status/fallback/optimizer_attributed/attribution 缺失或空白时返回 null、详情显示“未知”；不从 solver_status 推断，不引用不存在的诊断列。只读边界维持：dataset_local_hour，无设备时区/在线 deadline，无执行确认或官方结算，不写入决策表。应用独立 .venv 补齐根依赖后本地全套 98 passed + 49 subtests，focused 14 passed，前端 16 passed/build 通过，pip check 通过；跨仓命令及依赖见 explainability-app/docs/w1-offline-replay-integration.md。E5 仍待集成，未替代集成负责人签核。
+
 | 日期 | 角色 | 事项 | 结果/阻塞 | 证据 |
 |---|---|---|---|---|
 | 2026-10-15 | W1 | 三站完整轮次测时、有界分站调度和旧候选门禁 | 注入新鲜状态的离线完整三站真实 MILP dry-run `0.197s`、零 HA 调用；单求解槽、5s 轮次截止、跨轮代际与同锁执行检查，慢/跨轮结果零写入；策略 338 passed。真实只读预检锚定 1.921s、三站 stale，M3 未通过。未提交/推送/部署或切换 W3，F1/F2 未授权 | `outputs/m3_schedule_20261015/offline_three_site_round.json` SHA `a9049758d4597bf3873946352f5adeecabd332865192756a654d5f1706c77d90`；`real_readonly_preflight.json` SHA `761bb7c0d81ad3480968867fa7eb8d5d27866acb7e3e86c20d22ea62d3cabdf4`；`tests.xml` SHA `af908867bff0ded132b7f5c67ea4883cec3d88ae997184a27c1878eda987f1da`；manifest SHA `336e7a9d1c01f8edd2c2b7a818b9d3b0fdb5871bc18fed3d27e9368669ea902f` |

@@ -25,6 +25,10 @@ COLLECTOR_VERSION = "collector/1.2-weather-degraded"
 
 def configured_device_timezone(path: Path) -> str | None:
     """Only an explicit device-clock coordinate is trusted, not a local/UI timezone."""
+    # An offline snapshot does not need a local credential/config file. Live
+    # polling still requires the file when fetch_snapshot opens it.
+    if not path.exists():
+        return None
     raw = json.loads(path.read_text(encoding="utf-8"))
     value = (raw.get("local") or {}).get("device_timezone") or raw.get("device_timezone")
     if value is None:

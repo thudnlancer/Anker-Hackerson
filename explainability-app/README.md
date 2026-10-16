@@ -25,8 +25,14 @@ python -m pip install --no-deps -e .
 - 决策详情：查看价格、SOC、数据来源、降级原因、成本和证据引用。
 - 替代方案：修改首步充电功率，重新优化后续步骤，并保留正负费用差。
 - 追问：支持“为什么这样做”“首步不充会怎样”“为什么不能增加功率”。
+- 计划检查：从保存的决策快照检查目标 SOC 与设备时间截止点，不读新状态、不下发控制。
+- 光伏分析：导入回放 trace 核算 JSONL，查看估算去向与 trace 记录的负价外送损失；没有潜在出力时不估算弃光。
 
 真实策略的接入方法和边界见 [接入契约](docs/integration.md)，数据流和六个模块见 [架构说明](docs/architecture.md)，验收方法见 [验证说明](docs/validation.md)。服务启动后可通过 `/docs` 查看生成的 OpenAPI。
+
+离线光伏核算示例：`python scripts/build_pv_accounting.py trace.csv report.jsonl --arm zero_flow --step-hours 1`。trace 至少需要 `site,time,arm,pv_w,load_w,flow,power_w,soc_after,sell,grid_export_kwh,negative_export_loss_eur`；若要统计充电功率瓶颈，再提供 `--max-charge-kw`。
+
+训练集离线 replay 的无时区 `local_hour_time` 需显式传 `--time-basis dataset_local_hour`，只按原始日期分组；不会补猜 UTC，也不用于在线截止时间。默认仍要求带时区时间。E4 真实共享优化器五类验收：`python scripts/verify_plan_floor.py --output artifacts/e4-floor-acceptance/acceptance.json`（人工输入，不连接设备）。
 
 已从提供的历史日志恢复并接入实际 MILP 源码。运行 `python -m energy_explain verify-model` 可验证 4、24、96 步模型记录；这些记录使用人工输入并明确标记来源。源码版本、启动方式与真实决策重放所需字段见 [恢复模型接入说明](docs/recovered-model-integration.md)。
 

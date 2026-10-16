@@ -8,11 +8,11 @@ from pathlib import Path
 
 
 ARMS = ("self_consumption", "persistence", "irradiance")
-REQUIRED = {"site", "time", "arm", "solver_status", "fallback", "pv_w", "load_w",
+REQUIRED = {"site", "time", "arm", "pv_w", "load_w",
             "buy", "sell", "flow", "power_w", "soc_before", "soc_after",
             "grid_import_kwh", "grid_export_kwh", "cost_eur", "negative_export_loss_eur",
             "command_mode", "command_flow", "command_target_w", "planned_flow",
-            "planned_power_w", "optimizer_attributed", "attribution"}
+            "planned_power_w"}
 NUMBERS = ("pv_w", "load_w", "buy", "sell", "power_w", "soc_before", "soc_after",
            "grid_import_kwh", "grid_export_kwh", "cost_eur", "negative_export_loss_eur",
            "command_target_w", "planned_power_w")
@@ -40,11 +40,11 @@ class OfflineReplay:
             when = datetime.strptime(row["time"], "%Y-%m-%d %H:%M:%S")
             mapped = {key: float(row[key]) for key in NUMBERS}
             mapped.update(site_id="1", local_hour=row["time"], time_basis="dataset_local_hour",
-                          arm=arm, solver_status=row["solver_status"], flow=row["flow"],
+                          arm=arm, solver_status=(row.get("solver_status") or "").strip() or None, flow=row["flow"],
                           command_mode=row["command_mode"], command_flow=row["command_flow"],
-                          planned_flow=row["planned_flow"], attribution=row["attribution"],
-                          fallback=self._bool(row["fallback"]),
-                          optimizer_attributed=self._bool(row["optimizer_attributed"]))
+                          planned_flow=row["planned_flow"], attribution=(row.get("attribution") or "").strip() or None,
+                          fallback=self._bool(row.get("fallback")),
+                          optimizer_attributed=self._bool(row.get("optimizer_attributed")))
             mapped["pv_kw"] = mapped.pop("pv_w") / 1000
             mapped["load_kw"] = mapped.pop("load_w") / 1000
             mapped["power_kw"] = mapped.pop("power_w") / 1000
@@ -64,7 +64,10 @@ class OfflineReplay:
         self.negative_price_rows = sum(row["sell"] < 0 for _, row in self.rows["irradiance"])
 
     @staticmethod
-    def _bool(value: str) -> bool:
+    def _bool(value: str | None) -> bool | None:
+        # Missing diagnostics are unknown, never inferred from solver_status.
+        if value is None or not value.strip():
+            return None
         if value not in {"True", "False"}:
             raise ValueError("invalid boolean trace field")
         return value == "True"
@@ -82,7 +85,10 @@ class OfflineReplay:
         if arm not in self.rows or not 0 <= index < 168:
             raise KeyError("offline replay step not found")
         row = self.rows[arm][index][1]
-        refs = lambda *fields: [f"trace:site_1_trace.csv#/{arm}/{index}/{field}" for field in fields]
+        refs = lambda *fields: [f"trace:site_1_trace.csv#/{arm}/{index}/{field}" for field in fields
+                                if field not in {"solver_status", "fallback", "optimizer_attributed", "attribution"}
+                                or row.get(field) is not None]
+        display = lambda value: "未知" if value is None else str(value)
         facts = [
             {"text": f"原始本地小时 {row['local_hour']}；没有设备时区或在线 deadline 语义。",
              "evidence_refs": refs("time")},
@@ -94,10 +100,12 @@ class OfflineReplay:
             {"text": f"SOC {row['soc_before']:.2f}% → {row['soc_after']:.2f}%；"
                      f"PV {row['pv_kw']:.3f} kW，负荷 {row['load_kw']:.3f} kW。",
              "evidence_refs": refs("soc_before", "soc_after", "pv_w", "load_w")},
-            {"text": f"回测成本 {row['cost_eur']:.4f} EUR；求解状态 {row['solver_status']}；"
-                     f"优化器归因 {row['optimizer_attributed']}；回退 {row['fallback']}。"
+            {"text": f"回测成本 {row['cost_eur']:.4f} EUR；求解状态 {display(row['solver_status'])}；"
+                     f"优化器归因 {display(row['optimizer_attributed'])}；"
+                     f"归因标签 {display(row['attribution'])}；回退 {display(row['fallback'])}。"
+                     "缺失字段为未知，不从求解状态推断归因或回退。"
                      "这不是官方结算或现场执行确认。",
-             "evidence_refs": refs("cost_eur", "solver_status", "optimizer_attributed", "fallback")},
+             "evidence_refs": refs("cost_eur", "solver_status", "optimizer_attributed", "attribution", "fallback")},
         ]
         return {"record": row, "facts": facts, "source_sha256": self.sha256,
                 "source_kind": "offline_strategy_replay", "time_basis": "dataset_local_hour",
