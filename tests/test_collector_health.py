@@ -105,6 +105,37 @@ class MonitorRoundTests(unittest.TestCase):
         self.assertEqual(report["cluster"], "cluster_upstream_suspected")
         self.assertTrue(any(item["type"] == "cluster" for item in report["transitions"]))
 
+    def test_device_time_stall_alert_is_reported_and_flips_record_incidents(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            heartbeat = {"last_cycle_at": "2026-10-14T00:00:00+00:00",
+                         "consecutive_errors": 0,
+                         "device_time_stall": {"seconds_since_advance": 400.0,
+                                               "alert": True,
+                                               "device_time_max": "2026-10-12 04:45:00"}}
+            (root / "heartbeat_nodeA.json").write_text(json.dumps(heartbeat), encoding="utf-8")
+            now = datetime(2026, 10, 14, 0, 0, 1, tzinfo=timezone.utc)
+            stall_states: dict[str, bool] = {}
+            report = run_round(root, ["nodeA"], {}, stale_after=15, dead_after=60,
+                               recovering_rounds=3, now=now, stall_states=stall_states)
+            self.assertTrue(report["nodes"]["nodeA"]["device_time_stall"]["alert"])
+            stalls = [t for t in report["transitions"] if t["type"] == "device_time_stall"]
+            self.assertEqual(len(stalls), 1)
+            self.assertTrue(stalls[0]["alert"])
+            # steady alert: no repeated incident
+            report = run_round(root, ["nodeA"], {}, stale_after=15, dead_after=60,
+                               recovering_rounds=3, now=now, stall_states=stall_states)
+            self.assertFalse(any(t["type"] == "device_time_stall"
+                                 for t in report["transitions"]))
+            # recovery: flip back records exactly one more incident
+            heartbeat["device_time_stall"]["alert"] = False
+            (root / "heartbeat_nodeA.json").write_text(json.dumps(heartbeat), encoding="utf-8")
+            report = run_round(root, ["nodeA"], {}, stale_after=15, dead_after=60,
+                               recovering_rounds=3, now=now, stall_states=stall_states)
+            stalls = [t for t in report["transitions"] if t["type"] == "device_time_stall"]
+            self.assertEqual(len(stalls), 1)
+            self.assertFalse(stalls[0]["alert"])
+
 
 if __name__ == "__main__":
     unittest.main()

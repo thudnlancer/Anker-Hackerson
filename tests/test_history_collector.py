@@ -360,5 +360,48 @@ class PriceCaptureTests(unittest.TestCase):
                 collect_online_history.main()
 
 
+class DeviceTimeStallTests(unittest.TestCase):
+    def snapshot(self, device_time="2032-04-02 00:15:00"):
+        point = {"timestamp": "2032-04-02T00:00:00Z", "condition": "clear",
+                 "temperature_c": 20, "cloud_cover_percent": 0, "solar_irradiance_wm2": 0}
+        return {"stations": {"1": {"received_at": "2026-10-10T06:00:00Z",
+            "state": {"soc": "50", "solar_power": "100", "home_load": "200", "device_time": device_time},
+            "weather": {"today": {"points": [point]}, "tomorrow": {"points": [
+                {**point, "timestamp": "2032-04-03T00:00:00Z"}]}}}}}
+
+    def heartbeat(self, health):
+        return json.loads((Path(health) / "heartbeat_nodeA.json").read_text(encoding="utf-8"))
+
+    def run_collector(self, temp, health, extra_args, iterations=2):
+        with patch.object(sys, "argv", [
+                "collect_online_history.py", "--cache-dir", temp, "--health-dir", health,
+                "--iterations", str(iterations), "--interval-seconds", "0.01"] + extra_args), \
+                patch.object(collect_online_history, "fetch_snapshot",
+                             return_value=self.snapshot()), \
+                redirect_stdout(io.StringIO()):
+            collect_online_history.main()
+
+    def test_stalled_device_clock_raises_alert_in_heartbeat(self):
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as health:
+            self.run_collector(temp, health, ["--stall-alert-seconds", "0"])
+            stall = self.heartbeat(health)["device_time_stall"]
+        self.assertTrue(stall["alert"])
+        self.assertEqual(stall["threshold_seconds"], 0.0)
+        self.assertEqual(stall["device_time_max"], "2032-04-02 00:15:00")
+
+    def test_advancing_device_clock_within_threshold_does_not_alert(self):
+        with tempfile.TemporaryDirectory() as temp, tempfile.TemporaryDirectory() as health:
+            self.run_collector(temp, health, [])
+            stall = self.heartbeat(health)["device_time_stall"]
+        self.assertFalse(stall["alert"])
+        self.assertEqual(stall["threshold_seconds"], 300.0)
+
+    def test_negative_stall_threshold_is_rejected(self):
+        with patch.object(sys, "argv", ["collect_online_history.py",
+                                        "--stall-alert-seconds", "-1"]):
+            with self.assertRaises(SystemExit):
+                collect_online_history.main()
+
+
 if __name__ == "__main__":
     unittest.main()

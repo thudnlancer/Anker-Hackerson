@@ -46,7 +46,8 @@ def _append_incident(path: Path, payload: dict) -> None:
 
 def run_round(health_dir: Path, nodes: list[str], states: dict[str, NodeHealth], *,
               stale_after: float, dead_after: float, recovering_rounds: int,
-              now: datetime | None = None) -> dict:
+              now: datetime | None = None,
+              stall_states: dict[str, bool] | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     node_reports: dict[str, dict] = {}
     transitions: list[dict] = []
@@ -65,12 +66,23 @@ def run_round(health_dir: Path, nodes: list[str], states: dict[str, NodeHealth],
         states[node] = updated
         if event:
             transitions.append({"ts": now.isoformat(), "type": "node_transition", "node": node, **event})
+        stall = heartbeat.get("device_time_stall") or None
+        stall_alert = bool(stall and stall.get("alert"))
+        if stall_states is not None and stall is not None:
+            previous_alert = stall_states.get(node, False)
+            if stall_alert != previous_alert:
+                transitions.append({"ts": now.isoformat(), "type": "device_time_stall",
+                                    "node": node, "alert": stall_alert,
+                                    "seconds_since_advance": stall.get("seconds_since_advance"),
+                                    "device_time_max": stall.get("device_time_max")})
+            stall_states[node] = stall_alert
         node_reports[node] = {
             "state": updated.state, "age_seconds": age, "fresh_streak": updated.fresh_streak,
             "pid": heartbeat.get("pid"), "cycle": heartbeat.get("cycle"),
             "consecutive_errors": int(heartbeat.get("consecutive_errors") or 0),
             "last_error": heartbeat.get("last_error"),
             "cache_bytes": heartbeat.get("cache_bytes") or {},
+            "device_time_stall": stall,
         }
     cluster = classify_cluster({node: report["consecutive_errors"] for node, report in node_reports.items()})
     if cluster == "cluster_upstream_suspected":
@@ -94,6 +106,7 @@ def main() -> None:
         parser.error("interval-seconds must be positive and iterations nonnegative")
 
     states: dict[str, NodeHealth] = {}
+    stall_states: dict[str, bool] = {}
     incidents_path = args.health_dir / "incidents.jsonl"
     status_path = args.health_dir / "monitor_status.json"
     iteration = 0
@@ -101,7 +114,8 @@ def main() -> None:
         cycle_started = monotonic()
         report = run_round(args.health_dir, list(args.nodes), states,
                            stale_after=args.stale_after, dead_after=args.dead_after,
-                           recovering_rounds=args.recovering_rounds)
+                           recovering_rounds=args.recovering_rounds,
+                           stall_states=stall_states)
         for transition in report.pop("transitions"):
             _append_incident(incidents_path, transition)
         args.health_dir.mkdir(parents=True, exist_ok=True)

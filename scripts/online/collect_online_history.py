@@ -236,7 +236,8 @@ def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
 def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str,
                     cycle: int, last_success_at: str | None, consecutive_errors: int,
                     error: str | None, device_times: dict, cache_dir: Path,
-                    diagnostics: dict | None = None, epoch_id: str | None = None) -> Path:
+                    diagnostics: dict | None = None, epoch_id: str | None = None,
+                    stall: dict | None = None) -> Path:
     """Atomically replace the per-node heartbeat file (tmp + os.replace)."""
     health_dir.mkdir(parents=True, exist_ok=True)
     cache_bytes = {}
@@ -251,6 +252,7 @@ def write_heartbeat(health_dir: Path, node_id: str, *, pid: int, started_at: str
                "cache_bytes": cache_bytes, "writes_performed": 0}
     payload["station_diagnostics"] = diagnostics or {}
     payload["epoch_id"] = epoch_id
+    payload["device_time_stall"] = stall
     tmp = health_dir / f"heartbeat_{node_id}.json.tmp"
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     destination = health_dir / f"heartbeat_{node_id}.json"
@@ -277,11 +279,17 @@ def main() -> None:
     parser.add_argument("--health-dir", type=Path, default=Path("outputs/collector_health"))
     parser.add_argument("--max-consecutive-errors", type=int, default=12,
                         help="exit non-zero after this many failed cycles; 0 disables")
+    parser.add_argument("--stall-alert-seconds", type=float, default=300.0,
+                        help="flag device_time_stall.alert in the heartbeat when the max device "
+                             "clock has not advanced for this many wall-clock seconds "
+                             "(epoch resets/backward jumps count as advancement)")
     args = parser.parse_args()
     if args.interval_seconds <= 0 or args.iterations < 0:
         parser.error("interval-seconds must be positive and iterations nonnegative")
     if args.max_consecutive_errors < 0:
         parser.error("max-consecutive-errors must be nonnegative")
+    if args.stall_alert_seconds < 0:
+        parser.error("stall-alert-seconds must be nonnegative")
     if not args.node_id.replace("_", "").replace("-", "").isalnum():
         parser.error("node-id must be filename-safe")
     if args.epoch_id is not None and (not args.epoch_id.strip() or
@@ -303,6 +311,8 @@ def main() -> None:
     iteration = 0
     consecutive_errors = 0
     last_success_at: str | None = None
+    last_device_time_seen: str | None = None
+    device_time_last_change = monotonic()
     while args.iterations == 0 or iteration < args.iterations:
         cycle_started = monotonic()
         started = perf_counter()
@@ -328,12 +338,21 @@ def main() -> None:
         elapsed = perf_counter() - started
         device_times = ({site: item["state"].get("device_time")
                          for site, item in snapshot["stations"].items()} if snapshot else {})
+        current_max = max((str(value) for value in device_times.values() if value), default=None)
+        if current_max is not None and current_max != last_device_time_seen:
+            last_device_time_seen = current_max
+            device_time_last_change = monotonic()
+        stall_seconds = (monotonic() - device_time_last_change) if last_device_time_seen else None
+        stall = {"seconds_since_advance": (round(stall_seconds, 1) if stall_seconds is not None else None),
+                 "alert": bool(stall_seconds is not None and stall_seconds >= args.stall_alert_seconds),
+                 "threshold_seconds": args.stall_alert_seconds,
+                 "device_time_max": last_device_time_seen}
         write_heartbeat(args.health_dir, args.node_id, pid=os.getpid(), started_at=started_at,
                         cycle=iteration + 1, last_success_at=last_success_at,
                         consecutive_errors=consecutive_errors,
                         error=(f"{error_type}:{error_detail}" if error_type else None),
                         device_times=device_times, cache_dir=args.cache_dir, diagnostics=diagnostics,
-                        epoch_id=epoch_id)
+                        epoch_id=epoch_id, stall=stall)
         print(json.dumps({"iteration": iteration + 1, "node_id": args.node_id,
                           "observations_cached": count,
                           "writes_performed": 0, "cache_dir": str(args.cache_dir),
