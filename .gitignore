@@ -4,6 +4,8 @@ local_online_config.json
 remote_experiment_config.json
 remote_runtime_config.json
 config/local/
+# throwaway AWS/debug helper scripts (recreated ad hoc, never committed)
+scripts/analysis/_*
 .pinned_commit
 .runtime_venv
 policy.pid
