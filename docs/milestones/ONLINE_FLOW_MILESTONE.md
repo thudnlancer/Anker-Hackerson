@@ -22,6 +22,8 @@
 
 本次审计起点主工作区与 `integration/online-milestone` 已对齐到 `52370a5` 且均干净；主线核心测试 **378 passed**，文档链接检查 **0**。产品门禁在 `explainability-app/.venv` 安装 editable package、设置共享源码路径后为 **99 passed + 49 subtests**，`pip check` 通过；前端为 **18 passed** 且 production build 通过。本轮未产生新的模拟赛、HA 写入/回读或看板成绩证据。`outputs/local_mock_20261016_run2/ha_reconciliation_state.json` 中三站 pending 仍受保护，O7 仍未通过；O9 仍只具备本地部署预检材料，未进行比赛机控制。
 
+当前提交 `0928b1e46df4d1b8ddc23e42ed020205226f7ee6` 已重新运行只读部署预检，报告为 `outputs/deployment_preflight_20261016_0928b1e/report.json`（SHA-256 `4A9FE8006A67AA231CFB1A7E5216467343ACAF1D7FAAFF6D28496B4D90381439`）。报告确认 pinned commit、干净工作区、必需路径和 dry-run 模板均满足，`remote_actions_performed=0`、`ha_writes_performed=0`。这完成 O9 的本地部署前置证据，不等于比赛机部署或不间断运行验收。
+
 ## 通过规则
 
  O1、O3、O4、O5、O6 是流程闭环硬门槛；O7、O8、O9 是发布前硬门槛。O2 的回退可以存在，但必须可解释且不伪造优化归因。任何 pending reconciliation 都阻止“完整在线流程”宣称通过。
