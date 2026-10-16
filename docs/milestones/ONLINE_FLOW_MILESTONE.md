@@ -15,9 +15,11 @@
 | O5 | HA 失败不自动重试、不跨站扩散，事故持久化 | journal pending、失败行、事务单元测试 | 修复已测；下一场需真实复验 |
 | O6 | 看板新增本次 mock run，可由前后快照对账 | `prelaunch_snapshot.json`、`ended_snapshot.json`、dashboard SHA | 已通过，runs/mock_count 6→7 |
 | O7 | 三站赛后恢复到安全模式，或未恢复时保留阻塞证据 | `post_end_recovery.json`、post-recovery snapshot、journal | 未通过；三站仍 pending/third_party_control |
-| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；W2 独立依赖环境仍待建立 |
+| O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；集成分支核心 315、产品后端 99 + 49 subtests、前端 18 及 build 已过，但后端借用既有 `.venv`，独立锁定环境仍待验 |
 | O9 | 比赛机可部署且不间断运行 | 固定 commit、部署 dry-run、PID/日志/重启证据 | 未验收；当前明确暂停远端控制 |
 
 ## 通过规则
 
-O1、O3、O4、O5、O6 是流程闭环硬门槛；O7、O8、O9 是发布前硬门槛。O2 的回退可以存在，但必须可解释且不伪造优化归因。任何 pending reconciliation 都阻止“完整在线流程”宣称通过。
+ O1、O3、O4、O5、O6 是流程闭环硬门槛；O7、O8、O9 是发布前硬门槛。O2 的回退可以存在，但必须可解释且不伪造优化归因。任何 pending reconciliation 都阻止“完整在线流程”宣称通过。
+
+2026-10-16 集成状态：W2 增量已在独立 `integration/online-milestone` 分支的 `bc94545` 合入并通过上述本地回归；主工作区、W3 和 E4 尚未与其完全对齐。run3 的 O7 三站恢复失败仍是阻塞项，本轮只做代码与只读证据集成，未再次执行 HA 写入或开启模拟赛。因此当前结论仍为**未通过完整在线流程里程碑**，不能把测试全绿等同于 O7/O9 通过。
