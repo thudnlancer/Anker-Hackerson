@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from audit_milp_batch import audit
+from scripts.analysis.audit_milp_batch import audit
 
 
 def main():
