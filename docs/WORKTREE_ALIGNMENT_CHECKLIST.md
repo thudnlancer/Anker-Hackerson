@@ -37,6 +37,8 @@
 
 合并差异未触及 `src/energy_lab/{config,ha_client,reconciliation,rolling}.py`。run2 三站 pending journal 与 run3 比赛证据保留在主工作区的忽略目录，没有复制、修改或清理；本轮未进行远端控制、HA 写入或新模拟赛。发布前仍需独立锁定依赖回归、W3/E4 差异结案与完整在线闭环复验。
 
+2026-10-16 后续更新：主工作区已安全快进到 `564cf75`，与当时的集成候选对齐；原未跟踪的 W2 dashboard 文档按 SHA 原样归档到 `archive/worktree_preintegration_20261016/`，其余未跟踪 worker 文件未动。主工作区核心测试 **358 passed**。独立集成 worktree 的 `explainability-app/.venv` 从 `requirements.lock` 和 `requirements.shared.lock` 新建，`pip check` 通过，后端完整测试 **99 passed + 49 subtests**；此前“借用既有环境”的限制已解除。W3/E4 仍未整分支合入，O7/O9 仍未通过。
+
 快速测试（2026-10-16，本机 Windows）：主集成 355 passed；W2 170 passed；W3 194 passed；E4 123 passed、1 failed。E4 失败项是解释性 JSONL 测试用系统默认 GBK 读取 UTF-8 中文，设置 `PYTHONUTF8=1` 后该项 1 passed；这是测试环境/编码兼容问题，不是 energy-floor 数学约束已被否定。E4 整套测试仍需在 UTF-8 环境下重跑并记录，不能写成“全绿”。
 
 补充：W2 `explainability-app` 后端测试在当前根环境无法收集（缺少 `fastapi`，且未安装 package，`energy_explain` 不在 import path）；这不是代码通过。其 frontend Vitest 为 16 passed。后续集成门禁必须使用 `explainability-app` 的锁定依赖和 package 安装步骤重跑后端测试。
