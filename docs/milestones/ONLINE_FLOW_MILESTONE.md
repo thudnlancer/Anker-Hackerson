@@ -18,6 +18,10 @@
 | O8 | 核心、产品、前端和配置门禁可复现 | pytest、产品 lock、Vitest、config SHA | 部分通过；集成树核心 365、独立锁定环境产品后端 99 + 49 subtests、前端 18 及 build 已过；配置与完整发布门禁仍待复验 |
 | O9 | 比赛机可部署且不间断运行 | 固定 commit、部署 dry-run、PID/日志/重启证据 | 未验收；当前明确暂停远端控制 |
 
+## 当前仓库状态（2026-10-16 归档后）
+
+主工作区与 `integration/online-milestone` 已对齐到 `4089b491` 且均干净；核心测试 **378 passed**，文档链接检查 **0**。本轮仅完成无关文档的无损归档，不产生新的模拟赛、HA 写入/回读或看板成绩证据。`outputs/local_mock_20261016_run2/ha_reconciliation_state.json` 中三站 pending 仍受保护，O7 仍未通过；O9 仍只具备本地部署预检材料，未进行比赛机控制。
+
 ## 通过规则
 
  O1、O3、O4、O5、O6 是流程闭环硬门槛；O7、O8、O9 是发布前硬门槛。O2 的回退可以存在，但必须可解释且不伪造优化归因。任何 pending reconciliation 都阻止“完整在线流程”宣称通过。

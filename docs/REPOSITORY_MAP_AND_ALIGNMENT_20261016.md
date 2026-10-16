@@ -37,3 +37,9 @@ W3 逐文件比对结论见 `WORKTREE_DIFF_AUDIT_20261016.md`：W3 分支核心�
 分析脚本归属复核：`audit_w3_cache.py`、`analyze_d3_causal_pairs.py`、`analyze_irradiance_shadow.py` 等根目录脚本仍被测试、报告脚本或现场 checklist 按根路径导入；它们暂不迁移到 `scripts/analysis/`，以免破坏可复现入口。已迁入 `scripts/analysis/` 的脚本继续作为新目录正文，根目录兼容入口只在引用已验证时保留。
 
 随后完成一项安全迁移：`audit_strategy_results.py` 的实现现位于 `scripts/analysis/audit_strategy_results.py`，根目录文件为兼容入口；旧 import 和 CLI 已有定向测试覆盖。当前主线与集成 worktree 基线为 `1624803`，核心测试 377 passed，Markdown 链接检查 0 条断链。
+
+## 当前权威快照（归档后）
+
+主工作区 `feat/explainability-integration` 与 `integration/online-milestone` 已同步至 `4089b491`，均无未提交改动；核心测试为 **378 passed**，Markdown 本地链接检查为 **0**。本轮仅将用户确认无关的模型使用说明原样归档至 `archive/docs/`，并以 `archive/docs/archive-manifest-20261016.json` 记录来源和 SHA；未改写任何 outputs、HA reconciliation pending 或比赛证据。
+
+参考 worktree 仍保持独立以供追溯：E4 `f6ff5df`（有未提交测试改动与 `.agents/`）、W2 `a228f4b`（其已交付提交已在主线祖先中）、W3 `7cd64c4`、W2 E5 detached `8362854`。当前没有证据支持将 W3/E4/E5 整分支覆盖主线；需逐文件审查后再决定是否摘取。O7 三站 pending、O9 远程部署和完整在线流程仍未通过。
