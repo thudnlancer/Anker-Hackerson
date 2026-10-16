@@ -34,13 +34,17 @@ def load_site_rows(cache_dir: Path, site: str) -> list[dict]:
 
 
 def segment_rows(rows: list[dict]) -> list[list[dict]]:
-    """Split append-order rows at backward (or equal) device_time jumps."""
+    """Split append-order rows at backward device_time jumps (timeline resets).
+
+    Equal timestamps are intra-tick duplicates (e.g. SOC drift within one
+    15-minute tick), not resets, so only a strictly earlier stamp splits.
+    """
     segments: list[list[dict]] = []
     current: list[dict] = []
     previous: datetime | None = None
     for row in rows:
         stamp = datetime.fromisoformat(row["device_time"])
-        if previous is not None and stamp <= previous:
+        if previous is not None and stamp < previous:
             segments.append(current)
             current = []
         current.append(row)

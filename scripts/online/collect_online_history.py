@@ -163,12 +163,18 @@ def write_manifest(cache_dir: Path, *, node_id: str, epoch_id: str, started_at: 
 def capture(snapshot: dict, cache_dir: Path, device_timezone: str | None = None,
             node_id: str | None = None, diagnostics: dict | None = None,
             configured_timezone: str | None = None, epoch_id: str | None = None,
-            with_prices: bool = False) -> int:
+            with_prices: bool = False, price_history: dict | None = None) -> int:
     # HA state is a hard contract.  Weather is an optional forecast input: a
     # malformed/missing forecast must not discard an otherwise valid HA tick.
     prepared = []
     rejected = {}
     lookup = price_hour_lookup(snapshot.get("prices") or {}) if with_prices else {}
+    if with_prices and price_history:
+        # Day rollover: the API window is today/tomorrow only, so the last hour
+        # of the previous device day would otherwise lose its price.  Hours are
+        # never republished with different values, so carrying them forward is safe.
+        for hour, value in price_history.items():
+            lookup.setdefault(hour, value)
     for site, item in snapshot["stations"].items():
         try:
             timezone_name = device_timezone or configured_timezone
@@ -308,6 +314,7 @@ def main() -> None:
                    configured_timezone=confirmed_timezone,
                    include_prices=args.include_prices, price_log=args.price_log)
     price_state: dict = {}
+    price_history: dict = {}
     iteration = 0
     consecutive_errors = 0
     last_success_at: str | None = None
@@ -325,9 +332,12 @@ def main() -> None:
                         else fetch_snapshot(args.config, include_prices=args.include_prices))
             count = capture(snapshot, args.cache_dir, args.device_timezone, node_id=args.node_id,
                             diagnostics=diagnostics, configured_timezone=confirmed_timezone,
-                            epoch_id=epoch_id, with_prices=args.include_prices)
-            if args.include_prices and args.price_log:
-                append_price_window(args.price_log, snapshot, price_state)
+                            epoch_id=epoch_id, with_prices=args.include_prices,
+                            price_history=price_history)
+            if args.include_prices:
+                price_history.update(price_hour_lookup(snapshot.get("prices") or {}))
+                if args.price_log:
+                    append_price_window(args.price_log, snapshot, price_state)
         except Exception as exc:
             count = 0
             error_type = type(exc).__name__

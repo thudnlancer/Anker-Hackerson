@@ -354,6 +354,20 @@ class PriceCaptureTests(unittest.TestCase):
             self.assertTrue(manifest["include_prices"])
             self.assertEqual(manifest["collector_version"], collect_online_history.COLLECTOR_VERSION)
 
+    def test_price_history_covers_day_rollover_hour(self):
+        # The API window rolled to the next day, but yesterday's last hour is
+        # still covered by the accumulated price history.
+        import pandas as pd
+        history = {pd.Timestamp("2032-04-02T23:00:00Z"): (0.29, 0.09)}
+        with tempfile.TemporaryDirectory() as temp:
+            written = capture(self.snapshot(device_time="2032-04-02 23:45:00",
+                                            prices=self.prices()),
+                              Path(temp), with_prices=True, price_history=history)
+            self.assertEqual(written, 1)
+            row = json.loads((Path(temp) / "site_1.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(row["price_status"], "ok")
+        self.assertEqual(row["import_price"], 0.29)
+
     def test_price_log_requires_include_prices(self):
         with patch.object(sys, "argv", ["collect_online_history.py", "--price-log", "x.jsonl"]):
             with self.assertRaises(SystemExit):
