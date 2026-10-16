@@ -3,6 +3,7 @@ config.json
 local_online_config.json
 remote_experiment_config.json
 remote_runtime_config.json
+config/local/
 .pinned_commit
 .runtime_venv
 policy.pid
