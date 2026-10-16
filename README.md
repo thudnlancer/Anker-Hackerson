@@ -1,6 +1,6 @@
 # 充电储能赛道实验环境
 
-本目录是预赛方案的可复现实验骨架，默认只做离线回测和 `dry-run`，不会向现场设备下发控制指令。系统架构基线见 [系统架构 Guideline](SYSTEM_ARCHITECTURE_GUIDELINE.md)，SOP 逐条复核见 [SOP_RECONCILIATION.md](SOP_RECONCILIATION.md)：API 优先、设备时间驱动、HA 实时状态、在线物理校准、SOP 约束滚动策略和回读闭环。
+本目录是预赛方案的可复现实验骨架，默认只做离线回测和 `dry-run`，不会向现场设备下发控制指令。系统架构基线见 [系统架构 Guideline](docs/architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)，SOP 逐条复核见 [SOP_RECONCILIATION.md](SOP_RECONCILIATION.md)：API 优先、设备时间驱动、HA 实时状态、在线物理校准、SOP 约束滚动策略和回读闭环。
 
 解释框架与中文前端位于 `explainability-app/`。只读 shadow 可显式导出同次 MILP 完整决策证据，反事实工作进程直接调用本仓库策略源码。安装、导出、导入与团队分工见 [协作接入说明](EXPLAINABILITY_COLLABORATION.md)；本次本地验收使用人工输入，HA 闭环与官方结算仍需单独验收。
 

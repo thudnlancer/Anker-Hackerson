@@ -2,7 +2,7 @@
 
 > 状态：评审稿，未实施。本文档不授权任何真实 HA 写入；所有涉及设备写入的步骤需单独授权后执行。
 > 范围：线上路径（`run_live.py`、`shadow.py`、HA 写入层）与离线 replay 口径统一。
-> 关联文档：[SYSTEM_ARCHITECTURE_GUIDELINE.md](../../SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[SOP_RECONCILIATION.md](../../SOP_RECONCILIATION.md)（SOP 控制语义）、[NEXT_STAGE_RESULTS.md](../../NEXT_STAGE_RESULTS.md)（2026-10-13 hold 语义隔离实验）。
+> 关联文档：[SYSTEM_ARCHITECTURE_GUIDELINE.md](../architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md)（架构基线）、[SOP_RECONCILIATION.md](../operations/SOP_RECONCILIATION.md)（SOP 控制语义）、[NEXT_STAGE_RESULTS.md](../../NEXT_STAGE_RESULTS.md)（2026-10-13 hold 语义隔离实验）。
 
 ## 1. 背景与问题
 
@@ -219,7 +219,7 @@
 - B4 自用只认设备 SOC 边界（0~100%）不认软件保底：缓解为比赛配置冻结 `soc_min=0`（SOP 全量程，shadow 现状），软件保底仅作实验参数。
 - B5 对验证失败站点的安全性：自用是该设备出厂默认模式，与 `charge=0` 验证失败无关，是已知能在该设备上工作的唯一模式。
 
-**SOP 合规性（决定性论据）：** [SOP_RECONCILIATION.md](../../SOP_RECONCILIATION.md) 规定 hold "正式执行应切回 `self_consumption` 或采用经过回读验证的安全无动作方案"。方案 B 是 SOP 点名的合法分支；方案 A（第三方模式持有过时设定值）不在 SOP 给出的两个选项内。
+**SOP 合规性（决定性论据）：** [SOP_RECONCILIATION.md](../operations/SOP_RECONCILIATION.md) 规定 hold "正式执行应切回 `self_consumption` 或采用经过回读验证的安全无动作方案"。方案 B 是 SOP 点名的合法分支；方案 A（第三方模式持有过时设定值）不在 SOP 给出的两个选项内。
 
 **决策（2026-10-13）：选方案 B，附加三条件：**
 

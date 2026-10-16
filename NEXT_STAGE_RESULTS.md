@@ -1,6 +1,6 @@
 # 后续实验与比赛接入检查（2026-10-10）
 
-> 架构口径已更新：以 [SYSTEM_ARCHITECTURE_GUIDELINE.md](SYSTEM_ARCHITECTURE_GUIDELINE.md) 为 baseline。API 价格/天气和 HA 实时状态是主策略输入；预测模型与 168 小时历史仅为辅助校准，不再是策略启动门槛。此前关于“先积累 168 小时再启用线上策略”的表述按本条修正。
+> 架构口径已更新：以 [SYSTEM_ARCHITECTURE_GUIDELINE.md](docs/architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md) 为 baseline。API 价格/天气和 HA 实时状态是主策略输入；预测模型与 168 小时历史仅为辅助校准，不再是策略启动门槛。此前关于“先积累 168 小时再启用线上策略”的表述按本条修正。
 
 `src/energy_lab/system_model.py` 已新增纯函数物理模型：功率平衡、SOC 递推、PV-辐照度比例校准、负载分位数区间和功率残差诊断；当前仅完成单元测试，尚未接入 HA 写入路径。批准的中间产物清理因当前执行策略拒绝删除，目标目录仍保留，不能将其记录为已清理。
 

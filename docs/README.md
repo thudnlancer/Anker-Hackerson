@@ -1,13 +1,13 @@
 # 文档入口
 
-文档按用途分层，根目录历史文档在迁移完成前保持原路径可读：
+文档按用途分层。根目录保留 README、配置/运行入口、历史报告及少量兼容链接；当前维护文档以本目录路径为准。
 
 - `REPOSITORY_MAP_AND_ALIGNMENT_20261016.md`：仓库与 worktree 基线。
 - `RESTRUCTURE_AND_ONLINE_MILESTONE_PLAN.md`：重构阶段和在线流程验收条件。
 - `WORKTREE_ALIGNMENT_CHECKLIST.md`：五个 worktree 的合入门禁和测试记录。
 - `WORKTREE_DIFF_AUDIT_20261016.md`：W3/W2/E4 相对主线的冲突审计。
 - `PROJECT_STATUS_AND_WORKSTREAMS.md`：集成负责人共享状态与当前进度。
-- `SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
+- `architecture/SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
 - `operations/SOP_RECONCILIATION.md`：早期 SOP 对齐记录；当前验收以在线流程里程碑为准。
 - `operations/REMOTE_DRY_RUN_RUNBOOK.md`：浏览器终端 + Git 固定提交的远程 dry-run 操作手册。
 - `M3_*`、`F1_*`、`F2_*`：比赛阶段验收材料。
@@ -16,7 +16,7 @@
 - `milestones/ONLINE_FLOW_MILESTONE.md`：本机模拟赛、HA 回读、看板与部署的最终门槛。
 - `WORKER_UNTRACKED_INVENTORY_20261016.md`：尚未纳入发布的 B1/B3/D2 worker 脚本归属与安全门槛。
 
-后续迁移目标：
+当前主要结构与后续归档方向：
 
 ```text
 docs/architecture/   架构与接口
