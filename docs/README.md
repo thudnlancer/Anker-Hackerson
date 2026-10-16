@@ -15,6 +15,7 @@
 - `milestones/B2_ZERO_FLOW_REVIEW_DEMO.md`：B1 零流量离线演示；不代表硬件验收。
 - `milestones/ONLINE_FLOW_MILESTONE.md`：本机模拟赛、HA 回读、看板与部署的最终门槛。
 - `WORKER_UNTRACKED_INVENTORY_20261016.md`：尚未纳入发布的 B1/B3/D2 worker 脚本归属与安全门槛。
+- `CLEANUP_CANDIDATES_20261016.md`：文档、脚本与本地输出的保留/归档/删除候选及执行门禁；不代表清理已执行。
 
 分析脚本迁移采用“实现归档到 `scripts/analysis/`、根目录保留兼容入口”的方式；只有经过引用扫描和定向测试的脚本才可迁移。
 
