@@ -13,6 +13,7 @@
 - `decisions/HOLD_SEMANTICS_DESIGN.md`：hold/idle 与设备执行语义的历史评审稿；根目录保留兼容链接。
 - `milestones/B2_ZERO_FLOW_REVIEW_DEMO.md`：B1 零流量离线演示；不代表硬件验收。
 - `milestones/ONLINE_FLOW_MILESTONE.md`：本机模拟赛、HA 回读、看板与部署的最终门槛。
+- `WORKER_UNTRACKED_INVENTORY_20261016.md`：尚未纳入发布的 B1/B3/D2 worker 脚本归属与安全门槛。
 
 后续迁移目标：
 
