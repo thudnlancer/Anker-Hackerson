@@ -10,6 +10,9 @@
 - `SYSTEM_ARCHITECTURE_GUIDELINE.md`：系统架构规范。
 - `SOP_RECONCILIATION.md`：HA 下发事务和人工恢复规范。
 - `M3_*`、`F1_*`、`F2_*`：比赛阶段验收材料。
+- `decisions/HOLD_SEMANTICS_DESIGN.md`：hold/idle 与设备执行语义的历史评审稿；根目录保留兼容链接。
+- `milestones/B2_ZERO_FLOW_REVIEW_DEMO.md`：B1 零流量离线演示；不代表硬件验收。
+- `milestones/ONLINE_FLOW_MILESTONE.md`：本机模拟赛、HA 回读、看板与部署的最终门槛。
 
 后续迁移目标：
 
