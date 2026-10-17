@@ -178,8 +178,8 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
 }
 export const api = {
   stations: (runId?: string, signal?: AbortSignal) => request<Overview>(`/api/stations${runId ? `?run_id=${encodeURIComponent(runId)}` : ''}`, undefined, signal),
-  decision: (id: string) => request<Decision>(`/api/decisions/${encodeURIComponent(id)}`),
-  explanation: (id: string) => request<Explanation>(`/api/decisions/${encodeURIComponent(id)}/explanation`),
+  decision: (id: string, signal?: AbortSignal) => request<Decision>(`/api/decisions/${encodeURIComponent(id)}`, undefined, signal),
+  explanation: (id: string, signal?: AbortSignal) => request<Explanation>(`/api/decisions/${encodeURIComponent(id)}/explanation`, undefined, signal),
   compare: (id: string, power: number) => request<Job>(`/api/decisions/${encodeURIComponent(id)}/counterfactuals`, { first_charge_kw: power }),
   job: (id: string) => request<Job>(`/api/counterfactuals/${encodeURIComponent(id)}`),
   question: (id: string, question: string) => request<QuestionAnswer>('/api/questions', { decision_id: id, question }),
