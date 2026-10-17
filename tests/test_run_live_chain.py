@@ -90,6 +90,22 @@ class DryRunChainTests(unittest.TestCase):
         with patch("energy_lab.shadow.optimize_window", return_value=kwargs.pop("mock_plan", plan())):
             return run_once_milp(config, ha, sim, **kwargs), kwargs["carry"]
 
+    def test_per_station_solver_seconds_override(self):
+        config = cfg(verified=True)
+        config["stations"] = {"1": {"suffix": "1502", "zero_flow_verified": True},
+                              "3": {"suffix": "1503", "zero_flow_verified": True,
+                                    "solver_seconds": 2.5}}
+        ha = StubHA({"1502": state(), "1503": state()})
+        captured = []
+
+        def fake_optimize(*args, **kwargs):
+            captured.append(kwargs["time_limit_seconds"])
+            return plan()
+
+        with patch("energy_lab.shadow.optimize_window", side_effect=fake_optimize):
+            run_once_milp(config, ha, StubSim(make_prices()), write_enabled=False, carry={})
+        self.assertEqual(sorted(captured), [1.0, 2.5])
+
     def test_ha_snapshot_401_does_not_attempt_fallback_write(self):
         ha = StubHA({"1502": state()})
         failed_batch = {"points": None, "states": {},

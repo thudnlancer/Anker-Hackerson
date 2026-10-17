@@ -231,3 +231,24 @@ class PriceAnchorTests(unittest.TestCase):
         self.assertIn("command_flow", rows[0])
         self.assertEqual(rows[0]["alignment_source"], "api_current_slot")
         self.assertEqual(ha.calls, [])
+
+
+class QuarterToHourJumpTests(unittest.TestCase):
+    """Simulator quirk: /api/price/current advances at minute :45."""
+
+    def test_minute_45_in_previous_hour_resolves_into_device_hour(self):
+        resolved = anchor_device_time("2031-01-01 09:45:00", pd.Timestamp("2031-01-01T10:00:00Z"))
+        self.assertEqual(resolved, pd.Timestamp("2031-01-01T09:45:00Z"))
+
+    def test_day_boundary_minute_45_accepted(self):
+        resolved = anchor_device_time("2031-01-01 23:45:00", pd.Timestamp("2031-01-02T00:00:00Z"))
+        self.assertEqual(resolved, pd.Timestamp("2031-01-01T23:45:00Z"))
+
+    def test_other_minutes_still_conflict(self):
+        for raw in ("2031-01-01 09:00:00", "2031-01-01 09:15:00", "2031-01-01 09:30:00"):
+            with self.assertRaisesRegex(ValueError, "device_api_date_hour_conflict"):
+                anchor_device_time(raw, pd.Timestamp("2031-01-01T10:00:00Z"))
+
+    def test_two_hour_gap_still_conflicts(self):
+        with self.assertRaisesRegex(ValueError, "device_api_date_hour_conflict"):
+            anchor_device_time("2031-01-01 09:45:00", pd.Timestamp("2031-01-01T11:00:00Z"))

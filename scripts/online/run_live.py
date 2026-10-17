@@ -242,6 +242,22 @@ def _append_price_log(path: Path, record: dict) -> None:
         fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
+def _station_solver_seconds(cfg: dict, site: str) -> float:
+    """Per-station solver budget override; falls back to the global value.
+
+    The round deadline (5 s hard cap) is enforced separately by
+    ``solve_until``/``round_deadline``, so an override can never stretch the
+    round — it only reallocates the serial budget between stations.
+    """
+    override = (cfg.get("stations", {}).get(site) or {}).get("solver_seconds")
+    if override is None:
+        return float(cfg.get("solver_seconds", 2.0))
+    value = float(override)
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("invalid_station_solver_seconds")
+    return value
+
+
 def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool,
                   carry: dict, audit_csv: Path | None = None,
                   reconciliation_store: ReconciliationStore | None = None,
@@ -380,7 +396,7 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                     candidate, deadline_error, solve_elapsed = solve_until(
                         round_deadline, lambda: make_candidate(
                             {**state, "device_time": resolved.isoformat()}, points,
-                            solver_seconds=float(cfg.get("solver_seconds", 2.0)),
+                            solver_seconds=_station_solver_seconds(cfg, site),
                             capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
                             soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
                             idle_candidate="zero_charge_unverified" if verified else "legacy_hold"))

@@ -66,7 +66,15 @@ def anchor_device_time(raw: object, start: pd.Timestamp,
             raise ValueError("invalid")
         # Compare the API's literal local date/hour labels, not an invented zone.
         if tick.strftime("%Y-%m-%d %H") != start.strftime("%Y-%m-%d %H"):
-            raise ValueError("device_api_date_hour_conflict")
+            # Simulator quirk: /api/price/current jumps to the next hour when the
+            # device clock reaches minute :45.  Accept exactly that shape — the
+            # tick sits in the hour preceding the API slot at minute 45 — and
+            # resolve into the device's own hour (its energy settles at that
+            # hour's price).  Any other shape stays a hard conflict.
+            prev_hour = start - pd.Timedelta(hours=1)
+            if tick.minute != 45 or tick.strftime("%Y-%m-%d %H") != prev_hour.strftime("%Y-%m-%d %H"):
+                raise ValueError("device_api_date_hour_conflict")
+            start = prev_hour
         resolved = start + (tick - tick.floor("h"))
         if tick.tzinfo is not None and tick != resolved:
             raise ValueError("device_api_offset_conflict")
@@ -305,10 +313,11 @@ def read_anchored_tick(cfg, ha, sim, price_window, *, price_validator=None, max_
         times = {}
         errors.update({s: "alignment_deadline_exceeded" for s in cfg["stations"] if s not in permanent})
         stop_reason = "deadline_exceeded"
+    serial_worst = sum(float(s.get("solver_seconds", solver)) for s in cfg["stations"].values())
     metadata.update(alignment_budget_seconds=seconds, alignment_elapsed_seconds=elapsed,
-                    serial_solver_worst_seconds=solver * len(cfg["stations"]),
-                    serial_tick_budget_floor_seconds=seconds + solver * len(cfg["stations"]),
-                    serial_tick_fits_poll=(seconds + solver * len(cfg["stations"]) <= poll),
+                    serial_solver_worst_seconds=serial_worst,
+                    serial_tick_budget_floor_seconds=seconds + serial_worst,
+                    serial_tick_fits_poll=(seconds + serial_worst <= poll),
                     alignment_stop_reason=stop_reason, alignment_requests=budget.requests,
                     alignment_operations=operations)
     return {"points": points, "states": states, "errors": errors, "times": times,
