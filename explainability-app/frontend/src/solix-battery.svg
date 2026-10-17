@@ -1,0 +1,10 @@
+<svg viewBox="0 0 340 420" class="battery-drawing" role="img" aria-label="可拆解的线框储能电池">
+<defs><linearGradient id="batteryFade" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e5ff28" stop-opacity=".35"/><stop offset="1" stop-color="#e5ff28" stop-opacity=".01"/></linearGradient></defs>
+<g class="exploded ex-top"><path d="M85 72 L170 24 L262 72 L170 121Z" fill="#0c100a" stroke="#e5ff28" stroke-width="1.8"/><path d="M115 71L170 42L231 72L170 102Z" fill="none" stroke="#b5bfc0" stroke-width=".9"/><path d="M170 24V12M85 72L75 62M262 72L274 60" stroke="#e5ff28"/></g>
+<g class="exploded ex-mid"><path d="M85 88L170 138L262 88V284L170 337L85 283Z" fill="#090d0b" stroke="#d2e0db" stroke-width="1.5"/><path d="M170 138V337M85 88L170 137L262 88" fill="none" stroke="#e5ff28" stroke-width="1.2"/>
+<path d="M105 129L153 155V303L105 278Z M187 155L243 125V279L187 310Z" fill="url(#batteryFade)" stroke="#6c8072" stroke-width=".7"/>
+<path d="M113 167L146 185M113 187L146 205M113 207L146 225M113 227L146 245M195 183L232 163M195 204L232 184M195 225L232 205M195 246L232 226" stroke="#e5ff28" stroke-width="1.1" opacity=".77"/>
+<path d="M72 100H48V278H72M275 100H296V278H275" stroke="#7b8983" fill="none" stroke-dasharray="3 7"/><path d="M170 146V327" stroke="#e5ff28" stroke-width=".8" stroke-dasharray="5 7"/>
+<text x="170" y="220" fill="#e5ff28" font-family="monospace" font-size="12" text-anchor="middle">SOLIX</text><text x="170" y="237" fill="#cdd5d0" font-family="monospace" font-size="7" text-anchor="middle">ENERGY CELL</text></g>
+<g class="exploded ex-bottom"><path d="M85 302L170 353L262 302L170 403Z" fill="#111810" stroke="#e5ff28" stroke-width="1.5"/><path d="M110 305L170 337L236 305" fill="none" stroke="#c4d5c6"/></g>
+<g fill="#e5ff28"><circle cx="170" cy="12" r="3"/><circle cx="48" cy="278" r="2"/><circle cx="296" cy="278" r="2"/></g></svg>
