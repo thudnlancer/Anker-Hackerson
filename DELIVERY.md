@@ -81,11 +81,20 @@ npm run dev   # http://localhost:5173 ，/api 代理到 :8080
 
 详见 `docs/delivery/OFFLINE_ANALYSIS.md`（明细 `docs/delivery/comparison_runs.csv`，在线成绩 `docs/delivery/online_results_20261017.json`）。
 
-## 在线成绩（模拟赛道，共 13 场）
+## 比赛成绩
 
-- 最佳：**+4.45%** saving_settled_percent（2026-10-16）
-- 最新：+3.01%（2026-10-17，site_1 +54.2% / site_2 +7.8% / site_3 -5.5%）
-- 正式赛：2026-10-17 04:58 UTC 开始，MILP live runner 全程控制三站
+**正式赛（2026-10-17，窗口 10-14~10-21，MILP live 全程控制）：
+saving_settled_percent = +0.90%（settled +2.06 EUR，三站基准电费 228.7 EUR）**
+
+| 站点 | settled | 备注 |
+|---|---|---|
+| site_1 | -0.85 EUR (-2.3%) | 已实现 +0.53，期末库存估值倒扣 → 末态管理教训实证 |
+| site_2 | -0.57 EUR (-0.4%) | 本场为负载重站：多买 7.7 EUR 电未收回，与离线「负载重站是预测价值试金石」结论互证 |
+| site_3 | +3.49 EUR (+10.3%) | 本场为 PV 富余站，表现最好 |
+
+（注：不同场次站点物理画像随 data_seed 变化，负载重角色本场落在 site_2）
+
+模拟赛道 13 场：最佳 **+4.45%**（2026-10-16），见 `docs/delivery/online_results_final.json`。
 
 ## 已知边界（不粉饰）
 

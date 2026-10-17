@@ -1,0 +1,89 @@
+{
+ "ended_at": "2026-10-17T05:54:55Z",
+ "sites": [
+  {
+   "site_id": "1",
+   "metrics": {
+    "baseline_cost": 37.7030950462906,
+    "baseline_revenue": 44.718978898513754,
+    "device_revenue": 45.25262645054649,
+    "saving": 0.5336475520327326,
+    "saving_percent": 1.4153945488494726,
+    "relative_percent": 1.1933357271949439,
+    "baseline_settled": 48.12190124028203,
+    "device_settled": 47.26821892972993,
+    "saving_settled": -0.8536823105520952,
+    "saving_settled_percent": -2.264223426495816,
+    "device_net_grid_cost": -6.62152996016863,
+    "baseline_net_grid_cost": -7.015883852223186,
+    "device_grid_import_cost": 19.281913289886404,
+    "baseline_grid_import_cost": 5.286273796224699,
+    "device_grid_export_revenue": 25.903443250055034,
+    "baseline_grid_export_revenue": 12.302157648447885,
+    "valid": true,
+    "shortage_count": 0
+   }
+  },
+  {
+   "site_id": "2",
+   "metrics": {
+    "baseline_cost": 156.96467504268122,
+    "baseline_revenue": 82.84930526359928,
+    "device_revenue": 80.9669517088275,
+    "saving": -1.8823535547717825,
+    "saving_percent": -1.199221133200792,
+    "relative_percent": -2.2720209285796082,
+    "baseline_settled": 82.96248342541082,
+    "device_settled": 82.39200499078764,
+    "saving_settled": -0.5704784346231833,
+    "saving_settled_percent": -0.36344383503362204,
+    "device_net_grid_cost": 76.92401531991715,
+    "baseline_net_grid_cost": 74.1153697790821,
+    "device_grid_import_cost": 85.2325063312859,
+    "baseline_grid_import_cost": 77.51125552566718,
+    "device_grid_export_revenue": 8.30849101136876,
+    "baseline_grid_export_revenue": 3.3958857465850847,
+    "valid": true,
+    "shortage_count": 0
+   }
+  },
+  {
+   "site_id": "3",
+   "metrics": {
+    "baseline_cost": 34.019871052597246,
+    "baseline_revenue": 46.37413218078442,
+    "device_revenue": 49.209916130039765,
+    "saving": 2.835783949255344,
+    "saving_percent": 8.335669305950665,
+    "relative_percent": 6.115012434519214,
+    "baseline_settled": 46.513279171059004,
+    "device_settled": 50.00095630903461,
+    "saving_settled": 3.4876771379756093,
+    "saving_settled_percent": 10.251882297212125,
+    "device_net_grid_cost": -14.116618406152943,
+    "baseline_net_grid_cost": -12.354261128187199,
+    "device_grid_import_cost": 15.22984019177069,
+    "baseline_grid_import_cost": 1.4355343143789103,
+    "device_grid_export_revenue": 29.346458597923633,
+    "baseline_grid_export_revenue": 13.78979544256611,
+    "valid": true,
+    "shortage_count": 0
+   }
+  }
+ ],
+ "total": {
+  "baseline_cost": 228.68764114156906,
+  "saving": 1.487077946516294,
+  "saving_percent": 0.6502659868688394,
+  "saving_settled": 2.063516392800331,
+  "saving_settled_percent": 0.9023296503910814,
+  "device_revenue": 175.42949428941375,
+  "baseline_revenue": 173.94241634289745,
+  "valid": true
+ },
+ "speed": 180,
+ "track": "official",
+ "days": 7,
+ "date_range": "2026-10-14 ~ 2026-10-21",
+ "data_seed": 20261018
+}
