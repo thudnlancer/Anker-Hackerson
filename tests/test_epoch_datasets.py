@@ -223,6 +223,35 @@ class RunEpochReplayTests(unittest.TestCase):
             self.assertGreaterEqual(fake.calls, 1)
 
 
+    def test_evidence_export_jsonl(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture = make_capture(root / "cap", ticks=104)
+            epochs = root / "epochs"
+            with patch.object(sys, "argv", ["build", str(capture), "--output", str(epochs),
+                                            "--epoch-hours", "26", "--min-epochs", "1",
+                                            "--sites", "1"]):
+                build_epoch_datasets.main()
+            out = root / "replay"
+            with patch.object(sys, "argv", ["replay", "--epochs-dir", str(epochs),
+                                            "--strategies", "milp",
+                                            "--forecast-modes", "persistence",
+                                            "--evidence-run-id", "test-run",
+                                            "--evidence-every", "1",
+                                            "--output", str(out)]):
+                self.assertEqual(run_epoch_replay.main(), 0)
+            lines = (out / "evidence-decisions.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertTrue(lines)
+            record = json.loads(lines[0])
+            self.assertEqual(record["run_id"], "test-run")
+            self.assertEqual(record["site_id"], "epoch_00:site_1:milp:persistence")
+            self.assertEqual(record["source_kind"], "external")
+            for key in ("decision_id", "snapshot", "action", "cost", "replay_context"):
+                self.assertIn(key, record)
+            self.assertEqual(record["solver_status"], "optimal")
+            self.assertEqual(len(record["snapshot"]["pv_forecast_kw"]), 96)
+
+
 class V16LoadCacheTests(unittest.TestCase):
     def test_window_alignment_and_refresh(self):
         class FakeForecaster:

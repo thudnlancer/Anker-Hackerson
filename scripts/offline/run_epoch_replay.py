@@ -22,6 +22,7 @@ stays persistence.  V16 mode requires the heavy deps and git-ignored weights
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -115,9 +116,43 @@ class V16LoadCache:
         return out
 
 
+def _export_evidence(evidence: dict, request, plan, actual_pv_w: float,
+                     actual_load_w: float, soc_now: float, forecast_mode: str) -> bool:
+    """Emit one DecisionIn record for an optimal full-horizon replay solve.
+
+    Reuses the pure shadow exporter, so records reconcile against the same
+    pinned MILP source hash.  Non-exportable solves (non-optimal, gradient
+    heuristics, hash drift) count as skipped, never fabricated.
+    """
+    from types import SimpleNamespace
+    from energy_lab.explainability_evidence import (
+        EvidenceExportError, build_explainability_record)
+    first = plan.plan.iloc[0]
+    flow = str(first.flow)
+    mapping = SimpleNamespace(
+        representable=True,
+        flow=flow if flow in ("charge", "discharge") else "self_consumption",
+        target_w=float(first.charge_w if flow == "charge"
+                       else first.discharge_w if flow == "discharge" else 0.0))
+    try:
+        record = build_explainability_record(
+            identity=evidence["identity"], observed_at=evidence["observed_at"],
+            state={"solar_power": actual_pv_w, "home_load": actual_load_w, "soc": soc_now},
+            times=request.times, pv_w=request.pv_w, load_w=request.load_w,
+            import_price=request.import_price, export_price=request.export_price,
+            result=plan, mapping=mapping,
+            forecast_mode=f"epoch_replay_{forecast_mode}",
+            capacity_kwh=request.capacity_kwh, max_power_w=request.max_power_w,
+            soc_min=request.soc_min, soc_max=request.soc_max, input_kind="mixed")
+    except EvidenceExportError:
+        return False
+    evidence["sink"](record)
+    return True
+
+
 def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
                 solver_time_limit: float, load_forecaster=None,
-                v16_refresh_ticks: int = 4) -> tuple[pd.DataFrame, dict]:
+                v16_refresh_ticks: int = 4, evidence=None) -> tuple[pd.DataFrame, dict]:
     n = len(frame)
     times = pd.Series(pd.to_datetime(frame["time"]))
     pv = frame["pv_w"].to_numpy(dtype=float)
@@ -157,6 +192,10 @@ def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
                                   step_hours=DT_H, time_limit_seconds=solver_time_limit)
         plan = optimizer.solve(request)
         nonoptimal += int(plan.status != "optimal")
+        if evidence is not None and t % evidence["every"] == 0 and h == HORIZON_STEPS:
+            key = "exported" if _export_evidence(
+                evidence, request, plan, pv[t], load[t], soc_now, forecast_mode) else "skipped"
+            evidence[key] += 1
         first = plan.plan.iloc[0]
         flow = str(first.flow)
         power = float(first.charge_w if flow == "charge"
@@ -202,6 +241,12 @@ def main() -> int:
                         help="re-run the V16 load forecaster every this many 15-min "
                              "ticks (default 4 = hourly); needs torch/chronos deps and "
                              "the git-ignored weights (run under .venv-forecast)")
+    parser.add_argument("--evidence-run-id", default=None,
+                        help="also export explainability DecisionIn JSONL "
+                             "(evidence-decisions.jsonl in --output) under this run_id; "
+                             "only optimal full-horizon MILP solves are exportable")
+    parser.add_argument("--evidence-every", type=int, default=4,
+                        help="export every Nth tick (default 4 = hourly)")
     parser.add_argument("--solver-time-limit", type=float, default=5.0)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -223,23 +268,47 @@ def main() -> int:
                          "models/load_forecast_v16/README.md)")
     all_summaries = []
     started = perf_counter()
-    for epoch_dir in epoch_dirs:
-        for site_csv in sorted(epoch_dir.glob("site_*.csv")):
-            frame = pd.read_csv(site_csv)
-            for strategy in args.strategies:
-                for mode in args.forecast_modes:
-                    trace, summary = replay_site(frame, strategy, mode,
-                                                 args.solver_time_limit,
-                                                 load_forecaster=forecaster,
-                                                 v16_refresh_ticks=args.v16_refresh_ticks)
-                    tag = f"{epoch_dir.name}_{site_csv.stem}_{strategy}_{mode}"
-                    trace.to_csv(args.output / f"trace_{tag}.csv", index=False)
-                    summary.update({"epoch": epoch_dir.name, "site": site_csv.stem})
-                    all_summaries.append(summary)
-                    print(json.dumps({k: summary[k] for k in
-                                      ("epoch", "site", "strategy", "forecast_mode",
-                                       "saving_eur", "saving_percent", "nonoptimal_solves")},
-                                     ensure_ascii=False), flush=True)
+    evidence_stream = None
+    observed_at = datetime.now(timezone.utc).isoformat()
+    if args.evidence_run_id:
+        evidence_stream = (args.output / "evidence-decisions.jsonl").open("x", encoding="utf-8")
+
+        def sink(record):
+            evidence_stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False)
+                                  + "\n")
+    try:
+        for epoch_dir in epoch_dirs:
+            for site_csv in sorted(epoch_dir.glob("site_*.csv")):
+                frame = pd.read_csv(site_csv)
+                for strategy in args.strategies:
+                    for mode in args.forecast_modes:
+                        evidence = None
+                        if evidence_stream is not None:
+                            evidence = {"every": max(1, args.evidence_every),
+                                        "identity": {"run_id": args.evidence_run_id,
+                                                     "site_id": f"{epoch_dir.name}:{site_csv.stem}:{strategy}:{mode}",
+                                                     "input_kind": "mixed"},
+                                        "observed_at": observed_at, "sink": sink,
+                                        "exported": 0, "skipped": 0}
+                        trace, summary = replay_site(frame, strategy, mode,
+                                                     args.solver_time_limit,
+                                                     load_forecaster=forecaster,
+                                                     v16_refresh_ticks=args.v16_refresh_ticks,
+                                                     evidence=evidence)
+                        if evidence is not None:
+                            summary["evidence_exported"] = evidence["exported"]
+                            summary["evidence_skipped"] = evidence["skipped"]
+                        tag = f"{epoch_dir.name}_{site_csv.stem}_{strategy}_{mode}"
+                        trace.to_csv(args.output / f"trace_{tag}.csv", index=False)
+                        summary.update({"epoch": epoch_dir.name, "site": site_csv.stem})
+                        all_summaries.append(summary)
+                        print(json.dumps({k: summary[k] for k in
+                                          ("epoch", "site", "strategy", "forecast_mode",
+                                           "saving_eur", "saving_percent", "nonoptimal_solves")},
+                                         ensure_ascii=False), flush=True)
+    finally:
+        if evidence_stream is not None:
+            evidence_stream.close()
     report = {"code_sha256": code_revision(), "writes_performed": 0,
               "official_score_claim": False,
               "arbiter": "settled cost vs self-consumption baseline, identical physics",
