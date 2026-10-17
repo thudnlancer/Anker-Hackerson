@@ -13,7 +13,11 @@ pure self-consumption baseline simulated with identical battery physics.
 Battery physics mirror the online contract: charge efficiency 0.95, discharge
 1.0, device SOC range 0..100 %, max power 5 kW.  Forecasts are causal:
 "persistence" holds current pv/load flat; "perfect" uses realized future
-values (upper bound, clearly labeled).
+values (upper bound, clearly labeled); "v16" predicts load with the frozen
+V16 forecaster (18 realized 15-min samples -> 12 ticks, refreshed per
+--v16-refresh-ticks, flat extension beyond the 3h prediction block) while PV
+stays persistence.  V16 mode requires the heavy deps and git-ignored weights
+(run under .venv-forecast).
 """
 from __future__ import annotations
 
@@ -73,8 +77,47 @@ def grid_cost(pv_w, load_w, batt_w, buy, sell) -> float:
     return (max(grid_w, 0.0) * buy - max(-grid_w, 0.0) * sell) * DT_H / 1000
 
 
+class V16LoadCache:
+    """Rolling cache around the V16 load forecaster (15-min granularity).
+
+    V16 consumes the last 18 realized 15-min load samples and predicts the
+    next 12.  Forecasts refresh every ``refresh_ticks`` or when the cached
+    block runs out; the current tick stays the realized value and window
+    steps beyond the 12-tick prediction hold the last predicted value
+    (documented flat extension).  PV is not V16's job: callers pair this
+    with persistence PV.
+    """
+
+    def __init__(self, forecaster, refresh_ticks: int = 4):
+        self.forecaster = forecaster
+        self.refresh_ticks = max(1, int(refresh_ticks))
+        self._made_at = -10**9
+        self._preds = np.zeros(0)
+        self.calls = 0
+
+    def window(self, load: np.ndarray, t: int, h: int) -> np.ndarray:
+        stale = (t - self._made_at >= self.refresh_ticks
+                 or t + 1 > self._made_at + len(self._preds))
+        if stale:
+            history = load[max(0, t - 17):t + 1]
+            if len(history) < 18:
+                history = np.concatenate([np.full(18 - len(history), load[0]), history])
+            self._preds = np.clip(np.asarray(
+                self.forecaster.forecast_w(np.clip(history, 0.0, None), steps=12),
+                dtype=float), 0.0, None)
+            self._made_at = t
+            self.calls += 1
+        out = np.empty(h)
+        out[0] = load[t]  # current tick is realized, not predicted
+        for j in range(1, h):
+            idx = t + j - self._made_at - 1
+            out[j] = self._preds[min(idx, len(self._preds) - 1)]
+        return out
+
+
 def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
-                solver_time_limit: float) -> tuple[pd.DataFrame, dict]:
+                solver_time_limit: float, load_forecaster=None,
+                v16_refresh_ticks: int = 4) -> tuple[pd.DataFrame, dict]:
     n = len(frame)
     times = pd.Series(pd.to_datetime(frame["time"]))
     pv = frame["pv_w"].to_numpy(dtype=float)
@@ -82,6 +125,11 @@ def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
     buy = frame["import_price"].to_numpy(dtype=float)
     sell = frame["export_price"].to_numpy(dtype=float)
     optimizer = get_strategy(strategy_name)
+    v16_cache = None
+    if forecast_mode == "v16":
+        if load_forecaster is None:
+            raise ValueError("forecast mode 'v16' requires a load_forecaster")
+        v16_cache = V16LoadCache(load_forecaster, v16_refresh_ticks)
 
     energy = float(frame["soc_percent"].iloc[0]) / 100 * CAPACITY_KWH
     base_energy = energy
@@ -96,6 +144,9 @@ def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
         elif forecast_mode == "perfect":
             f_pv = pv[t:t + h].copy()
             f_load = load[t:t + h].copy()
+        elif forecast_mode == "v16":
+            f_pv = np.full(h, pv[t])  # V16 is load-only; PV stays persistence
+            f_load = v16_cache.window(load, t, h)
         else:
             raise ValueError(f"unknown forecast mode {forecast_mode}")
         soc_now = min(100.0, max(0.0, energy / CAPACITY_KWH * 100))  # float drift guard
@@ -132,6 +183,8 @@ def replay_site(frame: pd.DataFrame, strategy_name: str, forecast_mode: str,
                "nonoptimal_solves": nonoptimal,
                "final_soc_percent": round(energy / CAPACITY_KWH * 100, 2),
                "baseline_final_soc_percent": round(base_energy / CAPACITY_KWH * 100, 2)}
+    if v16_cache is not None:
+        summary["v16_forecast_calls"] = v16_cache.calls
     return trace, summary
 
 
@@ -144,7 +197,11 @@ def main() -> int:
     parser.add_argument("--strategies", nargs="+", default=["milp"],
                         choices=sorted(STRATEGIES))
     parser.add_argument("--forecast-modes", nargs="+", default=["persistence"],
-                        choices=("persistence", "perfect"))
+                        choices=("persistence", "perfect", "v16"))
+    parser.add_argument("--v16-refresh-ticks", type=int, default=4,
+                        help="re-run the V16 load forecaster every this many 15-min "
+                             "ticks (default 4 = hourly); needs torch/chronos deps and "
+                             "the git-ignored weights (run under .venv-forecast)")
     parser.add_argument("--solver-time-limit", type=float, default=5.0)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -156,6 +213,14 @@ def main() -> int:
         parser.error("no epoch datasets found")
 
     args.output.mkdir(parents=True, exist_ok=False)
+    forecaster = None
+    if "v16" in args.forecast_modes:
+        from energy_lab.load_forecast_v16 import LoadForecastV16
+        forecaster = LoadForecastV16()
+        if not forecaster.available():
+            parser.error("forecast mode 'v16' needs the torch/chronos deps and the "
+                         "git-ignored weights; run under .venv-forecast (see "
+                         "models/load_forecast_v16/README.md)")
     all_summaries = []
     started = perf_counter()
     for epoch_dir in epoch_dirs:
@@ -164,7 +229,9 @@ def main() -> int:
             for strategy in args.strategies:
                 for mode in args.forecast_modes:
                     trace, summary = replay_site(frame, strategy, mode,
-                                                 args.solver_time_limit)
+                                                 args.solver_time_limit,
+                                                 load_forecaster=forecaster,
+                                                 v16_refresh_ticks=args.v16_refresh_ticks)
                     tag = f"{epoch_dir.name}_{site_csv.stem}_{strategy}_{mode}"
                     trace.to_csv(args.output / f"trace_{tag}.csv", index=False)
                     summary.update({"epoch": epoch_dir.name, "site": site_csv.stem})

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -183,6 +184,78 @@ class RunEpochReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unknown forecast mode"):
                 run_epoch_replay.replay_site(frame, "milp", "oracle", 5.0)
 
+    def test_v16_mode_requires_forecaster(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture = make_capture(root / "cap", ticks=4)
+            epochs = root / "epochs"
+            with patch.object(sys, "argv", ["build", str(capture), "--output", str(epochs),
+                                            "--epoch-hours", "1", "--min-epochs", "1",
+                                            "--sites", "1"]):
+                build_epoch_datasets.main()
+            frame = pd.read_csv(epochs / "epoch_00" / "site_1.csv")
+            with self.assertRaisesRegex(ValueError, "requires a load_forecaster"):
+                run_epoch_replay.replay_site(frame, "milp", "v16", 5.0)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_v16_mode_smoke_with_fake_forecaster(self):
+        class FakeForecaster:
+            def __init__(self):
+                self.calls = 0
+
+            def forecast_w(self, history, steps=12):
+                self.calls += 1
+                return np.full(steps, 600.0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            capture = make_capture(root / "cap", ticks=8)
+            epochs = root / "epochs"
+            with patch.object(sys, "argv", ["build", str(capture), "--output", str(epochs),
+                                            "--epoch-hours", "1", "--min-epochs", "1",
+                                            "--sites", "1"]):
+                build_epoch_datasets.main()
+            frame = pd.read_csv(epochs / "epoch_00" / "site_1.csv")
+            fake = FakeForecaster()
+            trace, summary = run_epoch_replay.replay_site(frame, "milp", "v16", 5.0,
+                                                          load_forecaster=fake)
+            self.assertEqual(summary["ticks"], 4)
+            self.assertEqual(summary["v16_forecast_calls"], fake.calls)
+            self.assertGreaterEqual(fake.calls, 1)
+
+
+class V16LoadCacheTests(unittest.TestCase):
+    def test_window_alignment_and_refresh(self):
+        class FakeForecaster:
+            def __init__(self):
+                self.calls = 0
+
+            def forecast_w(self, history, steps=12):
+                self.calls += 1
+                self.last_history = np.asarray(history, dtype=float)
+                return np.arange(100.0, 100.0 + steps)  # preds[i] covers made_at+1+i
+
+        load = np.full(40, 500.0)
+        fake = FakeForecaster()
+        cache = run_epoch_replay.V16LoadCache(fake, refresh_ticks=4)
+        window = cache.window(load, 0, 5)
+        self.assertEqual(window[0], 500.0)          # current tick realized
+        self.assertEqual(window[1], 100.0)          # preds[0] -> tick 1
+        self.assertEqual(window[4], 103.0)
+        self.assertEqual(fake.calls, 1)
+        self.assertEqual(len(fake.last_history), 18)  # left-padded at t=0
+        window = cache.window(load, 3, 2)             # still fresh
+        self.assertEqual(fake.calls, 1)
+        self.assertEqual(window[1], 103.0)          # preds[3] -> tick 4
+        window = cache.window(load, 4, 2)             # refresh_ticks reached
+        self.assertEqual(fake.calls, 2)
+
+    def test_flat_extension_beyond_prediction_block(self):
+        class FakeForecaster:
+            def forecast_w(self, history, steps=12):
+                return np.full(steps, 700.0)
+
+        load = np.full(40, 500.0)
+        cache = run_epoch_replay.V16LoadCache(FakeForecaster(), refresh_ticks=100)
+        window = cache.window(load, 0, 30)
+        self.assertTrue((window[13:] == 700.0).all())  # preds hold past tick 12
+        self.assertEqual(window[12], 700.0)
