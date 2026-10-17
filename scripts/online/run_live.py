@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import argparse
+import collections
 import json
 import math
 import sys
@@ -258,11 +259,44 @@ def _station_solver_seconds(cfg: dict, site: str) -> float:
     return value
 
 
+def _v16_forecast_frame(carry: dict, site: str, state: dict, resolved) -> "pd.DataFrame | None":
+    """Build a 96-step forecast frame for ``make_candidate`` from the frozen V16
+    load forecaster. PV stays persistence (current observation); load uses the
+    last 18 observed 15-min samples, refreshed every 4 rounds, with the final
+    predicted step held flat beyond the 12-step model horizon (same policy as
+    the offline replay runner). Returns None until enough history accumulated.
+    """
+    history = carry.setdefault("v16_history", {}).setdefault(site, collections.deque(maxlen=18))
+    history.append(max(0.0, float(state["home_load"])))
+    if len(history) < 18:
+        return None
+    generation = carry.get("round_generation", 0)
+    cache = carry.setdefault("v16_cache", {}).get(site)
+    if cache is None or generation - cache["generation"] >= 4:
+        forecaster = carry.get("v16_forecaster")
+        if forecaster is None:
+            from energy_lab.load_forecast_v16 import LoadForecastV16
+            forecaster = carry["v16_forecaster"] = LoadForecastV16()
+        future = [max(0.0, float(v)) for v in forecaster.forecast_w(list(history))]
+        cache = {"generation": generation, "future": future}
+        carry["v16_cache"][site] = cache
+    future = cache["future"]
+    origin = pd.Timestamp(resolved)
+    if origin.tzinfo is None:
+        origin = origin.tz_localize("UTC")
+    times = pd.date_range(origin, periods=96, freq="15min")
+    loads = (future + [future[-1]] * 96)[:96]
+    return pd.DataFrame({"time": times,
+                         "pv": max(0.0, float(state["solar_power"])),
+                         "load": loads})
+
+
 def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enabled: bool,
                   carry: dict, audit_csv: Path | None = None,
                   reconciliation_store: ReconciliationStore | None = None,
                   delivery_executor: ThreadPoolExecutor | None = None,
-                  price_log: Path | None = None) -> list[dict]:
+                  price_log: Path | None = None,
+                  load_forecast: str = "persistence") -> list[dict]:
     """One step-4 chain tick per station. ``carry`` persists across ticks:
     ``carry["verified"]`` holds the in-memory site verification flags (seeded
     from config, revocable by the SOC guard); ``carry["previous"]`` keeps each
@@ -393,12 +427,19 @@ def run_once_milp(cfg: dict, ha: HAClient, sim: SimulatorClient, *, write_enable
                 solve_elapsed = 0.0
             else:
                 try:
+                    forecast_df = None
+                    forecast_mode = None
+                    if load_forecast == "v16":
+                        forecast_df = _v16_forecast_frame(carry, site, state, resolved)
+                        if forecast_df is not None:
+                            forecast_mode = "v16"
                     candidate, deadline_error, solve_elapsed = solve_until(
                         round_deadline, lambda: make_candidate(
                             {**state, "device_time": resolved.isoformat()}, points,
                             solver_seconds=_station_solver_seconds(cfg, site),
                             capacity=float(cfg["capacity_kwh"]), max_power=float(cfg["max_power_w"]),
                             soc_min=float(cfg["soc_min"]), soc_max=float(cfg["soc_max"]),
+                            forecast=forecast_df, forecast_mode=forecast_mode,
                             idle_candidate="zero_charge_unverified" if verified else "legacy_hold"))
                     if deadline_error:
                         candidate = {"status": "blocked", "solver_status": "not_run",
@@ -529,6 +570,9 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="run one tick and exit")
     parser.add_argument("--strategy", choices=("dispatch", "milp"), default="dispatch",
                         help="dispatch: legacy rule entry; milp: step-4 shadow/execute chain")
+    parser.add_argument("--load-forecast", choices=("persistence", "v16"), default="persistence",
+                        help="milp strategy only: v16 feeds the frozen neural load forecaster "
+                             "into the optimizer horizon (PV stays persistence)")
     parser.add_argument("--audit-csv", type=Path, default=Path("outputs/run_live_audit.csv"),
                         help="milp strategy audit log, appended every tick")
     parser.add_argument("--reconciliation-state", type=Path,
@@ -577,7 +621,8 @@ def main() -> None:
             tick_results = run_once_milp(cfg, ha, sim, write_enabled=write_enabled,
                                          carry=carry, audit_csv=args.audit_csv,
                                          reconciliation_store=reconciliation_store,
-                                         delivery_executor=delivery_executor)
+                                         delivery_executor=delivery_executor,
+                                         load_forecast=args.load_forecast)
         else:
             tick_results = run_once(cfg, ha, sim, write_enabled=write_enabled)
         for result in tick_results:
